@@ -1,0 +1,19 @@
+{
+  "name": "holms",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/daemon",
+    "packages/frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @holms/daemon\" \"npm run dev -w @holms/frontend\"",
+    "dev:daemon": "npm run dev -w @holms/daemon",
+    "dev:frontend": "npm run dev -w @holms/frontend",
+    "build": "npm run build -w @holms/shared && npm run build -w @holms/daemon && npm run build -w @holms/frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0",
+    "typescript": "^5.5"
+  }
+}
