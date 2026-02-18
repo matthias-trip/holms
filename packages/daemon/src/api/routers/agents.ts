@@ -7,9 +7,7 @@ const t = initTRPC.context<TRPCContext>().create();
 
 export const agentsRouter = t.router({
   status: t.procedure.query(({ ctx }): AgentStatus[] => {
-    const specialists = ctx.specialistRegistry.getAll();
-
-    const statuses: AgentStatus[] = [
+    return [
       {
         agentId: "coordinator",
         name: "Coordinator",
@@ -17,16 +15,7 @@ export const agentsRouter = t.router({
         description: "Orchestrates all home automation decisions",
         processing: ctx.coordinator.isProcessing(),
       },
-      ...specialists.map((s) => ({
-        agentId: s.name,
-        name: s.name.charAt(0).toUpperCase() + s.name.slice(1),
-        role: "specialist" as const,
-        description: s.description,
-        processing: false,
-      })),
     ];
-
-    return statuses;
   }),
 
   turns: t.procedure

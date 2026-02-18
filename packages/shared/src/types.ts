@@ -50,37 +50,6 @@ export interface Memory {
   updatedAt: number;
 }
 
-// ── Specialist Types ──
-
-export type SpecialistDomain = "lighting" | "presence" | "electricity";
-
-export interface SpecialistProposal {
-  id: string;
-  specialist: SpecialistDomain;
-  deviceId: string;
-  command: string;
-  params: Record<string, unknown>;
-  confidence: ConfidenceLevel;
-  category: ActionCategory;
-  reason: string;
-  priority: number;
-  timestamp: number;
-}
-
-export interface ConflictFlag {
-  specialist: SpecialistDomain;
-  description: string;
-  affectedDeviceIds: string[];
-  suggestedResolution: string;
-}
-
-export interface SpecialistResult {
-  specialist: SpecialistDomain;
-  proposals: SpecialistProposal[];
-  reasoning: string;
-  conflicts: ConflictFlag[];
-}
-
 // ── Schedule Types ──
 
 export type ScheduleRecurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
@@ -153,7 +122,7 @@ export interface ChatMessage {
 export type AgentActivityType =
   | "thinking" | "tool_use" | "result" | "reflection" | "outcome"
   | "turn_start"
-  | "specialist_dispatched" | "specialist_result"
+  | "deep_reason_start" | "deep_reason_result"
   | "approval_pending" | "approval_resolved"
   | "reflex_fired"
   | "triage";
@@ -174,7 +143,7 @@ export type TurnTrigger = "user_message" | "device_events" | "schedule" | "proac
 export interface AgentStatus {
   agentId: string;
   name: string;
-  role: "coordinator" | "specialist";
+  role: "coordinator";
   description: string;
   processing: boolean;
 }
@@ -200,6 +169,18 @@ export interface TriageRule {
   createdBy: string;
   createdAt: number;
   enabled: boolean;
+}
+
+// ── Plugin Types ──
+
+export interface PluginInfo {
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  path: string;
+  enabled: boolean;
+  capabilities: string[];
 }
 
 // ── Event Types for the bus ──

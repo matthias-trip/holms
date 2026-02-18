@@ -77,19 +77,19 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("specialist:dispatched", (data: { specialist: string; context: string; deviceIds: string[]; model?: string; timestamp: number }) => {
+  eventBus.on("deep_reason:start", (data: { problem: string; model: string; timestamp: number }) => {
     store({
-      id: uuid(), type: "specialist_dispatched",
-      data: { specialist: data.specialist, context: data.context, deviceIds: data.deviceIds, model: data.model },
-      timestamp: data.timestamp, agentId: data.specialist, turnId: getTurnId(),
+      id: uuid(), type: "deep_reason_start",
+      data: { problem: data.problem, model: data.model },
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: getTurnId(),
     });
   });
 
-  eventBus.on("specialist:result", (data: { specialist: string; proposals: unknown[]; reasoning: string; model?: string; costUsd?: number; inputTokens?: number; outputTokens?: number; durationMs?: number; numTurns?: number; timestamp: number }) => {
+  eventBus.on("deep_reason:result", (data: { problem: string; analysis: string; model: string; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; numTurns: number; timestamp: number }) => {
     store({
-      id: uuid(), type: "specialist_result",
-      data: { specialist: data.specialist, proposals: data.proposals, reasoning: data.reasoning, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, durationMs: data.durationMs, numTurns: data.numTurns },
-      timestamp: data.timestamp, agentId: data.specialist, turnId: getTurnId(),
+      id: uuid(), type: "deep_reason_result",
+      data: { problem: data.problem, analysis: data.analysis, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, durationMs: data.durationMs, numTurns: data.numTurns },
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: getTurnId(),
     });
   });
 

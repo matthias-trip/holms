@@ -1,6 +1,6 @@
 import { query, tool, createSdkMcpServer, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
-import type { DeviceEvent, SpecialistResult, TurnTrigger } from "@holms/shared";
+import type { DeviceEvent, TurnTrigger } from "@holms/shared";
 import type { EventBus } from "../event-bus.js";
 import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
@@ -17,9 +17,7 @@ import { createTriageToolsServer } from "../triage/tools.js";
 import type { ReflexStore } from "../reflex/store.js";
 import type { ScheduleStore } from "../schedule/store.js";
 import type { TriageStore } from "../triage/store.js";
-import type { SpecialistRunner } from "../specialists/runner.js";
-import type { SpecialistRegistry } from "../specialists/registry.js";
-import { detectConflicts } from "../specialists/conflict-resolver.js";
+import type { PluginManager } from "../plugins/manager.js";
 
 const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command, you MUST follow the Before Acting protocol — recall memories (search by device name, room, AND device ID), check for preference constraints, and obey them. Use propose_action if any memory requires approval, if the action is novel, security-sensitive, or uncertain.`;
 
@@ -35,7 +33,7 @@ export class Coordinator {
   private memoryServer;
   private reflexServer;
   private approvalServer;
-  private dispatchServer;
+  private deepReasonServer;
   private scheduleServer;
   private triageServer;
 
@@ -47,58 +45,45 @@ export class Coordinator {
     private approvalQueue: ApprovalQueue,
     private outcomeObserver: OutcomeObserver,
     private config: HolmsConfig,
-    private specialistRunner: SpecialistRunner,
-    private specialistRegistry: SpecialistRegistry,
     private scheduleStore: ScheduleStore,
     private triageStore: TriageStore,
+    private pluginManager?: PluginManager,
   ) {
     this.deviceQueryServer = createDeviceQueryServer(deviceManager);
     this.deviceCommandServer = createDeviceCommandServer(deviceManager);
     this.memoryServer = createMemoryToolsServer(memoryStore);
     this.reflexServer = createReflexToolsServer(reflexStore);
     this.approvalServer = createApprovalToolsServer(approvalQueue);
-    this.dispatchServer = this.createDispatchServer();
+    this.deepReasonServer = this.createDeepReasonServer();
     this.scheduleServer = createScheduleToolsServer(scheduleStore);
     this.triageServer = createTriageToolsServer(triageStore);
   }
 
-  private createDispatchServer() {
-    const runner = this.specialistRunner;
-    const eventBus = this.eventBus;
-    const domains = this.specialistRegistry.getDomains();
+  private createDeepReasonServer() {
+    const self = this;
 
-    const dispatchToSpecialist = tool(
-      "dispatch_to_specialist",
-      "Dispatch a task to a domain specialist for analysis. The specialist will reason about the situation and propose actions — it will NOT execute them. You decide which specialist(s) to consult and which devices are relevant. Multiple specialists can reason about the same device.",
+    const deepReason = tool(
+      "deep_reason",
+      "Spawn a focused AI analysis for complex problems. Use this for multi-device trade-offs, competing constraints (comfort vs. energy, security vs. convenience), novel situations, or multi-step planning. The agent will use tools to gather information and return analysis with recommended actions. Do NOT use for simple queries, straightforward commands, or when a preference memory already tells you what to do.",
       {
-        specialist: z
-          .enum(domains as [string, ...string[]])
-          .describe("Which specialist to consult"),
-        context: z
+        problem: z
           .string()
-          .describe("Description of the situation for the specialist to analyze"),
-        relevantDeviceIds: z
-          .array(z.string())
-          .describe("Device IDs the specialist should focus on"),
+          .describe("Clear description of the problem to analyze"),
       },
       async (args) => {
-        eventBus.emit("agent:tool_use", {
-          tool: `specialist:${args.specialist}`,
-          input: args,
+        self.eventBus.emit("deep_reason:start", {
+          problem: args.problem,
+          model: self.config.models.deepReason,
           timestamp: Date.now(),
         });
 
-        const result: SpecialistResult = await runner.run(
-          args.specialist as typeof domains[number],
-          args.context,
-          args.relevantDeviceIds,
-        );
+        const analysis = await self.runDeepReasonQuery(args.problem);
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(result, null, 2),
+              text: analysis,
             },
           ],
         };
@@ -106,10 +91,132 @@ export class Coordinator {
     );
 
     return createSdkMcpServer({
-      name: "dispatch",
+      name: "deep-reason",
       version: "1.0.0",
-      tools: [dispatchToSpecialist],
+      tools: [deepReason],
     });
+  }
+
+  private async runDeepReasonQuery(problem: string): Promise<string> {
+    const startTime = Date.now();
+
+    const systemPrompt = `You are a deep reasoning agent for a home automation system. You have access to device query, memory, reflex, schedule, and triage tools — the same tools as the coordinator, except you cannot execute device commands or request approval.
+
+Your job:
+1. Analyze the problem presented to you
+2. Use tools to gather relevant information (device states, memories, schedules, reflexes)
+3. Return a clear analysis with specific, actionable recommendations
+
+Do NOT execute device commands — only analyze and recommend. The coordinator will decide what to execute based on your analysis.
+
+Problem to analyze:
+${problem}`;
+
+    // Same MCP servers as coordinator minus deep-reason (no recursion) and minus approval (we recommend, coordinator decides)
+    const mcpServers = {
+      "device-query": this.deviceQueryServer,
+      memory: this.memoryServer,
+      reflex: this.reflexServer,
+      schedule: this.scheduleServer,
+      triage: this.triageServer,
+    };
+
+    const allowedTools = [
+      "mcp__device-query__*",
+      "mcp__memory__*",
+      "mcp__reflex__*",
+      "mcp__schedule__*",
+      "mcp__triage__*",
+    ];
+
+    async function* createPrompt(text: string): AsyncGenerator<SDKUserMessage> {
+      yield {
+        type: "user" as const,
+        message: {
+          role: "user" as const,
+          content: text,
+        },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+    }
+
+    let result = "";
+
+    try {
+      const conversation = query({
+        prompt: createPrompt(systemPrompt),
+        options: {
+          model: this.config.models.deepReason,
+          maxTurns: this.config.deepReason.maxTurns,
+          mcpServers,
+          allowedTools,
+          permissionMode: "bypassPermissions",
+          ...(this.config.claudeConfigDir
+            ? { env: { ...process.env, CLAUDE_CONFIG_DIR: this.config.claudeConfigDir } }
+            : {}),
+        },
+      });
+
+      for await (const message of conversation) {
+        const msg = message as Record<string, unknown>;
+
+        // Emit tool_use events with deep_reason: prefix for UI visibility
+        if (msg.type === "assistant") {
+          const content = msg.message as { content?: unknown[] } | undefined;
+          if (content?.content) {
+            for (const block of content.content) {
+              const b = block as Record<string, unknown>;
+              if (b.type === "tool_use") {
+                this.eventBus.emit("agent:tool_use", {
+                  tool: `deep_reason:${b.name as string}`,
+                  input: b.input,
+                  timestamp: Date.now(),
+                });
+              }
+            }
+          }
+        }
+
+        if (msg.type === "result") {
+          if (msg.subtype === "success") {
+            result = (msg.result as string) ?? "";
+          } else {
+            result = `Deep reason error: ${(msg.error as string) ?? "Unknown error"}`;
+          }
+
+          const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
+          const durationMs = Date.now() - startTime;
+
+          this.eventBus.emit("deep_reason:result", {
+            problem,
+            analysis: result,
+            model: this.config.models.deepReason,
+            costUsd: (msg.cost_usd as number) ?? 0,
+            inputTokens: usage?.input_tokens ?? 0,
+            outputTokens: usage?.output_tokens ?? 0,
+            durationMs,
+            numTurns: (msg.num_turns as number) ?? 0,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    } catch (error) {
+      result = `Deep reason error: ${error instanceof Error ? error.message : String(error)}`;
+      this.eventBus.emit("deep_reason:result", {
+        problem,
+        analysis: result,
+        model: this.config.models.deepReason,
+        costUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: Date.now() - startTime,
+        numTurns: 0,
+        timestamp: Date.now(),
+      });
+    }
+
+    return result;
   }
 
   enqueueEvent(event: DeviceEvent): void {
@@ -136,14 +243,17 @@ export class Coordinator {
     const context = await this.buildContext();
 
     const prompts: Record<string, string> = {
-      situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. Dispatch to specialists if domain-specific analysis is needed.${BEFORE_ACTING_REMINDER}`,
+      situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason.${BEFORE_ACTING_REMINDER}`,
       reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Review your recent actions and their outcomes. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Also review your event triage configuration. Were you woken up for events you never acted on? Use list_triage_rules to see your current rules, then silence or batch noisy event sources. Were there events you missed because they were batched or silent? Escalate those to immediate.`,
       goal_review: `${context}\n\nGOAL REVIEW: Check your active goals (recall memories of type "goal"). Are you making progress? Should any goals be updated or retired? Are there new goals worth setting based on what you've observed?`,
       daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity. What patterns did you notice? What did you learn? What will you do differently tomorrow? Store your summary as a reflection memory.`,
       schedule: `${context}\n\n${extraContext}\n\nSCHEDULE FIRED: A scheduled task has triggered. Follow the Before Acting protocol, then handle the instruction above. Do NOT create a reflex right now — just handle it. Only promote to a reflex after you've successfully handled this same schedule multiple times and are confident the action never varies.${BEFORE_ACTING_REMINDER}`,
     };
 
-    const prompt = prompts[wakeupType] ?? prompts.situational!;
+    let prompt = prompts[wakeupType] ?? prompts.situational!;
+    if (wakeupType !== "schedule") {
+      prompt += `\n\nFinally, end your response with a one-sentence summary of what you did or observed in this format: <!-- summary: your sentence here -->`;
+    }
     const trigger: TurnTrigger = wakeupType === "schedule" ? "schedule" : "proactive";
     const summary = wakeupType === "schedule"
       ? `Schedule fired: ${extraContext.slice(0, 80)}`
@@ -185,7 +295,7 @@ export class Coordinator {
       )
       .join("\n");
 
-    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nTriage these events. For domain-specific matters, dispatch to the appropriate specialist(s) with the relevant device IDs. For cross-domain coordination, collect specialist proposals and then arbitrate.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}`;
+    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nTriage these events. For complex situations requiring deeper analysis, use deep_reason. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}`;
 
     const summary = events.length === 1
       ? `${events[0]!.deviceId}: ${events[0]!.type}`
@@ -199,13 +309,10 @@ export class Coordinator {
       .map((d) => `${d.name} (${d.id}): ${JSON.stringify(d.state)}`)
       .join("\n");
 
-    const specialists = this.specialistRegistry.toPromptDescription();
-
     return buildSystemPrompt({
       currentTime: new Date().toLocaleString(),
       deviceSummary,
       recentEvents: "See device events below",
-      specialists,
     });
   }
 
@@ -249,7 +356,7 @@ export class Coordinator {
         memory: this.memoryServer,
         reflex: this.reflexServer,
         approval: this.approvalServer,
-        dispatch: this.dispatchServer,
+        "deep-reason": this.deepReasonServer,
         schedule: this.scheduleServer,
         triage: this.triageServer,
       };
@@ -260,10 +367,12 @@ export class Coordinator {
         "mcp__memory__*",
         "mcp__reflex__*",
         "mcp__approval__*",
-        "mcp__dispatch__*",
+        "mcp__deep-reason__*",
         "mcp__schedule__*",
         "mcp__triage__*",
       ];
+
+      const plugins = this.pluginManager?.getEnabledSdkPlugins() ?? [];
 
       const conversation = query({
         prompt: createPrompt(promptText),
@@ -274,6 +383,7 @@ export class Coordinator {
           allowedTools,
           permissionMode: "bypassPermissions",
           includePartialMessages: true,
+          ...(plugins.length > 0 ? { plugins } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),
           ...(this.config.claudeConfigDir
             ? { env: { ...process.env, CLAUDE_CONFIG_DIR: this.config.claudeConfigDir } }
@@ -325,9 +435,17 @@ export class Coordinator {
             result = `Error: ${(msg.error as string) ?? "Unknown error"}`;
           }
 
+          // Extract summary from proactive cycle responses
+          const summaryMatch = result.match(/<!--\s*summary:\s*(.+?)\s*-->/);
+          const cycleSummary = summaryMatch?.[1] ?? null;
+          if (summaryMatch) {
+            result = result.replace(summaryMatch[0], "").trimEnd();
+          }
+
           const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
           this.eventBus.emit("agent:result", {
             result,
+            summary: cycleSummary,
             model: this.config.models.coordinator,
             costUsd: (msg.cost_usd as number) ?? 0,
             inputTokens: usage?.input_tokens ?? 0,

@@ -3,15 +3,16 @@ import ChatPanel from "./components/ChatPanel";
 import DevicePanel from "./components/DevicePanel";
 import MemoryPanel from "./components/MemoryPanel";
 import ReflexPanel from "./components/ReflexPanel";
-import AgentsPanel from "./components/AgentsPanel";
+import ActivityPanel from "./components/ActivityPanel";
 import SchedulesPanel from "./components/SchedulesPanel";
+import PluginsPanel from "./components/PluginsPanel";
 import CycleOverview from "./components/CycleOverview";
 import { trpc } from "./trpc";
 import type { PendingApproval } from "@holms/shared";
 
-type Panel = "dashboard" | "chat" | "agents" | "devices" | "memory" | "reflexes" | "schedules";
+type Panel = "dashboard" | "chat" | "activity" | "devices" | "memory" | "reflexes" | "schedules" | "plugins";
 
-const VALID_PANELS = new Set<string>(["dashboard", "chat", "agents", "devices", "memory", "reflexes", "schedules"]);
+const VALID_PANELS = new Set<string>(["dashboard", "chat", "activity", "devices", "memory", "reflexes", "schedules", "plugins"]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
@@ -21,11 +22,12 @@ function getPanelFromHash(): Panel {
 const NAV_ITEMS: { id: Panel; label: string }[] = [
   { id: "dashboard", label: "Overview" },
   { id: "chat", label: "Chat" },
-  { id: "agents", label: "Agents" },
+  { id: "activity", label: "Activity" },
   { id: "devices", label: "Devices" },
   { id: "memory", label: "Memory" },
   { id: "reflexes", label: "Automations" },
   { id: "schedules", label: "Schedules" },
+  { id: "plugins", label: "Plugins" },
 ];
 
 function NavIcon({ id, active }: { id: Panel; active: boolean }) {
@@ -71,13 +73,10 @@ function NavIcon({ id, active }: { id: Panel; active: boolean }) {
           <path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
         </svg>
       );
-    case "agents":
+    case "activity":
       return (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="4" r="2.5" stroke={color} strokeWidth="1.3" />
-          <circle cx="3" cy="12" r="2" stroke={color} strokeWidth="1.3" />
-          <circle cx="13" cy="12" r="2" stroke={color} strokeWidth="1.3" />
-          <path d="M6.5 6l-2 4.5M9.5 6l2 4.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+          <path d="M1.5 8h3l1.5-5 3 10 1.5-5h3" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
     case "reflexes":
@@ -91,6 +90,12 @@ function NavIcon({ id, active }: { id: Panel; active: boolean }) {
         <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
           <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.3" />
           <path d="M8 4v4.5l3 1.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "plugins":
+      return (
+        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+          <path d="M6.5 2v2.5H4a1 1 0 0 0-1 1V8h2.5a1.5 1.5 0 0 1 0 3H3v2.5a1 1 0 0 0 1 1h2.5V12a1.5 1.5 0 0 1 3 0v2.5H12a1 1 0 0 0 1-1V11h-1a1.5 1.5 0 0 1 0-3h1V5.5a1 1 0 0 0-1-1H9.5V2a1.5 1.5 0 0 0-3 0z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
         </svg>
       );
   }
@@ -293,11 +298,12 @@ export default function App() {
         <div className="flex-1 overflow-hidden">
           {activePanel === "dashboard" && <CycleOverview />}
           {activePanel === "chat" && <ChatPanel />}
-          {activePanel === "agents" && <AgentsPanel />}
+          {activePanel === "activity" && <ActivityPanel />}
           {activePanel === "devices" && <DevicePanel />}
           {activePanel === "memory" && <MemoryPanel />}
           {activePanel === "reflexes" && <ReflexPanel />}
           {activePanel === "schedules" && <SchedulesPanel />}
+          {activePanel === "plugins" && <PluginsPanel />}
         </div>
       </main>
     </div>

@@ -10,7 +10,6 @@ export function buildSystemPrompt(context: {
   currentTime: string;
   deviceSummary: string;
   recentEvents: string;
-  specialists: string;
 }): string {
   const skill = loadPromptFile(skillPath);
 
@@ -21,8 +20,5 @@ export function buildSystemPrompt(context: {
 ## Current Context
 - Time: ${context.currentTime}
 - Devices: ${context.deviceSummary}
-- Recent activity: ${context.recentEvents}
-
-## Available Specialists
-${context.specialists}`;
+- Recent activity: ${context.recentEvents}`;
 }

@@ -5,8 +5,6 @@ import type {
   DeviceCommand,
   ReflexRule,
   PendingApproval,
-  SpecialistDomain,
-  SpecialistProposal,
   Schedule,
   TurnTrigger,
   TriageLane,
@@ -25,6 +23,7 @@ export interface EventBusEvents {
   }) => void;
   "agent:result": (data: {
     result: string;
+    summary?: string | null;
     model?: string;
     costUsd: number;
     inputTokens: number;
@@ -54,23 +53,20 @@ export interface EventBusEvents {
     insight: string;
     timestamp: number;
   }) => void;
-  "specialist:dispatched": (data: {
-    specialist: SpecialistDomain;
-    context: string;
-    deviceIds: string[];
-    model?: string;
+  "deep_reason:start": (data: {
+    problem: string;
+    model: string;
     timestamp: number;
   }) => void;
-  "specialist:result": (data: {
-    specialist: SpecialistDomain;
-    proposals: SpecialistProposal[];
-    reasoning: string;
-    model?: string;
-    costUsd?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-    durationMs?: number;
-    numTurns?: number;
+  "deep_reason:result": (data: {
+    problem: string;
+    analysis: string;
+    model: string;
+    costUsd: number;
+    inputTokens: number;
+    outputTokens: number;
+    durationMs: number;
+    numTurns: number;
     timestamp: number;
   }) => void;
   "agent:turn_start": (data: {

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { trpc } from "../trpc";
 import type { AgentActivity, TurnTrigger, TriageLane } from "@holms/shared";
 import { humanizeToolUse, relativeTime } from "../utils/humanize";
+import MarkdownMessage from "./MarkdownMessage";
 
 // ── Types ──
 
@@ -35,10 +36,10 @@ function describeCurrentAction(activity: AgentActivity): string {
       return "Thinking...";
     case "tool_use":
       return humanizeToolUse(String(d.tool ?? ""), d.input);
-    case "specialist_dispatched":
-      return `Consulting ${d.specialist ?? "specialist"}...`;
-    case "specialist_result":
-      return `${d.specialist ?? "Specialist"} responded`;
+    case "deep_reason_start":
+      return "Deep reasoning...";
+    case "deep_reason_result":
+      return "Deep reasoning complete";
     case "approval_pending":
       return "Waiting for approval...";
     case "reflection":
@@ -113,9 +114,8 @@ const TRIGGER_CONFIG: Record<TurnTrigger, { icon: React.ReactNode; label: string
 
 // ── Main component ──
 
-export default function AgentsPanel() {
+export default function ActivityPanel() {
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(new Set());
-  const [filterAgent, setFilterAgent] = useState<string | null>(null);
   const [rawView, setRawView] = useState<Set<string>>(new Set());
   const [liveTurns, setLiveTurns] = useState<Map<string, Turn>>(new Map);
   const [liveOrphans, setLiveOrphans] = useState<AgentActivity[]>([]);
@@ -123,7 +123,6 @@ export default function AgentsPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const triageIdCounter = useRef(0);
 
-  const { data: statuses } = trpc.agents.status.useQuery(undefined, { refetchInterval: 3000 });
   const { data: historicalTurns } = trpc.agents.turns.useQuery({ limit: 50 });
 
   // Live activity subscription
@@ -240,16 +239,6 @@ export default function AgentsPanel() {
     return entries;
   }, [historicalTurns, liveTurns, liveOrphans, triageClassifications]);
 
-  // Filter by agent involvement
-  const filteredTimeline = useMemo(() => {
-    if (!filterAgent) return timeline;
-    return timeline.filter((entry) => {
-      if (entry.kind === "triage_classify") return filterAgent === "triage";
-      if (entry.kind === "reflex" || entry.kind === "triage") return entry.activity.agentId === filterAgent;
-      return entry.turn.activities.some((a: AgentActivity) => a.agentId === filterAgent);
-    });
-  }, [timeline, filterAgent]);
-
   const toggleTurn = (turnId: string) => {
     setExpandedTurns((prev) => {
       const next = new Set(prev);
@@ -279,7 +268,7 @@ export default function AgentsPanel() {
       >
         <div>
           <div className="text-[15px] font-medium" style={{ color: "var(--white)" }}>
-            Agents
+            Activity
           </div>
           <div className="text-[11px] mt-0.5" style={{ color: "var(--steel)" }}>
             AI reasoning and decision history
@@ -288,45 +277,14 @@ export default function AgentsPanel() {
         <div className="flex items-center gap-2">
           <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
           <div className="text-[11px] tabular-nums" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
-            {filteredTimeline.filter((e) => e.kind === "turn").length} turns
+            {timeline.filter((e) => e.kind === "turn").length} turns
           </div>
         </div>
       </div>
 
-      {/* Agent Status Bar */}
-      {statuses && statuses.length > 0 && (
-        <div
-          className="px-6 py-3 flex gap-2 flex-shrink-0 overflow-x-auto"
-          style={{ borderBottom: "1px solid var(--graphite)", background: "var(--abyss)" }}
-        >
-          <AgentChip
-            key="__all"
-            agentId={null}
-            name="All"
-            role="coordinator"
-            description=""
-            processing={false}
-            active={filterAgent === null}
-            onClick={() => setFilterAgent(null)}
-          />
-          {statuses.map((s) => (
-            <AgentChip
-              key={s.agentId}
-              agentId={s.agentId}
-              name={s.name}
-              role={s.role}
-              description={s.description}
-              processing={s.processing}
-              active={filterAgent === s.agentId}
-              onClick={() => setFilterAgent(filterAgent === s.agentId ? null : s.agentId)}
-            />
-          ))}
-        </div>
-      )}
-
       {/* Timeline */}
       <div className="flex-1 overflow-auto" ref={scrollRef}>
-        {filteredTimeline.length === 0 ? (
+        {timeline.length === 0 ? (
           <div className="empty-state" style={{ paddingTop: "100px" }}>
             <div className="empty-state-icon">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
@@ -345,7 +303,7 @@ export default function AgentsPanel() {
           </div>
         ) : (
           <div className="px-5 py-4 space-y-2">
-            {filteredTimeline.map((entry) => {
+            {timeline.map((entry) => {
               if (entry.kind === "reflex") {
                 return <ReflexRow key={entry.activity.id} activity={entry.activity} />;
               }
@@ -448,59 +406,6 @@ function CycleMenu({ onTrigger, disabled }: { onTrigger: (type: "situational" | 
   );
 }
 
-// ── Agent Status Chip ──
-
-function AgentChip({
-  agentId,
-  name,
-  role,
-  description,
-  processing,
-  active,
-  onClick,
-}: {
-  agentId: string | null;
-  name: string;
-  role: string;
-  description: string;
-  processing: boolean;
-  active: boolean;
-  onClick: () => void;
-}) {
-  const isAll = agentId === null;
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] transition-all duration-150 flex-shrink-0"
-      style={{
-        background: active ? "var(--obsidian)" : "transparent",
-        border: active ? "1px solid var(--graphite)" : "1px solid transparent",
-        color: active ? "var(--white)" : "var(--steel)",
-        boxShadow: active ? "0 1px 3px rgba(0,0,0,0.04)" : "none",
-      }}
-      title={description || undefined}
-    >
-      {!isAll && (
-        <span
-          className="w-[6px] h-[6px] rounded-full flex-shrink-0"
-          style={{
-            background: processing ? "var(--glow)" : "var(--ok)",
-            boxShadow: processing ? "0 0 6px var(--glow)" : "0 0 4px rgba(22,163,74,0.3)",
-            animation: processing ? "pulse-dot 1.5s ease-in-out infinite" : "none",
-          }}
-        />
-      )}
-      <span className="font-medium">{name}</span>
-      {!isAll && role === "specialist" && (
-        <span className="text-[10px] hidden sm:inline" style={{ color: "var(--pewter)" }}>
-          {description.split(",")[0]?.split(":")[0]?.trim().slice(0, 30)}
-        </span>
-      )}
-    </button>
-  );
-}
-
 // ── Turn Card ──
 
 function TurnCard({
@@ -536,8 +441,15 @@ function TurnCard({
   const lastActivity = [...turn.activities].reverse().find((a) => a.type !== "turn_start");
   const currentAction = isProcessing && lastActivity ? describeCurrentAction(lastActivity) : null;
 
-  // Steps: everything except turn_start and thinking
-  const steps = turn.activities.filter((a) => a.type !== "turn_start" && a.type !== "thinking");
+  // Steps: everything except turn_start, thinking, and deep_reason:* tool calls (those are shown nested in deep_reason_result)
+  const steps = turn.activities.filter((a) => {
+    if (a.type === "turn_start" || a.type === "thinking") return false;
+    if (a.type === "tool_use") {
+      const td = a.data as Record<string, unknown>;
+      if (String(td.tool ?? "").startsWith("deep_reason:")) return false;
+    }
+    return true;
+  });
 
   return (
     <div
@@ -661,7 +573,7 @@ function TurnCard({
         >
           <div className="pl-5 space-y-0.5">
             {steps.map((activity) => (
-              <StepRow key={activity.id} activity={activity} />
+              <StepRow key={activity.id} activity={activity} allActivities={turn.activities} />
             ))}
           </div>
 
@@ -697,7 +609,8 @@ function TurnCard({
 
 // ── Step Row ──
 
-function StepRow({ activity }: { activity: AgentActivity }) {
+function StepRow({ activity, allActivities }: { activity: AgentActivity; allActivities?: AgentActivity[] }) {
+  const [expanded, setExpanded] = useState(false);
   const d = activity.data as Record<string, unknown>;
 
   switch (activity.type) {
@@ -716,73 +629,122 @@ function StepRow({ activity }: { activity: AgentActivity }) {
       );
     }
 
-    case "specialist_dispatched": {
-      const specialist = String(d.specialist ?? "");
+    case "deep_reason_start": {
+      const problem = String(d.problem ?? "");
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="4" r="2" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M2 10c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+              <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.4" />
+              <path d="M6 1.5v1M6 9.5v1M1.5 6h1M9.5 6h1" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" />
             </svg>
           </span>
           <span className="text-[12px]" style={{ color: "var(--silver)" }}>
-            Consulted{" "}
-            <span
-              className="badge"
-              style={{ background: "var(--info-dim)", color: "var(--info)" }}
-            >
-              {specialist}
+            Deep reasoning:{" "}
+            <span style={{ color: "var(--steel)" }}>
+              {problem.slice(0, 120)}{problem.length > 120 ? "..." : ""}
             </span>
           </span>
         </div>
       );
     }
 
-    case "specialist_result": {
-      const specialist = String(d.specialist ?? "");
-      const reasoning = String(d.reasoning ?? "");
-      const proposals = (d.proposals ?? []) as Array<Record<string, unknown>>;
+    case "deep_reason_result": {
+      const analysis = String(d.analysis ?? "");
+      const model = d.model as string | undefined;
+      const costUsd = d.costUsd as number | undefined;
+      const inTok = d.inputTokens as number | undefined;
+      const outTok = d.outputTokens as number | undefined;
+      const numTurns = d.numTurns as number | undefined;
+
+      // Collect deep_reason:* tool calls from this turn
+      const deepReasonTools = (allActivities ?? []).filter((s) => {
+        if (s.type !== "tool_use") return false;
+        const td = s.data as Record<string, unknown>;
+        return String(td.tool ?? "").startsWith("deep_reason:");
+      });
+
       return (
         <div className="py-1.5">
-          <div className="flex items-start gap-2">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full text-left flex items-start gap-2"
+          >
             <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+                <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.4" />
+                <path d="M6 1.5v1M6 9.5v1M1.5 6h1M9.5 6h1" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" />
               </svg>
             </span>
-            <div className="text-[12px]" style={{ color: "var(--silver)" }}>
-              <span className="font-medium" style={{ color: "var(--mist)" }}>
-                {specialist} result
-              </span>
-              {reasoning && (
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] flex items-center gap-1.5" style={{ color: "var(--silver)" }}>
+                <span className="font-medium" style={{ color: "var(--mist)" }}>
+                  Deep reasoning result
+                </span>
+                <svg
+                  width="10" height="10" viewBox="0 0 10 10" fill="none"
+                  className="flex-shrink-0 transition-transform duration-150"
+                  style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+                >
+                  <path d="M3.5 2l3 3-3 3" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              </div>
+              {!expanded && analysis && (
                 <div className="mt-0.5 text-[11px]" style={{ color: "var(--steel)" }}>
-                  {reasoning.slice(0, 150)}{reasoning.length > 150 ? "..." : ""}
+                  {analysis.slice(0, 200)}{analysis.length > 200 ? "..." : ""}
                 </div>
               )}
-              {proposals.length > 0 && (
-                <div className="mt-1.5 space-y-1">
-                  {proposals.map((p, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-2 text-[11px] px-2 py-1 rounded"
-                      style={{ background: "var(--abyss)", border: "1px solid var(--graphite)" }}
-                    >
-                      <ConfidencePill confidence={String(p.confidence ?? "medium")} />
-                      <span style={{ color: "var(--mist)" }}>
-                        {String(p.command ?? p.reason ?? "Proposal")}
-                      </span>
-                      {p.deviceId != null && (
-                        <span style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-                          {String(p.deviceId)}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="flex items-center gap-2 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
+                {model && <span>{model}</span>}
+                {costUsd != null && costUsd > 0 && <span>${costUsd.toFixed(4)}</span>}
+                {(inTok != null && inTok > 0 || outTok != null && outTok > 0) && (
+                  <span>{((inTok ?? 0) + (outTok ?? 0)).toLocaleString()} tok</span>
+                )}
+                {numTurns != null && numTurns > 0 && <span>{numTurns} turn{numTurns !== 1 ? "s" : ""}</span>}
+              </div>
             </div>
-          </div>
+          </button>
+
+          {expanded && (
+            <div
+              className="mt-2 ml-5 rounded-lg overflow-hidden"
+              style={{ border: "1px solid var(--graphite)", background: "var(--abyss)" }}
+            >
+              {/* Nested tool calls */}
+              {deepReasonTools.length > 0 && (
+                <div className="px-3 pt-2 pb-1 space-y-0.5" style={{ borderBottom: "1px solid var(--graphite)" }}>
+                  <div className="text-[10px] font-medium mb-1" style={{ color: "var(--pewter)" }}>
+                    Tools used
+                  </div>
+                  {deepReasonTools.map((step) => {
+                    const td = step.data as Record<string, unknown>;
+                    const toolName = String(td.tool ?? "").replace(/^deep_reason:/, "");
+                    const label = humanizeToolUse(toolName, td.input);
+                    return (
+                      <div key={step.id} className="flex items-center gap-1.5 text-[11px] py-0.5">
+                        <span style={{ color: "var(--glow-bright)" }}>
+                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                            <path d="M7 2L4 6h3L5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </span>
+                        <span style={{ color: "var(--silver)" }}>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Full analysis */}
+              <div
+                className="p-3 text-[11px] overflow-auto"
+                style={{ color: "var(--silver)", maxHeight: "400px", lineHeight: 1.5 }}
+              >
+                <MarkdownMessage content={analysis} />
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -915,26 +877,6 @@ function StepRow({ activity }: { activity: AgentActivity }) {
         </div>
       );
   }
-}
-
-// ── Confidence Pill ──
-
-function ConfidencePill({ confidence }: { confidence: string }) {
-  const colors = {
-    high: { bg: "var(--ok-dim)", color: "var(--ok)" },
-    medium: { bg: "var(--warn-dim)", color: "var(--warn)" },
-    low: { bg: "var(--err-dim)", color: "var(--err)" },
-  };
-  const c = colors[confidence as keyof typeof colors] ?? colors.medium;
-
-  return (
-    <span
-      className="badge flex-shrink-0"
-      style={{ background: c.bg, color: c.color, fontSize: "9px", padding: "1px 6px" }}
-    >
-      {confidence}
-    </span>
-  );
 }
 
 // ── Triage Classify Row ──

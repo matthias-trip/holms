@@ -7,8 +7,8 @@ import type { Coordinator } from "../coordinator/coordinator.js";
 import type { ApprovalQueue } from "../coordinator/approval-queue.js";
 import type { EventBus } from "../event-bus.js";
 import type { ScheduleStore } from "../schedule/store.js";
-import type { SpecialistRegistry } from "../specialists/registry.js";
 import type { ProactiveScheduler } from "../scheduler/proactive.js";
+import type { PluginManager } from "../plugins/manager.js";
 
 export interface TRPCContext {
   deviceManager: DeviceManager;
@@ -20,8 +20,8 @@ export interface TRPCContext {
   approvalQueue: ApprovalQueue;
   eventBus: EventBus;
   scheduleStore: ScheduleStore;
-  specialistRegistry: SpecialistRegistry;
   scheduler: ProactiveScheduler;
+  pluginManager: PluginManager;
 }
 
 export function createContext(deps: TRPCContext): TRPCContext {

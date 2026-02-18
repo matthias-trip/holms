@@ -100,6 +100,7 @@ function getResultData(turn: Turn) {
   const d = resultActivity.data as Record<string, unknown>;
   return {
     text: String(d.result ?? ""),
+    summary: (d.summary as string | null) ?? null,
     costUsd: d.costUsd as number | undefined,
     inputTokens: d.inputTokens as number | undefined,
     outputTokens: d.outputTokens as number | undefined,
@@ -383,7 +384,7 @@ function CycleCard({
           {/* Result preview (collapsed) */}
           {!isProcessing && result && !expanded && (
             <div className="text-[12px] mt-1 truncate" style={{ color: "var(--steel)" }}>
-              {result.text.slice(0, 140)}
+              {result.summary ?? result.text.slice(0, 140)}
             </div>
           )}
         </div>

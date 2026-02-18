@@ -10,14 +10,12 @@ const TYPE_CONFIG: Record<string, { color: string; bg: string; label: string }> 
 };
 
 function formatToolName(raw: string): string {
-  // specialist:lighting:mcp__memory-lighting__recall_multi → recall multi (lighting)
-  const specMatch = raw.match(/^specialist:([^:]+):(.+)$/);
-  if (specMatch) {
-    const inner = formatToolName(specMatch[2]!);
-    return `${inner} [${specMatch[1]}]`;
+  // deep_reason:mcp__memory__recall → recall [deep reason]
+  const drMatch = raw.match(/^deep_reason:(.+)$/);
+  if (drMatch) {
+    const inner = formatToolName(drMatch[1]!);
+    return `${inner} [deep reason]`;
   }
-  // specialist:lighting → lighting specialist
-  if (raw.startsWith("specialist:")) return `${raw.slice(11)} specialist`;
   // mcp__device-query__list_devices → list devices
   const mcpMatch = raw.match(/^mcp__[^_]+(?:-[^_]+)*__(.+)$/);
   if (mcpMatch) return mcpMatch[1]!.replace(/_/g, " ");

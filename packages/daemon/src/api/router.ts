@@ -8,6 +8,7 @@ import { chatRouter } from "./routers/chat.js";
 import { approvalRouter } from "./routers/approval.js";
 import { scheduleRouter } from "./routers/schedule.js";
 import { agentsRouter } from "./routers/agents.js";
+import { pluginsRouter } from "./routers/plugins.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -20,6 +21,7 @@ export const appRouter = t.router({
   approval: approvalRouter,
   schedule: scheduleRouter,
   agents: agentsRouter,
+  plugins: pluginsRouter,
 });
 
 export type AppRouter = typeof appRouter;

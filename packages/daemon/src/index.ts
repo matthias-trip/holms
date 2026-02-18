@@ -11,11 +11,10 @@ import { ApprovalQueue } from "./coordinator/approval-queue.js";
 import { OutcomeObserver } from "./coordinator/outcome-observer.js";
 import { Coordinator } from "./coordinator/coordinator.js";
 import { ProactiveScheduler } from "./scheduler/proactive.js";
-import { SpecialistRegistry, registerDefaultSpecialists } from "./specialists/registry.js";
-import { SpecialistRunner } from "./specialists/runner.js";
 import { ScheduleStore } from "./schedule/store.js";
 import { TriageStore } from "./triage/store.js";
 import { TriageEngine } from "./triage/engine.js";
+import { PluginManager } from "./plugins/manager.js";
 import { startApiServer } from "./api/server.js";
 import { initActivityPersistence } from "./api/routers/chat.js";
 
@@ -55,12 +54,10 @@ async function main() {
     config.coordinator.observationWindowMs,
   );
 
-  // 8. Init SpecialistRegistry + Runner
-  const specialistRegistry = new SpecialistRegistry();
-  registerDefaultSpecialists(specialistRegistry);
-  const specialistRunner = new SpecialistRunner(deviceManager, memoryStore, eventBus, config);
+  // 7b. Init PluginManager
+  const pluginManager = new PluginManager(config.pluginsDir, config.pluginsStatePath);
 
-  // 9. Init Coordinator
+  // 8. Init Coordinator
   const coordinator = new Coordinator(
     eventBus,
     deviceManager,
@@ -69,10 +66,9 @@ async function main() {
     approvalQueue,
     outcomeObserver,
     config,
-    specialistRunner,
-    specialistRegistry,
     scheduleStore,
     triageStore,
+    pluginManager,
   );
 
   // 9b. Init TriageEngine
@@ -165,8 +161,8 @@ async function main() {
       approvalQueue,
       eventBus,
       scheduleStore,
-      specialistRegistry,
       scheduler,
+      pluginManager,
     },
     config.apiPort,
   );

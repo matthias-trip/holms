@@ -14,29 +14,16 @@ export function humanizeToolUse(tool: string, input: unknown): string {
     const queries = inp.queries as string[] | undefined;
     return queries ? `Recalled memories about ${queries.join(", ")}` : "Recalled memories (multi)";
   }
-  if (tool.match(/^mcp__memory-\w+__remember$/)) {
-    const scope = tool.match(/^mcp__memory-(\w+)__/)?.[1] ?? "scoped";
-    return `Stored ${scope} memory: ${inp.key ?? ""}`;
-  }
-  if (tool.match(/^mcp__memory-\w+__recall$/)) {
-    const scope = tool.match(/^mcp__memory-(\w+)__/)?.[1] ?? "scoped";
-    return `Recalled ${scope} memories about ${inp.query ?? ""}`;
-  }
-  if (tool.match(/^mcp__memory-\w+__recall_multi$/)) {
-    const scope = tool.match(/^mcp__memory-(\w+)__/)?.[1] ?? "scoped";
-    const queries = inp.queries as string[] | undefined;
-    return queries ? `Recalled ${scope} memories about ${queries.join(", ")}` : `Recalled ${scope} memories (multi)`;
-  }
-  if (tool === "mcp__dispatch__dispatch_to_specialist") return `Consulted ${inp.specialist ?? "specialist"} specialist`;
+  if (tool === "mcp__deep-reason__deep_reason") return `Deep reasoning: ${(inp.problem as string)?.slice(0, 60) ?? "analyzing"}`;
   if (tool === "mcp__reflex__create_reflex") return "Created automation rule";
   if (tool === "mcp__triage__set_triage_rule") return `Set triage rule: ${inp.lane ?? "rule"}`;
   if (tool === "mcp__triage__list_triage_rules") return "Listed triage rules";
   if (tool === "mcp__triage__remove_triage_rule") return "Removed triage rule";
   if (tool === "mcp__triage__toggle_triage_rule") return `${inp.enabled ? "Enabled" : "Disabled"} triage rule`;
   if (tool.startsWith("mcp__schedule__")) return "Managed schedule";
-  if (tool.startsWith("specialist:")) {
-    const parts = tool.split(":");
-    return `${parts[1] ?? "specialist"}: ${parts[2] ?? "action"}`;
+  if (tool.startsWith("deep_reason:")) {
+    const inner = tool.slice("deep_reason:".length);
+    return `Deep reason: ${inner.replace(/^mcp__[^_]+(?:-[^_]+)*__/, "").replace(/_/g, " ")}`;
   }
   // Strip mcp__ prefix for readability
   if (tool.startsWith("mcp__")) {
@@ -53,8 +40,6 @@ export function isWriteAction(tool: string): boolean {
   if (tool === "mcp__device-query__get_device") return false;
   if (tool === "mcp__memory__recall") return false;
   if (tool === "mcp__memory__recall_multi") return false;
-  if (tool.match(/^mcp__memory-\w+__recall$/)) return false;
-  if (tool.match(/^mcp__memory-\w+__recall_multi$/)) return false;
   if (tool === "mcp__triage__list_triage_rules") return false;
   return true;
 }
