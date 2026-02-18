@@ -1,5 +1,9 @@
 # Holms
 
+<p align="center">
+  <img src="assets/appicon.png" width="128" alt="Holms" />
+</p>
+
 AI-driven home automation coordinator powered by Claude. Instead of rigid if-then rules, Holms uses an LLM agent that observes your home, learns your preferences over time, and acts autonomously — while deferring to you on anything it's unsure about.
 
 ## How it works
@@ -9,22 +13,29 @@ A daemon process connects to your smart home devices and feeds events to a Claud
 ### The agent loop
 
 ```
-Device events arrive → batched and sent to Claude agent
-                           ↓
-                    Agent reasons about events
-                           ↓
-              ┌────────────┼────────────────┐
-              ↓            ↓                ↓
-          Routine       Novel           Critical
-        (just do it)  (do it, note    (propose action,
-                       it's new)      wait for approval)
-              ↓            ↓                ↓
-         Execute      Execute +        ApprovalQueue
-         command      remember          → Frontend
-              ↓            ↓                ↓
-           OutcomeObserver watches for user reversals
-              ↓
-         If reversed → feed back to agent for learning
+Device event arrives
+       ↓
+  ┌────┴────┐
+  ↓         ↓
+Reflex    Triage engine classifies event
+Engine    (immediate / batch / silent)
+(instant)        ↓
+            Coordinator receives event(s)
+                 ↓
+          Agent recalls memories & reasons
+                 ↓
+          ┌──────┼──────────────┐
+          ↓      ↓              ↓
+      Routine  Novel        Uncertain
+      (act)    (act +       (propose action,
+               remember)    wait for approval)
+          ↓      ↓              ↓
+          ↓  Deep reason   ApprovalQueue
+          ↓  if complex     → Frontend
+          ↓      ↓              ↓
+       OutcomeObserver watches for reversals
+                 ↓
+       If reversed → feedback → agent learns
 ```
 
 ### Memory & learning
