@@ -2,17 +2,22 @@ import { useState } from "react";
 import { trpc } from "../trpc";
 import type { PendingApproval } from "@holms/shared";
 
-const CONFIDENCE_CONFIG: Record<string, { color: string; bg: string }> = {
-  high: { color: "var(--ok)", bg: "var(--ok-dim)" },
-  medium: { color: "var(--warn)", bg: "var(--warn-dim)" },
-  low: { color: "var(--err)", bg: "var(--err-dim)" },
-};
-
-const CATEGORY_CONFIG: Record<string, { color: string; bg: string }> = {
-  routine: { color: "var(--ok)", bg: "var(--ok-dim)" },
-  novel: { color: "var(--warn)", bg: "var(--warn-dim)" },
-  critical: { color: "var(--err)", bg: "var(--err-dim)" },
-};
+function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
+  const p = params as Record<string, unknown>;
+  // Try to produce a human-readable description
+  if (command.startsWith("set_")) {
+    const prop = command.replace("set_", "").replace(/_/g, " ");
+    const val = Object.values(p)[0];
+    const valStr = typeof val === "number" ? `${val}%` : String(val);
+    return `Set ${deviceId} ${prop} to ${valStr}`;
+  }
+  if (command === "turn_on") return `Turn on ${deviceId}`;
+  if (command === "turn_off") return `Turn off ${deviceId}`;
+  if (command === "lock") return `Lock ${deviceId}`;
+  if (command === "unlock") return `Unlock ${deviceId}`;
+  // Fallback: readable command + device
+  return `${command.replace(/_/g, " ")} on ${deviceId}`;
+}
 
 export default function ApprovalPanel() {
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
@@ -36,7 +41,7 @@ export default function ApprovalPanel() {
   return (
     <div className="p-4 h-full flex flex-col">
       <div className="flex items-center gap-3 mb-3">
-        <span className="section-label">Approvals</span>
+        <span className="section-label">Needs Your OK</span>
         {pending && pending.length > 0 && (
           <span
             className="badge"
@@ -57,7 +62,7 @@ export default function ApprovalPanel() {
               </svg>
             </div>
             <div className="empty-state-text">
-              No actions need approval. The coordinator will request permission for novel or critical operations.
+              All clear! The assistant will ask for your OK before doing anything unusual or important.
             </div>
           </div>
         ) : (
@@ -108,29 +113,23 @@ function ApprovalCard({
   onReject: () => void;
   isLoading: boolean;
 }) {
-  const catCfg = CATEGORY_CONFIG[item.category] ?? { color: "var(--steel)", bg: "var(--graphite)" };
-  const confCfg = CONFIDENCE_CONFIG[item.confidence] ?? { color: "var(--steel)", bg: "var(--graphite)" };
-
   return (
     <div
       className="rounded-xl p-4 animate-fade-in"
       style={{
         background: "var(--obsidian)",
-        border: `1px solid ${item.category === "critical" ? "rgba(248,113,113,0.2)" : "var(--graphite)"}`,
+        border: "1px solid var(--graphite)",
         animationDelay: `${index * 60}ms`,
       }}
     >
-      {/* Category + confidence badges */}
+      {/* Time */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="badge" style={{ background: catCfg.bg, color: catCfg.color }}>
-          {item.category}
-        </span>
-        <span className="badge" style={{ background: confCfg.bg, color: confCfg.color }}>
-          {item.confidence}
+        <span className="badge" style={{ background: "var(--warn-dim)", color: "var(--warn)" }}>
+          Awaiting approval
         </span>
         <span
           className="text-[10px] ml-auto"
-          style={{ fontFamily: "var(--font-mono)", color: "var(--pewter)" }}
+          style={{ color: "var(--pewter)" }}
         >
           {new Date(item.createdAt).toLocaleTimeString()}
         </span>
@@ -140,20 +139,13 @@ function ApprovalCard({
       <div
         className="rounded-lg p-3 mb-3"
         style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: "11px",
+          fontSize: "12px",
           background: "var(--abyss)",
           border: "1px solid var(--graphite)",
+          color: "var(--frost)",
         }}
       >
-        <div style={{ color: "var(--mist)" }}>
-          <span style={{ color: "var(--glow-bright)" }}>{item.command}</span>
-          <span style={{ color: "var(--pewter)" }}>(</span>
-          <span style={{ color: "var(--warn)" }}>{JSON.stringify(item.params)}</span>
-          <span style={{ color: "var(--pewter)" }}>)</span>
-          <span style={{ color: "var(--pewter)" }}> → </span>
-          <span style={{ color: "var(--info)" }}>{item.deviceId}</span>
-        </div>
+        {formatApprovalAction(item.command, item.params, item.deviceId)}
       </div>
 
       {/* Reason */}
@@ -168,13 +160,12 @@ function ApprovalCard({
           disabled={isLoading}
           className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer"
           style={{
-            fontFamily: "var(--font-mono)",
             background: "var(--ok-dim)",
             color: "var(--ok)",
-            border: "1px solid rgba(52,211,153,0.2)",
+            border: "1px solid rgba(22,163,74,0.15)",
           }}
         >
-          ✓ Approve
+          Approve
         </button>
         <input
           value={rejectReason}
@@ -188,13 +179,12 @@ function ApprovalCard({
           disabled={isLoading}
           className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer"
           style={{
-            fontFamily: "var(--font-mono)",
             background: "var(--err-dim)",
             color: "var(--err)",
-            border: "1px solid rgba(248,113,113,0.2)",
+            border: "1px solid rgba(220,38,38,0.15)",
           }}
         >
-          ✕ Reject
+          Reject
         </button>
       </div>
     </div>

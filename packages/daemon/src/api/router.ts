@@ -6,6 +6,8 @@ import { memoryRouter } from "./routers/memory.js";
 import { reflexRouter } from "./routers/reflex.js";
 import { chatRouter } from "./routers/chat.js";
 import { approvalRouter } from "./routers/approval.js";
+import { scheduleRouter } from "./routers/schedule.js";
+import { agentsRouter } from "./routers/agents.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -16,6 +18,8 @@ export const appRouter = t.router({
   reflex: reflexRouter,
   chat: chatRouter,
   approval: approvalRouter,
+  schedule: scheduleRouter,
+  agents: agentsRouter,
 });
 
 export type AppRouter = typeof appRouter;

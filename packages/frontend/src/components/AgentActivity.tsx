@@ -1,20 +1,34 @@
 import { useState } from "react";
-import { trpc } from "../trpc";
 import type { AgentActivity as ActivityType } from "@holms/shared";
 
 const TYPE_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  thinking: { color: "var(--warn)", bg: "var(--warn-dim)", label: "THK" },
-  tool_use: { color: "var(--glow-bright)", bg: "var(--glow-wash)", label: "MCP" },
-  result: { color: "var(--ok)", bg: "var(--ok-dim)", label: "RES" },
-  reflection: { color: "#f472b6", bg: "rgba(244,114,182,0.1)", label: "RFL" },
-  outcome: { color: "var(--info)", bg: "var(--info-dim)", label: "OUT" },
+  thinking: { color: "var(--warm)", bg: "var(--warm-wash)", label: "Thinking" },
+  tool_use: { color: "var(--glow-bright)", bg: "var(--glow-wash)", label: "Tool" },
+  result: { color: "var(--ok)", bg: "var(--ok-dim)", label: "Result" },
+  reflection: { color: "#db2777", bg: "rgba(219,39,119,0.08)", label: "Reflection" },
+  outcome: { color: "var(--info)", bg: "var(--info-dim)", label: "Outcome" },
 };
+
+function formatToolName(raw: string): string {
+  // specialist:lighting:mcp__memory-lighting__recall_multi → recall multi (lighting)
+  const specMatch = raw.match(/^specialist:([^:]+):(.+)$/);
+  if (specMatch) {
+    const inner = formatToolName(specMatch[2]!);
+    return `${inner} [${specMatch[1]}]`;
+  }
+  // specialist:lighting → lighting specialist
+  if (raw.startsWith("specialist:")) return `${raw.slice(11)} specialist`;
+  // mcp__device-query__list_devices → list devices
+  const mcpMatch = raw.match(/^mcp__[^_]+(?:-[^_]+)*__(.+)$/);
+  if (mcpMatch) return mcpMatch[1]!.replace(/_/g, " ");
+  return raw.replace(/_/g, " ");
+}
 
 function formatActivity(a: ActivityType): string {
   const d = a.data as Record<string, unknown>;
   switch (a.type) {
     case "tool_use":
-      return String(d.tool ?? "unknown");
+      return formatToolName(String(d.tool ?? "unknown"));
     case "result":
       return String(d.result ?? "").slice(0, 80) || "Completed";
     case "thinking":
@@ -28,15 +42,8 @@ function formatActivity(a: ActivityType): string {
   }
 }
 
-export default function AgentActivity() {
-  const [activities, setActivities] = useState<ActivityType[]>([]);
+export default function AgentActivity({ activities }: { activities: ActivityType[] }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  trpc.chat.onActivity.useSubscription(undefined, {
-    onData: (activity) => {
-      setActivities((prev) => [...prev.slice(-99), activity]);
-    },
-  });
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -50,11 +57,11 @@ export default function AgentActivity() {
   return (
     <div className="p-4 h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
-        <span className="section-label">Agent Activity</span>
+        <span className="section-label">Assistant Activity</span>
         {activities.length > 0 && (
           <span
             className="text-[10px] tabular-nums"
-            style={{ fontFamily: "var(--font-mono)", color: "var(--pewter)" }}
+            style={{ color: "var(--pewter)" }}
           >
             {activities.length} events
           </span>
@@ -79,12 +86,12 @@ export default function AgentActivity() {
               </svg>
             </div>
             <div className="empty-state-text">
-              Agent reasoning and tool calls will appear here when the coordinator is active.
+              Assistant reasoning and actions will appear here when active.
             </div>
           </div>
         ) : (
           <div className="space-y-px">
-            {activities.map((a) => {
+            {[...activities].reverse().map((a) => {
               const cfg = TYPE_CONFIG[a.type] ?? { color: "var(--steel)", bg: "var(--graphite)", label: "?" };
               const isExpanded = expanded.has(a.id);
 

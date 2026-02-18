@@ -1,9 +1,15 @@
 import { EventEmitter } from "events";
 import type {
+  AgentActivity,
   DeviceEvent,
   DeviceCommand,
   ReflexRule,
   PendingApproval,
+  SpecialistDomain,
+  SpecialistProposal,
+  Schedule,
+  TurnTrigger,
+  TriageLane,
 } from "@holms/shared";
 
 export interface EventBusEvents {
@@ -19,7 +25,12 @@ export interface EventBusEvents {
   }) => void;
   "agent:result": (data: {
     result: string;
-    cost: number;
+    model?: string;
+    costUsd: number;
+    inputTokens: number;
+    outputTokens: number;
+    durationMs: number;
+    numTurns: number;
     timestamp: number;
   }) => void;
   "reflex:triggered": (data: {
@@ -43,6 +54,56 @@ export interface EventBusEvents {
     insight: string;
     timestamp: number;
   }) => void;
+  "specialist:dispatched": (data: {
+    specialist: SpecialistDomain;
+    context: string;
+    deviceIds: string[];
+    model?: string;
+    timestamp: number;
+  }) => void;
+  "specialist:result": (data: {
+    specialist: SpecialistDomain;
+    proposals: SpecialistProposal[];
+    reasoning: string;
+    model?: string;
+    costUsd?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    durationMs?: number;
+    numTurns?: number;
+    timestamp: number;
+  }) => void;
+  "agent:turn_start": (data: {
+    turnId: string;
+    trigger: TurnTrigger;
+    summary: string;
+    model?: string;
+    timestamp: number;
+  }) => void;
+  "schedule:fired": (data: { schedule: Schedule; timestamp: number }) => void;
+  "chat:token": (data: {
+    token: string;
+    messageId: string;
+    timestamp: number;
+  }) => void;
+  "chat:stream_end": (data: {
+    messageId: string;
+    content: string;
+    timestamp: number;
+  }) => void;
+  "agent:triage_classify": (data: {
+    deviceId: string;
+    eventType: string;
+    lane: TriageLane;
+    ruleId: string | null;
+    reason: string;
+    timestamp: number;
+  }) => void;
+  "agent:triage_batch": (data: {
+    eventCount: number;
+    timestamp: number;
+  }) => void;
+  "activity:stored": (activity: AgentActivity) => void;
 }
 
 export class EventBus {

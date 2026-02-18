@@ -4,6 +4,7 @@ import type { DeviceProvider } from "./types.js";
 export class DeviceManager {
   private providers: DeviceProvider[] = [];
   private listeners: Array<(event: DeviceEvent) => void> = [];
+  private commandListeners: Array<(deviceId: string, command: string) => void> = [];
 
   registerProvider(provider: DeviceProvider): void {
     this.providers.push(provider);
@@ -39,6 +40,10 @@ export class DeviceManager {
     this.listeners.push(callback);
   }
 
+  onCommandExecuted(callback: (deviceId: string, command: string) => void): void {
+    this.commandListeners.push(callback);
+  }
+
   async executeCommand(
     deviceId: string,
     command: string,
@@ -47,7 +52,13 @@ export class DeviceManager {
     for (const provider of this.providers) {
       const devices = await provider.getDevices();
       if (devices.some((d) => d.id === deviceId)) {
-        return provider.executeCommand(deviceId, command, params);
+        const result = await provider.executeCommand(deviceId, command, params);
+        if (result.success) {
+          for (const listener of this.commandListeners) {
+            listener(deviceId, command);
+          }
+        }
+        return result;
       }
     }
     return { success: false, error: `No provider found for device: ${deviceId}` };

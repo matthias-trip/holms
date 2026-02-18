@@ -30,7 +30,7 @@ export function createMemoryToolsServer(store: MemoryStore) {
         .describe("Tags for categorization"),
     },
     async (args) => {
-      const memory = store.remember(args.key, args.content, args.type, args.tags);
+      const memory = store.remember(args.key, args.content, args.type, args.tags, null);
       return {
         content: [
           {
@@ -44,7 +44,7 @@ export function createMemoryToolsServer(store: MemoryStore) {
 
   const recall = tool(
     "recall",
-    "Search memories by keyword. Returns all memories whose key, content, or tags match the query.",
+    "Search memories by keyword. Returns all memories whose key, content, or tags match the query. For searching multiple terms at once (e.g., device name, room, and device ID), prefer `recall_multi` instead.",
     {
       query: z.string().describe("Search query to find relevant memories"),
     },
@@ -56,6 +56,39 @@ export function createMemoryToolsServer(store: MemoryStore) {
             {
               type: "text" as const,
               text: "No memories found matching that query.",
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(memories, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  const recallMulti = tool(
+    "recall_multi",
+    "Search memories by multiple keywords at once and return deduplicated results. Use this instead of calling `recall` multiple times — pass device name, room name, and device ID together. You MUST call this (or `recall`) before any device command to check for user preferences.",
+    {
+      queries: z
+        .array(z.string())
+        .describe(
+          "Array of search terms to match against memory keys, content, and tags (e.g., ['Kitchen Light', 'kitchen', 'light-kitchen-1'])",
+        ),
+    },
+    async (args) => {
+      const memories = store.recallMulti(args.queries);
+      if (memories.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No memories found matching any of the queries.",
             },
           ],
         };
@@ -95,6 +128,113 @@ export function createMemoryToolsServer(store: MemoryStore) {
   return createSdkMcpServer({
     name: "memory",
     version: "1.0.0",
-    tools: [remember, recall, forget],
+    tools: [remember, recall, recallMulti, forget],
+  });
+}
+
+export function createScopedMemoryToolsServer(store: MemoryStore, scope: string) {
+  const remember = tool(
+    "remember",
+    `Store a memory scoped to the "${scope}" domain. Memories are automatically tagged with this scope. Types: observation, preference, pattern, goal, reflection, plan.`,
+    {
+      key: z
+        .string()
+        .describe("Unique key for this memory"),
+      content: z.string().describe("The memory content to store"),
+      type: z
+        .enum([
+          "observation",
+          "preference",
+          "pattern",
+          "goal",
+          "reflection",
+          "plan",
+        ])
+        .describe("Type of memory"),
+      tags: z
+        .array(z.string())
+        .optional()
+        .default([])
+        .describe("Tags for categorization"),
+    },
+    async (args) => {
+      store.remember(args.key, args.content, args.type, args.tags, scope);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Stored ${scope}-scoped memory "${args.key}" (${args.type}): ${args.content}`,
+          },
+        ],
+      };
+    },
+  );
+
+  const recall = tool(
+    "recall",
+    `Search memories relevant to the "${scope}" domain. Returns both domain-scoped and shared (unscoped) memories. For searching multiple terms at once (e.g., device name, room, and device ID), prefer \`recall_multi\` instead.`,
+    {
+      query: z.string().describe("Search query to find relevant memories"),
+    },
+    async (args) => {
+      const memories = store.recallScoped(args.query, [scope]);
+      if (memories.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No memories found matching that query.",
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(memories, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  const recallMulti = tool(
+    "recall_multi",
+    `Search memories by multiple keywords at once and return deduplicated results, scoped to the "${scope}" domain. Use this instead of calling \`recall\` multiple times — pass device name, room name, and device ID together. You MUST call this (or \`recall\`) before any device command to check for user preferences.`,
+    {
+      queries: z
+        .array(z.string())
+        .describe(
+          "Array of search terms to match against memory keys, content, and tags (e.g., ['Kitchen Light', 'kitchen', 'light-kitchen-1'])",
+        ),
+    },
+    async (args) => {
+      const memories = store.recallScopedMulti(args.queries, [scope]);
+      if (memories.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No memories found matching any of the queries.",
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(memories, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  return createSdkMcpServer({
+    name: `memory-${scope}`,
+    version: "1.0.0",
+    tools: [remember, recall, recallMulti],
   });
 }

@@ -2,6 +2,8 @@ import { loadConfig } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { MemoryStore } from "./memory/store.js";
 import { ReflexStore } from "./reflex/store.js";
+import { ChatStore } from "./chat/store.js";
+import { ActivityStore } from "./activity/store.js";
 import { ReflexEngine } from "./reflex/engine.js";
 import { DeviceManager } from "./devices/manager.js";
 import { DummyProvider } from "./devices/providers/dummy.js";
@@ -9,8 +11,13 @@ import { ApprovalQueue } from "./coordinator/approval-queue.js";
 import { OutcomeObserver } from "./coordinator/outcome-observer.js";
 import { Coordinator } from "./coordinator/coordinator.js";
 import { ProactiveScheduler } from "./scheduler/proactive.js";
-import { SpecialistRegistry } from "./specialists/registry.js";
+import { SpecialistRegistry, registerDefaultSpecialists } from "./specialists/registry.js";
+import { SpecialistRunner } from "./specialists/runner.js";
+import { ScheduleStore } from "./schedule/store.js";
+import { TriageStore } from "./triage/store.js";
+import { TriageEngine } from "./triage/engine.js";
 import { startApiServer } from "./api/server.js";
+import { initActivityPersistence } from "./api/routers/chat.js";
 
 async function main() {
   console.log("🏠 Holms — AI-Driven Home Automation");
@@ -25,6 +32,10 @@ async function main() {
   // 3. Init stores
   const memoryStore = new MemoryStore(config.dbPath);
   const reflexStore = new ReflexStore(config.dbPath);
+  const chatStore = new ChatStore(config.dbPath);
+  const activityStore = new ActivityStore(config.dbPath);
+  const scheduleStore = new ScheduleStore(config.dbPath);
+  const triageStore = new TriageStore(config.dbPath);
   console.log(`[Init] Stores initialized (${config.dbPath})`);
 
   // 4. Init DeviceManager + DummyProvider
@@ -44,8 +55,10 @@ async function main() {
     config.coordinator.observationWindowMs,
   );
 
-  // 8. Init SpecialistRegistry
+  // 8. Init SpecialistRegistry + Runner
   const specialistRegistry = new SpecialistRegistry();
+  registerDefaultSpecialists(specialistRegistry);
+  const specialistRunner = new SpecialistRunner(deviceManager, memoryStore, eventBus, config);
 
   // 9. Init Coordinator
   const coordinator = new Coordinator(
@@ -56,7 +69,26 @@ async function main() {
     approvalQueue,
     outcomeObserver,
     config,
+    specialistRunner,
+    specialistRegistry,
+    scheduleStore,
+    triageStore,
   );
+
+  // 9b. Init TriageEngine
+  const triageEngine = new TriageEngine(triageStore, eventBus, deviceManager, config);
+
+  // Register command echo listener
+  deviceManager.onCommandExecuted((deviceId, command) => {
+    triageEngine.expectCommandEcho(deviceId, command);
+  });
+
+  // Start batch ticker (flushes batched events to coordinator)
+  triageEngine.startBatchTicker((events) => {
+    for (const event of events) {
+      coordinator.enqueueEvent(event);
+    }
+  });
 
   // 10. Init ProactiveScheduler
   const scheduler = new ProactiveScheduler(
@@ -64,6 +96,8 @@ async function main() {
     deviceManager,
     memoryStore,
     config,
+    scheduleStore,
+    eventBus,
   );
 
   // 11. Connect all devices
@@ -71,7 +105,7 @@ async function main() {
 
   // 12. Wire event flow
   deviceManager.onEvent((event) => {
-    // Broadcast to event bus
+    // Broadcast to event bus (frontend gets all events)
     eventBus.emit("device:event", event);
 
     // Reflex engine (sub-second local rules)
@@ -83,8 +117,30 @@ async function main() {
       coordinator.handleOutcomeFeedback(feedback).catch(console.error);
     }
 
-    // Queue for coordinator (batched)
-    coordinator.enqueueEvent(event);
+    // Triage: classify event into immediate / batched / silent
+    const lane = triageEngine.classify(event);
+    if (lane === "immediate") {
+      coordinator.enqueueEvent(event);
+    }
+    // "batched" → already buffered inside triageEngine, flushed on periodic tick
+    // "silent" → nothing, state is already updated by provider
+  });
+
+  // Wire schedule:fired flow
+  eventBus.on("schedule:fired", async (data) => {
+    const { schedule } = data;
+
+    // ReflexEngine gets first crack — instant execution
+    const handled = await reflexEngine.processScheduleEvent(schedule).catch((err) => {
+      console.error("[Schedule] Reflex processing error:", err);
+      return false;
+    });
+
+    // If no reflex matched, coordinator reasons about it
+    if (!handled) {
+      const context = `Schedule "${schedule.id}" fired.\nInstruction: ${schedule.instruction}\nRecurrence: ${schedule.recurrence}`;
+      coordinator.handleProactiveWakeup("schedule", context).catch(console.error);
+    }
   });
 
   // Wire approval results back to coordinator
@@ -94,15 +150,23 @@ async function main() {
       .catch(console.error);
   });
 
+  // 12b. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
+  initActivityPersistence(eventBus, activityStore, coordinator);
+
   // 13. Start tRPC API server
   const apiServer = startApiServer(
     {
       deviceManager,
       memoryStore,
       reflexStore,
+      chatStore,
+      activityStore,
       coordinator,
       approvalQueue,
       eventBus,
+      scheduleStore,
+      specialistRegistry,
+      scheduler,
     },
     config.apiPort,
   );
@@ -118,10 +182,15 @@ async function main() {
   const shutdown = async () => {
     console.log("\n\nShutting down...");
     scheduler.stop();
+    triageEngine.stopBatchTicker();
     apiServer.close();
     await deviceManager.disconnectAll();
     memoryStore.close();
     reflexStore.close();
+    chatStore.close();
+    activityStore.close();
+    scheduleStore.close();
+    triageStore.close();
     console.log("Goodbye!");
     process.exit(0);
   };

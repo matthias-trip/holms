@@ -1,4 +1,4 @@
-import type { DeviceEvent, DeviceCommand } from "@holms/shared";
+import type { DeviceEvent, DeviceCommand, Schedule } from "@holms/shared";
 import type { ReflexStore } from "./store.js";
 import type { DeviceManager } from "../devices/manager.js";
 import type { EventBus } from "../event-bus.js";
@@ -43,6 +43,51 @@ export class ReflexEngine {
         );
       }
     }
+  }
+
+  async processScheduleEvent(schedule: Schedule): Promise<boolean> {
+    const rules = this.store.getEnabled();
+    let matched = false;
+
+    for (const rule of rules) {
+      if (!rule.trigger.scheduleId) continue;
+      if (rule.trigger.scheduleId !== schedule.id) continue;
+
+      const command: DeviceCommand = {
+        deviceId: rule.action.deviceId,
+        command: rule.action.command,
+        params: rule.action.params,
+      };
+
+      const result = await this.deviceManager.executeCommand(
+        command.deviceId,
+        command.command,
+        command.params,
+      );
+
+      if (result.success) {
+        this.eventBus.emit("reflex:triggered", {
+          rule,
+          event: {
+            deviceId: "schedule",
+            type: "schedule:fired",
+            data: { scheduleId: schedule.id, instruction: schedule.instruction },
+            timestamp: Date.now(),
+          },
+          action: command,
+        });
+        console.log(
+          `[ReflexEngine] Schedule-triggered rule "${rule.reason}" → ${command.command} on ${command.deviceId}`,
+        );
+        matched = true;
+      } else {
+        console.warn(
+          `[ReflexEngine] Schedule-triggered rule "${rule.reason}" failed: ${result.error}`,
+        );
+      }
+    }
+
+    return matched;
   }
 
   private matchesTrigger(

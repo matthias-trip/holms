@@ -1,13 +1,13 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { trpc } from "../trpc";
 import type { BusEvent } from "@holms/shared";
 
 const TYPE_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  "device:event": { color: "var(--info)", bg: "var(--info-dim)", label: "DEV" },
-  "agent:thinking": { color: "var(--warn)", bg: "var(--warn-dim)", label: "THK" },
-  "agent:tool_use": { color: "var(--glow-bright)", bg: "var(--glow-wash)", label: "MCP" },
-  "agent:result": { color: "var(--ok)", bg: "var(--ok-dim)", label: "RES" },
-  "reflex:triggered": { color: "var(--err)", bg: "var(--err-dim)", label: "RFX" },
+  "device:event": { color: "var(--info)", bg: "var(--info-dim)", label: "Device" },
+  "agent:thinking": { color: "var(--warm)", bg: "var(--warm-wash)", label: "Thinking" },
+  "agent:tool_use": { color: "var(--glow-bright)", bg: "var(--glow-wash)", label: "Tool" },
+  "agent:result": { color: "var(--ok)", bg: "var(--ok-dim)", label: "Result" },
+  "reflex:triggered": { color: "var(--err)", bg: "var(--err-dim)", label: "Auto" },
 };
 
 function dedupeEvents(events: BusEvent[]): BusEvent[] {
@@ -41,15 +41,20 @@ function formatEventData(event: BusEvent): string {
 export default function EventFeed() {
   const [events, setEvents] = useState<BusEvent[]>([]);
   const [paused, setPaused] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const pausedRef = useRef(false);
+  const bufferRef = useRef<BusEvent[]>([]);
 
-  const { data: initial } = trpc.events.recent.useQuery({ limit: 50 });
+  const { data: initial } = trpc.events.recent.useQuery({ limit: 200 });
 
   useEffect(() => {
     if (initial) setEvents(dedupeEvents(initial));
   }, [initial]);
 
   const addEvent = useCallback((event: BusEvent) => {
+    if (pausedRef.current) {
+      bufferRef.current.push(event);
+      return;
+    }
     setEvents((prev) => {
       const key = `${event.timestamp}:${event.type}:${JSON.stringify(event.data)}`;
       const lastKey = prev.length > 0
@@ -60,39 +65,45 @@ export default function EventFeed() {
     });
   }, []);
 
+  const togglePause = useCallback(() => {
+    if (pausedRef.current) {
+      // Flush buffered events
+      const buffered = bufferRef.current;
+      bufferRef.current = [];
+      if (buffered.length > 0) {
+        setEvents((prev) => [...prev, ...buffered].slice(-200));
+      }
+    }
+    pausedRef.current = !pausedRef.current;
+    setPaused((p) => !p);
+  }, []);
+
   trpc.events.onEvent.useSubscription(undefined, {
     onData: addEvent,
   });
-
-  useEffect(() => {
-    if (!paused && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [events, paused]);
 
   return (
     <div className="p-4 h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <span className="section-label">Event Feed</span>
+          <span className="section-label">Live Activity</span>
           {events.length > 0 && (
             <span
               className="text-[10px] tabular-nums"
-              style={{ fontFamily: "var(--font-mono)", color: "var(--pewter)" }}
+              style={{ color: "var(--pewter)" }}
             >
               {events.length}
             </span>
           )}
         </div>
         <button
-          onClick={() => setPaused(!paused)}
+          onClick={togglePause}
           className="btn-ghost"
         >
           {paused ? "▶ Resume" : "⏸ Pause"}
         </button>
       </div>
       <div
-        ref={scrollRef}
         className="flex-1 overflow-auto"
         style={{
           background: "var(--abyss)",
@@ -100,8 +111,6 @@ export default function EventFeed() {
           borderRadius: "var(--radius-md)",
           padding: "8px",
         }}
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
       >
         {events.length === 0 ? (
           <div className="empty-state">
@@ -112,7 +121,7 @@ export default function EventFeed() {
           </div>
         ) : (
           <div className="space-y-px">
-            {events.map((event, i) => {
+            {[...events].reverse().map((event, i) => {
               const cfg = TYPE_CONFIG[event.type] ?? {
                 color: "var(--steel)",
                 bg: "var(--graphite)",

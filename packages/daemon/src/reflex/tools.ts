@@ -5,7 +5,7 @@ import type { ReflexStore } from "./store.js";
 export function createReflexToolsServer(store: ReflexStore) {
   const createReflex = tool(
     "create_reflex",
-    "Create a local reflex rule for instant event-to-action mapping. Reflexes fire immediately without AI reasoning, providing sub-second response times. Use for time-critical automations.",
+    "Create a local reflex rule for instant event-to-action mapping. Reflexes fire immediately without AI reasoning, providing sub-second response times. Only create reflexes for patterns you have already handled successfully multiple times. NEVER create a reflex on first request — store the automation as a preference memory and handle events yourself first. NEVER create reflexes for automations with conditions (time-of-day, occupancy, etc.) as these will be silently dropped.",
     {
       trigger: z
         .object({
@@ -15,6 +15,10 @@ export function createReflexToolsServer(store: ReflexStore) {
             .record(z.string(), z.unknown())
             .optional()
             .describe("Additional conditions on event data"),
+          scheduleId: z
+            .string()
+            .optional()
+            .describe("Schedule ID to match — use for time-based reflexes that fire when a schedule triggers"),
         })
         .describe("When to trigger this reflex"),
       action: z

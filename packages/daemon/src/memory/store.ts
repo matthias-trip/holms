@@ -16,10 +16,19 @@ export class MemoryStore {
         content TEXT NOT NULL,
         type TEXT NOT NULL,
         tags TEXT NOT NULL DEFAULT '[]',
+        scope TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
     `);
+
+    // Migration: add scope column if missing
+    const columns = this.db
+      .prepare(`PRAGMA table_info(memories)`)
+      .all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === "scope")) {
+      this.db.exec(`ALTER TABLE memories ADD COLUMN scope TEXT`);
+    }
   }
 
   remember(
@@ -27,6 +36,7 @@ export class MemoryStore {
     content: string,
     type: MemoryType,
     tags: string[] = [],
+    scope: string | null = null,
   ): Memory {
     const now = Date.now();
     const existing = this.get(key);
@@ -34,15 +44,15 @@ export class MemoryStore {
     if (existing) {
       this.db
         .prepare(
-          `UPDATE memories SET content = ?, type = ?, tags = ?, updated_at = ? WHERE key = ?`,
+          `UPDATE memories SET content = ?, type = ?, tags = ?, scope = ?, updated_at = ? WHERE key = ?`,
         )
-        .run(content, type, JSON.stringify(tags), now, key);
+        .run(content, type, JSON.stringify(tags), scope, now, key);
     } else {
       this.db
         .prepare(
-          `INSERT INTO memories (key, content, type, tags, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO memories (key, content, type, tags, scope, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(key, content, type, JSON.stringify(tags), now, now);
+        .run(key, content, type, JSON.stringify(tags), scope, now, now);
     }
 
     return this.get(key)!;
@@ -61,6 +71,32 @@ export class MemoryStore {
         `SELECT * FROM memories WHERE content LIKE ? OR key LIKE ? OR tags LIKE ? ORDER BY updated_at DESC`,
       )
       .all(`%${query}%`, `%${query}%`, `%${query}%`) as MemoryRow[];
+    return rows.map((r) => this.rowToMemory(r));
+  }
+
+  recallScoped(query: string, scopes: string[]): Memory[] {
+    if (scopes.length === 0) {
+      return this.recall(query);
+    }
+    const placeholders = scopes.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM memories WHERE (scope IS NULL OR scope IN (${placeholders})) AND (content LIKE ? OR key LIKE ? OR tags LIKE ?) ORDER BY updated_at DESC`,
+      )
+      .all(...scopes, `%${query}%`, `%${query}%`, `%${query}%`) as MemoryRow[];
+    return rows.map((r) => this.rowToMemory(r));
+  }
+
+  getAllScoped(scopes: string[]): Memory[] {
+    if (scopes.length === 0) {
+      return this.getAll();
+    }
+    const placeholders = scopes.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM memories WHERE scope IS NULL OR scope IN (${placeholders}) ORDER BY updated_at DESC`,
+      )
+      .all(...scopes) as MemoryRow[];
     return rows.map((r) => this.rowToMemory(r));
   }
 
@@ -85,6 +121,34 @@ export class MemoryStore {
     return rows.map((r) => this.rowToMemory(r));
   }
 
+  recallScopedMulti(queries: string[], scopes: string[]): Memory[] {
+    const seen = new Set<string>();
+    const results: Memory[] = [];
+    for (const query of queries) {
+      for (const memory of this.recallScoped(query, scopes)) {
+        if (!seen.has(memory.key)) {
+          seen.add(memory.key);
+          results.push(memory);
+        }
+      }
+    }
+    return results;
+  }
+
+  recallMulti(queries: string[]): Memory[] {
+    const seen = new Set<string>();
+    const results: Memory[] = [];
+    for (const query of queries) {
+      for (const memory of this.recall(query)) {
+        if (!seen.has(memory.key)) {
+          seen.add(memory.key);
+          results.push(memory);
+        }
+      }
+    }
+    return results;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -95,6 +159,7 @@ export class MemoryStore {
       content: row.content,
       type: row.type as MemoryType,
       tags: JSON.parse(row.tags),
+      scope: row.scope ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -106,6 +171,7 @@ interface MemoryRow {
   content: string;
   type: string;
   tags: string;
+  scope: string | null;
   created_at: number;
   updated_at: number;
 }

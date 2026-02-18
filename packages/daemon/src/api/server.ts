@@ -4,8 +4,11 @@ import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { WebSocketServer } from "ws";
 import { appRouter } from "./router.js";
 import type { TRPCContext } from "./context.js";
+import { initEventPersistence } from "./routers/events.js";
 
 export function startApiServer(ctx: TRPCContext, port: number) {
+  // Register event persistence listeners (activity persistence is initialized in index.ts)
+  initEventPersistence(ctx.eventBus, ctx.activityStore);
   const handler = createHTTPHandler({
     router: appRouter,
     createContext: () => ctx,

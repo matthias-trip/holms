@@ -40,7 +40,7 @@ const DUMMY_DEVICES: Device[] = [
     type: "motion_sensor",
     room: "Entrance",
     state: { motion: false, lastMotion: 0 },
-    capabilities: [],
+    capabilities: ["simulate_motion", "simulate_motion_clear"],
   },
   {
     id: "dummy:front_door_lock",
@@ -57,21 +57,15 @@ export class DummyProvider implements DeviceProvider {
 
   private devices = new Map<string, Device>();
   private listeners: Array<(event: DeviceEvent) => void> = [];
-  private intervals: ReturnType<typeof setInterval>[] = [];
 
   async connect(): Promise<void> {
     for (const device of DUMMY_DEVICES) {
       this.devices.set(device.id, { ...device, state: { ...device.state } });
     }
-    this.startSimulation();
     console.log(`[DummyProvider] Connected with ${this.devices.size} devices`);
   }
 
   async disconnect(): Promise<void> {
-    for (const interval of this.intervals) {
-      clearInterval(interval);
-    }
-    this.intervals = [];
     console.log("[DummyProvider] Disconnected");
   }
 
@@ -123,6 +117,25 @@ export class DummyProvider implements DeviceProvider {
       case "unlock":
         device.state.locked = false;
         break;
+      case "simulate_motion":
+        device.state.motion = true;
+        device.state.lastMotion = Date.now();
+        this.emitEvent({
+          deviceId,
+          type: "motion_detected",
+          data: { motion: true },
+          timestamp: Date.now(),
+        });
+        return { success: true };
+      case "simulate_motion_clear":
+        device.state.motion = false;
+        this.emitEvent({
+          deviceId,
+          type: "motion_cleared",
+          data: { motion: false },
+          timestamp: Date.now(),
+        });
+        return { success: true };
       default:
         return { success: false, error: `Unknown command: ${command}` };
     }
@@ -141,60 +154,5 @@ export class DummyProvider implements DeviceProvider {
     for (const listener of this.listeners) {
       listener(event);
     }
-  }
-
-  private startSimulation(): void {
-    // Motion sensor: random motion every 30-60s
-    const motionInterval = setInterval(
-      () => {
-        const sensor = this.devices.get("dummy:front_door_motion");
-        if (!sensor) return;
-
-        sensor.state.motion = true;
-        sensor.state.lastMotion = Date.now();
-        this.emitEvent({
-          deviceId: sensor.id,
-          type: "motion_detected",
-          data: { motion: true },
-          timestamp: Date.now(),
-        });
-
-        // Motion clears after 5s
-        setTimeout(() => {
-          sensor.state.motion = false;
-          this.emitEvent({
-            deviceId: sensor.id,
-            type: "motion_cleared",
-            data: { motion: false },
-            timestamp: Date.now(),
-          });
-        }, 5000);
-      },
-      30000 + Math.random() * 30000,
-    );
-    this.intervals.push(motionInterval);
-
-    // Thermostat: temperature drift every 45s
-    const thermoInterval = setInterval(() => {
-      const thermostat = this.devices.get("dummy:thermostat");
-      if (!thermostat) return;
-
-      const current = thermostat.state.temperature as number;
-      const target = thermostat.state.target as number;
-      const drift = current < target ? 0.5 : current > target ? -0.5 : 0;
-      if (drift !== 0) {
-        thermostat.state.temperature = current + drift;
-        this.emitEvent({
-          deviceId: thermostat.id,
-          type: "temperature_changed",
-          data: {
-            temperature: thermostat.state.temperature,
-            target,
-          },
-          timestamp: Date.now(),
-        });
-      }
-    }, 45000);
-    this.intervals.push(thermoInterval);
   }
 }

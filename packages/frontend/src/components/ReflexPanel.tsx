@@ -16,9 +16,9 @@ export default function ReflexPanel() {
   return (
     <div className="h-full flex flex-col p-6" style={{ background: "var(--void)" }}>
       <div className="mb-5">
-        <span className="section-label">Reflex Rules</span>
+        <span className="section-label">Automation Rules</span>
         <p className="text-[12px] mt-2" style={{ color: "var(--steel)", maxWidth: "500px", lineHeight: "1.6" }}>
-          Instant event-to-action rules that fire without AI reasoning. The coordinator creates these for time-critical automations.
+          Quick rules that react to events in your home, without waiting for the assistant.
         </p>
       </div>
 
@@ -31,7 +31,7 @@ export default function ReflexPanel() {
               </svg>
             </div>
             <div className="empty-state-text">
-              No reflex rules configured. Ask the coordinator to create automations like "turn on lights when motion is detected."
+              No automation rules yet. Ask the assistant to create rules like "turn on lights when motion is detected."
             </div>
           </div>
         ) : (
@@ -54,8 +54,7 @@ export default function ReflexPanel() {
                   <div
                     className="rounded-lg p-3 space-y-2"
                     style={{
-                      fontFamily: "var(--font-mono)",
-                      fontSize: "11px",
+                      fontSize: "12px",
                       background: "var(--abyss)",
                       border: "1px solid var(--graphite)",
                     }}
@@ -65,7 +64,7 @@ export default function ReflexPanel() {
                         className="badge"
                         style={{ background: "var(--info-dim)", color: "var(--info)" }}
                       >
-                        WHEN
+                        When
                       </span>
                       <span style={{ color: "var(--mist)" }}>
                         {rule.trigger.deviceId ?? "any device"}
@@ -77,7 +76,7 @@ export default function ReflexPanel() {
                         className="badge"
                         style={{ background: "var(--ok-dim)", color: "var(--ok)" }}
                       >
-                        THEN
+                        Then
                       </span>
                       <span style={{ color: "var(--mist)" }}>
                         {rule.action.command} → {rule.action.deviceId}
@@ -86,9 +85,9 @@ export default function ReflexPanel() {
                   </div>
                   <div
                     className="flex items-center gap-3 mt-3 text-[10px]"
-                    style={{ fontFamily: "var(--font-mono)", color: "var(--pewter)" }}
+                    style={{ color: "var(--pewter)" }}
                   >
-                    <span>by {rule.createdBy}</span>
+                    <span>{rule.createdBy === "coordinator" ? "Created by assistant" : `by ${rule.createdBy}`}</span>
                     <span>·</span>
                     <span>{new Date(rule.createdAt).toLocaleDateString()}</span>
                   </div>

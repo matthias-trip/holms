@@ -17,6 +17,22 @@ export const devicesRouter = t.router({
       return ctx.deviceManager.getDevice(input.id);
     }),
 
+  command: t.procedure
+    .input(
+      z.object({
+        deviceId: z.string(),
+        command: z.string(),
+        params: z.record(z.string(), z.unknown()).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return ctx.deviceManager.executeCommand(
+        input.deviceId,
+        input.command,
+        input.params ?? {},
+      );
+    }),
+
   onEvent: t.procedure.subscription(({ ctx }) => {
     return observable<DeviceEvent>((emit) => {
       const handler = (event: DeviceEvent) => {
