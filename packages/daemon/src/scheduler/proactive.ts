@@ -41,6 +41,11 @@ export class ProactiveScheduler {
         interval: config.proactive.goalReviewInterval,
         lastRun: now,
       },
+      {
+        type: "daily_summary",
+        interval: 24 * 60 * 60 * 1000,
+        lastRun: now,
+      },
     ];
   }
 
@@ -106,29 +111,22 @@ export class ProactiveScheduler {
       break;
     }
 
-    // Check for daily summary
-    const hour = new Date().getHours();
-    const todayKey = new Date().toISOString().split("T")[0];
-    const dailyWakeup = this.wakeups.find((w) => w.type === "daily_summary");
+    // Check for daily summary — only fire once per day
+    if (!this.coordinator.isProcessing()) {
+      const hour = new Date().getHours();
+      const dailyWakeup = this.wakeups.find((w) => w.type === "daily_summary")!;
 
-    if (
-      hour === this.config.proactive.dailySummaryHour &&
-      (!dailyWakeup || dailyWakeup.lastRun < Date.now() - 23 * 60 * 60 * 1000)
-    ) {
-      if (!dailyWakeup) {
-        this.wakeups.push({
-          type: "daily_summary",
-          interval: 24 * 60 * 60 * 1000,
-          lastRun: Date.now(),
-        });
-      } else {
+      if (
+        hour === this.config.proactive.dailySummaryHour &&
+        dailyWakeup.lastRun < Date.now() - 23 * 60 * 60 * 1000
+      ) {
         dailyWakeup.lastRun = Date.now();
-      }
 
-      try {
-        await this.coordinator.handleProactiveWakeup("daily_summary");
-      } catch (error) {
-        console.error("[ProactiveScheduler] Daily summary error:", error);
+        try {
+          await this.coordinator.handleProactiveWakeup("daily_summary");
+        } catch (error) {
+          console.error("[ProactiveScheduler] Daily summary error:", error);
+        }
       }
     }
   }

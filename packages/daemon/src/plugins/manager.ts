@@ -127,6 +127,46 @@ export class PluginManager {
       .map((p) => ({ type: "local" as const, path: p.path }));
   }
 
+  /** Returns allowedTools patterns for all enabled plugins (MCP servers + agents). */
+  getEnabledToolPatterns(): string[] {
+    const patterns: string[] = [];
+
+    for (const plugin of this.plugins) {
+      if (!plugin.enabled) continue;
+
+      // MCP servers from .mcp.json
+      if (plugin.capabilities.includes("mcp")) {
+        const mcpPath = join(plugin.path, ".mcp.json");
+        try {
+          const mcpConfig = JSON.parse(readFileSync(mcpPath, "utf-8")) as { mcpServers?: Record<string, unknown> };
+          if (mcpConfig.mcpServers) {
+            for (const serverName of Object.keys(mcpConfig.mcpServers)) {
+              patterns.push(`mcp__${serverName}__*`);
+            }
+          }
+        } catch {
+          // skip unreadable .mcp.json
+        }
+      }
+
+      // Agents from agents/ directory
+      if (plugin.capabilities.includes("agents")) {
+        const agentsDir = join(plugin.path, "agents");
+        try {
+          for (const file of readdirSync(agentsDir)) {
+            if (file.endsWith(".md")) {
+              patterns.push(file.replace(/\.md$/, ""));
+            }
+          }
+        } catch {
+          // skip unreadable agents dir
+        }
+      }
+    }
+
+    return patterns;
+  }
+
   setEnabled(name: string, enabled: boolean): PluginInfo {
     const plugin = this.plugins.find((p) => p.name === name);
     if (!plugin) {

@@ -210,6 +210,7 @@ export class Coordinator {
       ];
 
       const plugins = this.pluginManager?.getEnabledSdkPlugins() ?? [];
+      const pluginToolPatterns = this.pluginManager?.getEnabledToolPatterns() ?? [];
 
       const conversation = query({
         prompt: createPrompt(promptText),
@@ -217,10 +218,11 @@ export class Coordinator {
           model: this.config.models.coordinator,
           maxTurns: this.config.coordinator.maxTurns,
           mcpServers,
-          allowedTools,
+          disallowedTools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "WebSearch", "WebFetch", "NotebookEdit"],
+          allowedTools: [...allowedTools, ...pluginToolPatterns],
+          ...(plugins.length > 0 ? { plugins } : {}),
           permissionMode: "bypassPermissions",
           includePartialMessages: true,
-          ...(plugins.length > 0 ? { plugins } : {}),
           ...(this.sessionId ? { resume: this.sessionId } : {}),
           ...(this.config.claudeConfigDir
             ? { env: { ...process.env, CLAUDE_CONFIG_DIR: this.config.claudeConfigDir } }
