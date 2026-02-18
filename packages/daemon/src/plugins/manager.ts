@@ -1,6 +1,10 @@
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "fs";
 import { join, resolve } from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
 import type { PluginInfo } from "@holms/shared";
+
+const execFileAsync = promisify(execFile);
 
 interface PluginManifest {
   name?: string;
@@ -26,7 +30,8 @@ export class PluginManager {
   private state: PluginState = {};
 
   constructor(
-    private pluginsDir: string,
+    private builtinPluginsDir: string,
+    private userPluginsDir: string,
     private stateFilePath: string,
   ) {
     this.loadState();
@@ -36,15 +41,33 @@ export class PluginManager {
   scan(): PluginInfo[] {
     this.plugins = [];
 
-    if (!existsSync(this.pluginsDir)) {
-      mkdirSync(this.pluginsDir, { recursive: true });
-      return this.plugins;
+    // Scan user plugins first so we know which names to skip from builtin
+    const userPlugins = this.scanDir(this.userPluginsDir, "user");
+    const userNames = new Set(userPlugins.map((p) => p.name));
+
+    // Scan builtin plugins, skipping any overridden by user
+    const builtinPlugins = this.scanDir(this.builtinPluginsDir, "builtin")
+      .filter((p) => !userNames.has(p.name));
+
+    this.plugins = [...builtinPlugins, ...userPlugins];
+
+    const dirs = [this.builtinPluginsDir, this.userPluginsDir].join(", ");
+    console.log(`[Plugins] Discovered ${this.plugins.length} plugin(s) from ${dirs}`);
+    return this.plugins;
+  }
+
+  private scanDir(dir: string, origin: "builtin" | "user"): PluginInfo[] {
+    const results: PluginInfo[] = [];
+
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      return results;
     }
 
-    const entries = readdirSync(this.pluginsDir);
+    const entries = readdirSync(dir);
 
     for (const entry of entries) {
-      const pluginPath = resolve(this.pluginsDir, entry);
+      const pluginPath = resolve(dir, entry);
 
       try {
         if (!statSync(pluginPath).isDirectory()) continue;
@@ -74,7 +97,11 @@ export class PluginManager {
 
       const enabled = this.state[name]?.enabled ?? true;
 
-      this.plugins.push({
+      const hasPackageJson = existsSync(join(pluginPath, "package.json"));
+      const hasNodeModules = existsSync(join(pluginPath, "node_modules"));
+      const installed = !hasPackageJson || hasNodeModules;
+
+      results.push({
         name,
         version: manifest.version || "0.0.0",
         description: manifest.description || "",
@@ -82,11 +109,12 @@ export class PluginManager {
         path: pluginPath,
         enabled,
         capabilities,
+        installed,
+        origin,
       });
     }
 
-    console.log(`[Plugins] Discovered ${this.plugins.length} plugin(s) in ${this.pluginsDir}`);
-    return this.plugins;
+    return results;
   }
 
   getAll(): PluginInfo[] {
@@ -110,6 +138,34 @@ export class PluginManager {
     this.saveState();
 
     return plugin;
+  }
+
+  async install(name: string): Promise<{ success: boolean; output: string }> {
+    const plugin = this.plugins.find((p) => p.name === name);
+    if (!plugin) {
+      return { success: false, output: `Plugin "${name}" not found` };
+    }
+
+    const packageJsonPath = join(plugin.path, "package.json");
+    if (!existsSync(packageJsonPath)) {
+      return { success: false, output: `Plugin "${name}" has no package.json` };
+    }
+
+    try {
+      const { stdout, stderr } = await execFileAsync("npm", ["install"], {
+        cwd: plugin.path,
+        timeout: 120_000,
+      });
+      const output = [stdout, stderr].filter(Boolean).join("\n");
+
+      // Rescan to update install status
+      this.scan();
+
+      return { success: true, output };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, output: message };
+    }
   }
 
   refresh(): PluginInfo[] {

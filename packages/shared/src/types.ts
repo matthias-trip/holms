@@ -181,6 +181,8 @@ export interface PluginInfo {
   path: string;
   enabled: boolean;
   capabilities: string[];
+  installed: boolean;
+  origin: "builtin" | "user";
 }
 
 // ── Event Types for the bus ──

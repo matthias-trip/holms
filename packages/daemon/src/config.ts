@@ -5,6 +5,7 @@ export interface HolmsConfig {
   apiPort: number;
   dbPath: string;
   claudeConfigDir?: string;
+  builtinPluginsDir: string;
   pluginsDir: string;
   pluginsStatePath: string;
   models: {
@@ -37,6 +38,7 @@ const holmsHome = resolve(homedir(), ".holms");
 const defaults: HolmsConfig = {
   apiPort: 3100,
   dbPath: resolve(process.cwd(), "holms.db"),
+  builtinPluginsDir: resolve(process.cwd(), "plugins"),
   pluginsDir: resolve(holmsHome, "plugins"),
   pluginsStatePath: resolve(holmsHome, "plugins.json"),
   models: {

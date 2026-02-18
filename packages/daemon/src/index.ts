@@ -55,7 +55,7 @@ async function main() {
   );
 
   // 7b. Init PluginManager
-  const pluginManager = new PluginManager(config.pluginsDir, config.pluginsStatePath);
+  const pluginManager = new PluginManager(config.builtinPluginsDir, config.pluginsDir, config.pluginsStatePath);
 
   // 8. Init Coordinator
   const coordinator = new Coordinator(

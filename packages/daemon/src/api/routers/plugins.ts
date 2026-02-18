@@ -15,6 +15,12 @@ export const pluginsRouter = t.router({
       return ctx.pluginManager.setEnabled(input.name, input.enabled);
     }),
 
+  install: t.procedure
+    .input(z.object({ name: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return ctx.pluginManager.install(input.name);
+    }),
+
   refresh: t.procedure.mutation(({ ctx }) => {
     return ctx.pluginManager.refresh();
   }),

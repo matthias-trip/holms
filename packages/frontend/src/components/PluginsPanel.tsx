@@ -14,6 +14,10 @@ export default function PluginsPanel() {
     onSuccess: () => utils.plugins.list.invalidate(),
   });
 
+  const installMutation = trpc.plugins.install.useMutation({
+    onSuccess: () => utils.plugins.list.invalidate(),
+  });
+
   return (
     <div className="h-full flex flex-col p-6" style={{ background: "var(--void)" }}>
       <div className="mb-5 flex items-start justify-between">
@@ -23,8 +27,8 @@ export default function PluginsPanel() {
             className="text-[12px] mt-2"
             style={{ color: "var(--steel)", maxWidth: "500px", lineHeight: "1.6" }}
           >
-            Claude Code plugins installed in ~/.holms/plugins. Each plugin can provide MCP servers,
-            commands, agents, skills, and hooks to extend the assistant.
+            Extend the assistant with plugins from the built-in plugins/ directory and ~/.holms/plugins.
+            Each plugin can provide MCP servers, commands, agents, skills, and hooks.
           </p>
         </div>
         <button
@@ -52,8 +56,8 @@ export default function PluginsPanel() {
               </svg>
             </div>
             <div className="empty-state-text">
-              No plugins installed. Add plugin directories to ~/.holms/plugins/ to extend the
-              assistant.
+              No plugins installed. Add plugin directories to plugins/ or ~/.holms/plugins/ to extend
+              the assistant.
             </div>
           </div>
         ) : (
@@ -86,6 +90,16 @@ export default function PluginsPanel() {
                       }}
                     >
                       v{plugin.version}
+                    </span>
+                    <span
+                      className="badge"
+                      style={{
+                        background: plugin.origin === "builtin" ? "var(--void)" : "rgba(139, 92, 246, 0.1)",
+                        color: plugin.origin === "builtin" ? "var(--pewter)" : "rgb(167, 139, 250)",
+                        border: `1px solid ${plugin.origin === "builtin" ? "var(--graphite)" : "rgba(139, 92, 246, 0.3)"}`,
+                      }}
+                    >
+                      {plugin.origin === "builtin" ? "Built-in" : "User"}
                     </span>
                   </div>
 
@@ -123,33 +137,51 @@ export default function PluginsPanel() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() =>
-                    toggleMutation.mutate({
-                      name: plugin.name,
-                      enabled: !plugin.enabled,
-                    })
-                  }
-                  disabled={toggleMutation.isPending}
-                  className="flex-shrink-0 w-10 h-5.5 rounded-full relative cursor-pointer transition-all"
-                  style={{
-                    background: plugin.enabled ? "var(--glow)" : "var(--graphite)",
-                    border: "none",
-                    padding: 0,
-                    width: 40,
-                    height: 22,
-                  }}
-                >
-                  <span
-                    className="block rounded-full absolute top-[2px] transition-all"
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {!plugin.installed && (
+                    <button
+                      onClick={() => installMutation.mutate({ name: plugin.name })}
+                      disabled={installMutation.isPending}
+                      className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+                      style={{
+                        background: "var(--glow)",
+                        color: "var(--void)",
+                        border: "none",
+                        opacity: installMutation.isPending ? 0.6 : 1,
+                      }}
+                    >
+                      {installMutation.isPending ? "Installing..." : "Install"}
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() =>
+                      toggleMutation.mutate({
+                        name: plugin.name,
+                        enabled: !plugin.enabled,
+                      })
+                    }
+                    disabled={toggleMutation.isPending}
+                    className="flex-shrink-0 w-10 h-5.5 rounded-full relative cursor-pointer transition-all"
                     style={{
-                      width: 18,
-                      height: 18,
-                      background: "var(--white)",
-                      left: plugin.enabled ? 20 : 2,
+                      background: plugin.enabled ? "var(--glow)" : "var(--graphite)",
+                      border: "none",
+                      padding: 0,
+                      width: 40,
+                      height: 22,
                     }}
-                  />
-                </button>
+                  >
+                    <span
+                      className="block rounded-full absolute top-[2px] transition-all"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        background: "var(--white)",
+                        left: plugin.enabled ? 20 : 2,
+                      }}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           ))
