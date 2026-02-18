@@ -1,5 +1,4 @@
-import { query, tool, createSdkMcpServer, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
+import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { DeviceEvent, TurnTrigger } from "@holms/shared";
 import type { EventBus } from "../event-bus.js";
 import type { DeviceManager } from "../devices/manager.js";
@@ -33,7 +32,6 @@ export class Coordinator {
   private memoryServer;
   private reflexServer;
   private approvalServer;
-  private deepReasonServer;
   private scheduleServer;
   private triageServer;
 
@@ -54,169 +52,8 @@ export class Coordinator {
     this.memoryServer = createMemoryToolsServer(memoryStore);
     this.reflexServer = createReflexToolsServer(reflexStore);
     this.approvalServer = createApprovalToolsServer(approvalQueue);
-    this.deepReasonServer = this.createDeepReasonServer();
     this.scheduleServer = createScheduleToolsServer(scheduleStore);
     this.triageServer = createTriageToolsServer(triageStore);
-  }
-
-  private createDeepReasonServer() {
-    const self = this;
-
-    const deepReason = tool(
-      "deep_reason",
-      "Spawn a focused AI analysis for complex problems. Use this for multi-device trade-offs, competing constraints (comfort vs. energy, security vs. convenience), novel situations, or multi-step planning. The agent will use tools to gather information and return analysis with recommended actions. Do NOT use for simple queries, straightforward commands, or when a preference memory already tells you what to do.",
-      {
-        problem: z
-          .string()
-          .describe("Clear description of the problem to analyze"),
-      },
-      async (args) => {
-        self.eventBus.emit("deep_reason:start", {
-          problem: args.problem,
-          model: self.config.models.deepReason,
-          timestamp: Date.now(),
-        });
-
-        const analysis = await self.runDeepReasonQuery(args.problem);
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: analysis,
-            },
-          ],
-        };
-      },
-    );
-
-    return createSdkMcpServer({
-      name: "deep-reason",
-      version: "1.0.0",
-      tools: [deepReason],
-    });
-  }
-
-  private async runDeepReasonQuery(problem: string): Promise<string> {
-    const startTime = Date.now();
-
-    const systemPrompt = `You are a deep reasoning agent for a home automation system. You have access to device query, memory, reflex, schedule, and triage tools — the same tools as the coordinator, except you cannot execute device commands or request approval.
-
-Your job:
-1. Analyze the problem presented to you
-2. Use tools to gather relevant information (device states, memories, schedules, reflexes)
-3. Return a clear analysis with specific, actionable recommendations
-
-Do NOT execute device commands — only analyze and recommend. The coordinator will decide what to execute based on your analysis.
-
-Problem to analyze:
-${problem}`;
-
-    // Same MCP servers as coordinator minus deep-reason (no recursion) and minus approval (we recommend, coordinator decides)
-    const mcpServers = {
-      "device-query": this.deviceQueryServer,
-      memory: this.memoryServer,
-      reflex: this.reflexServer,
-      schedule: this.scheduleServer,
-      triage: this.triageServer,
-    };
-
-    const allowedTools = [
-      "mcp__device-query__*",
-      "mcp__memory__*",
-      "mcp__reflex__*",
-      "mcp__schedule__*",
-      "mcp__triage__*",
-    ];
-
-    async function* createPrompt(text: string): AsyncGenerator<SDKUserMessage> {
-      yield {
-        type: "user" as const,
-        message: {
-          role: "user" as const,
-          content: text,
-        },
-        session_id: "",
-        parent_tool_use_id: null,
-      };
-    }
-
-    let result = "";
-
-    try {
-      const conversation = query({
-        prompt: createPrompt(systemPrompt),
-        options: {
-          model: this.config.models.deepReason,
-          maxTurns: this.config.deepReason.maxTurns,
-          mcpServers,
-          allowedTools,
-          permissionMode: "bypassPermissions",
-          ...(this.config.claudeConfigDir
-            ? { env: { ...process.env, CLAUDE_CONFIG_DIR: this.config.claudeConfigDir } }
-            : {}),
-        },
-      });
-
-      for await (const message of conversation) {
-        const msg = message as Record<string, unknown>;
-
-        // Emit tool_use events with deep_reason: prefix for UI visibility
-        if (msg.type === "assistant") {
-          const content = msg.message as { content?: unknown[] } | undefined;
-          if (content?.content) {
-            for (const block of content.content) {
-              const b = block as Record<string, unknown>;
-              if (b.type === "tool_use") {
-                this.eventBus.emit("agent:tool_use", {
-                  tool: `deep_reason:${b.name as string}`,
-                  input: b.input,
-                  timestamp: Date.now(),
-                });
-              }
-            }
-          }
-        }
-
-        if (msg.type === "result") {
-          if (msg.subtype === "success") {
-            result = (msg.result as string) ?? "";
-          } else {
-            result = `Deep reason error: ${(msg.error as string) ?? "Unknown error"}`;
-          }
-
-          const usage = msg.usage as { input_tokens?: number; output_tokens?: number } | undefined;
-          const durationMs = Date.now() - startTime;
-
-          this.eventBus.emit("deep_reason:result", {
-            problem,
-            analysis: result,
-            model: this.config.models.deepReason,
-            costUsd: (msg.cost_usd as number) ?? 0,
-            inputTokens: usage?.input_tokens ?? 0,
-            outputTokens: usage?.output_tokens ?? 0,
-            durationMs,
-            numTurns: (msg.num_turns as number) ?? 0,
-            timestamp: Date.now(),
-          });
-        }
-      }
-    } catch (error) {
-      result = `Deep reason error: ${error instanceof Error ? error.message : String(error)}`;
-      this.eventBus.emit("deep_reason:result", {
-        problem,
-        analysis: result,
-        model: this.config.models.deepReason,
-        costUsd: 0,
-        inputTokens: 0,
-        outputTokens: 0,
-        durationMs: Date.now() - startTime,
-        numTurns: 0,
-        timestamp: Date.now(),
-      });
-    }
-
-    return result;
   }
 
   enqueueEvent(event: DeviceEvent): void {
@@ -243,7 +80,7 @@ ${problem}`;
     const context = await this.buildContext();
 
     const prompts: Record<string, string> = {
-      situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason.${BEFORE_ACTING_REMINDER}`,
+      situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, and constraints in the problem description.${BEFORE_ACTING_REMINDER}`,
       reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Review your recent actions and their outcomes. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Also review your event triage configuration. Were you woken up for events you never acted on? Use list_triage_rules to see your current rules, then silence or batch noisy event sources. Were there events you missed because they were batched or silent? Escalate those to immediate.`,
       goal_review: `${context}\n\nGOAL REVIEW: Check your active goals (recall memories of type "goal"). Are you making progress? Should any goals be updated or retired? Are there new goals worth setting based on what you've observed?`,
       daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity. What patterns did you notice? What did you learn? What will you do differently tomorrow? Store your summary as a reflection memory.`,
@@ -295,7 +132,7 @@ ${problem}`;
       )
       .join("\n");
 
-    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nTriage these events. For complex situations requiring deeper analysis, use deep_reason. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}`;
+    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nTriage these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, schedules, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}`;
 
     const summary = events.length === 1
       ? `${events[0]!.deviceId}: ${events[0]!.type}`
@@ -349,6 +186,8 @@ ${problem}`;
       }
 
       let result = "";
+      let deepReasonToolUseId: string | null = null;
+      const deepReasonStartTime = { value: 0 };
 
       const mcpServers = {
         "device-query": this.deviceQueryServer,
@@ -356,7 +195,6 @@ ${problem}`;
         memory: this.memoryServer,
         reflex: this.reflexServer,
         approval: this.approvalServer,
-        "deep-reason": this.deepReasonServer,
         schedule: this.scheduleServer,
         triage: this.triageServer,
       };
@@ -367,7 +205,6 @@ ${problem}`;
         "mcp__memory__*",
         "mcp__reflex__*",
         "mcp__approval__*",
-        "mcp__deep-reason__*",
         "mcp__schedule__*",
         "mcp__triage__*",
       ];
@@ -418,14 +255,47 @@ ${problem}`;
             for (const block of content.content) {
               const b = block as Record<string, unknown>;
               if (b.type === "tool_use") {
+                const toolName = b.name as string;
                 this.eventBus.emit("agent:tool_use", {
-                  tool: b.name as string,
+                  tool: toolName,
                   input: b.input,
                   timestamp: Date.now(),
                 });
+
+                // Track deep_reason invocations for activity events
+                if (toolName === "deep_reason") {
+                  deepReasonToolUseId = b.id as string;
+                  deepReasonStartTime.value = Date.now();
+                  const input = b.input as { problem?: string } | undefined;
+                  this.eventBus.emit("deep_reason:start", {
+                    problem: input?.problem ?? "",
+                    model: this.config.models.deepReason,
+                    timestamp: Date.now(),
+                  });
+                }
               }
             }
           }
+        }
+
+        // Emit deep_reason:result when the sub-agent returns
+        if (deepReasonToolUseId && msg.type === "user" && msg.parent_tool_use_id === deepReasonToolUseId) {
+          const toolResult = msg.tool_use_result as { content?: Array<{ text?: string }> } | string | undefined;
+          const analysis = typeof toolResult === "string"
+            ? toolResult
+            : (toolResult?.content?.[0]?.text ?? "");
+          this.eventBus.emit("deep_reason:result", {
+            problem: "",
+            analysis,
+            model: this.config.models.deepReason,
+            costUsd: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            durationMs: Date.now() - deepReasonStartTime.value,
+            numTurns: 0,
+            timestamp: Date.now(),
+          });
+          deepReasonToolUseId = null;
         }
 
         if (msg.type === "result") {

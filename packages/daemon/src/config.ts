@@ -1,5 +1,9 @@
-import { resolve } from "path";
+import { resolve, dirname } from "path";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, "..", "..", "..");
 
 export interface HolmsConfig {
   apiPort: number;
@@ -38,7 +42,7 @@ const holmsHome = resolve(homedir(), ".holms");
 const defaults: HolmsConfig = {
   apiPort: 3100,
   dbPath: resolve(process.cwd(), "holms.db"),
-  builtinPluginsDir: resolve(process.cwd(), "plugins"),
+  builtinPluginsDir: resolve(repoRoot, "plugins"),
   pluginsDir: resolve(holmsHome, "plugins"),
   pluginsStatePath: resolve(holmsHome, "plugins.json"),
   models: {

@@ -1,0 +1,5 @@
+{
+  "name": "deep-reason",
+  "version": "1.0.0",
+  "description": "Spawns a focused sub-agent for complex multi-device analysis and trade-off reasoning"
+}
