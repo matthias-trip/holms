@@ -9,6 +9,7 @@ import { approvalRouter } from "./routers/approval.js";
 import { scheduleRouter } from "./routers/schedule.js";
 import { agentsRouter } from "./routers/agents.js";
 import { pluginsRouter } from "./routers/plugins.js";
+import { channelsRouter } from "./routers/channels.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -22,6 +23,7 @@ export const appRouter = t.router({
   schedule: scheduleRouter,
   agents: agentsRouter,
   plugins: pluginsRouter,
+  channels: channelsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -5,12 +5,12 @@ import MemoryPanel from "./components/MemoryPanel";
 import ReflexPanel from "./components/ReflexPanel";
 import ActivityPanel from "./components/ActivityPanel";
 import SchedulesPanel from "./components/SchedulesPanel";
-import PluginsPanel from "./components/PluginsPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import CycleOverview from "./components/CycleOverview";
 
-type Panel = "dashboard" | "chat" | "activity" | "devices" | "memory" | "reflexes" | "schedules" | "plugins";
+type Panel = "dashboard" | "chat" | "activity" | "devices" | "memory" | "reflexes" | "schedules" | "settings";
 
-const VALID_PANELS = new Set<string>(["dashboard", "chat", "activity", "devices", "memory", "reflexes", "schedules", "plugins"]);
+const VALID_PANELS = new Set<string>(["dashboard", "chat", "activity", "devices", "memory", "reflexes", "schedules", "settings"]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
@@ -25,7 +25,7 @@ const NAV_ITEMS: { id: Panel; label: string }[] = [
   { id: "memory", label: "Memory" },
   { id: "reflexes", label: "Automations" },
   { id: "schedules", label: "Schedules" },
-  { id: "plugins", label: "Plugins" },
+  { id: "settings", label: "Settings" },
 ];
 
 function NavIcon({ id, active }: { id: Panel; active: boolean }) {
@@ -90,10 +90,11 @@ function NavIcon({ id, active }: { id: Panel; active: boolean }) {
           <path d="M8 4v4.5l3 1.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
-    case "plugins":
+    case "settings":
       return (
         <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <path d="M6.5 2v2.5H4a1 1 0 0 0-1 1V8h2.5a1.5 1.5 0 0 1 0 3H3v2.5a1 1 0 0 0 1 1h2.5V12a1.5 1.5 0 0 1 3 0v2.5H12a1 1 0 0 0 1-1V11h-1a1.5 1.5 0 0 1 0-3h1V5.5a1 1 0 0 0-1-1H9.5V2a1.5 1.5 0 0 0-3 0z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
+          <circle cx="8" cy="8" r="2" stroke={color} strokeWidth="1.3" />
+          <path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
         </svg>
       );
   }
@@ -189,7 +190,7 @@ export default function App() {
           {activePanel === "memory" && <MemoryPanel />}
           {activePanel === "reflexes" && <ReflexPanel />}
           {activePanel === "schedules" && <SchedulesPanel />}
-          {activePanel === "plugins" && <PluginsPanel />}
+          {activePanel === "settings" && <SettingsPanel />}
         </div>
       </main>
     </div>

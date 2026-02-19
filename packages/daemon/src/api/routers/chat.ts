@@ -144,10 +144,11 @@ export const chatRouter = t.router({
       z.object({
         limit: z.number().optional(),
         before: z.number().optional(),
+        channel: z.string().optional(),
       }),
     )
     .query(({ ctx, input }) => {
-      return ctx.chatStore.getHistory(input.limit, input.before);
+      return ctx.chatStore.getHistory(input.limit, input.before, input.channel);
     }),
 
   send: t.procedure
@@ -158,6 +159,7 @@ export const chatRouter = t.router({
         role: "user" as const,
         content: input.message,
         timestamp: Date.now(),
+        channel: "web:default",
       };
       ctx.chatStore.add(userMsg);
 
@@ -168,8 +170,12 @@ export const chatRouter = t.router({
         content: "",
         timestamp: Date.now(),
         status: "thinking" as const,
+        channel: "web:default",
       };
       ctx.chatStore.add(thinkingMsg);
+
+      // Track the response for channel routing
+      ctx.channelManager.trackResponse(thinkingMsg.id, "web", "web:default");
 
       const result = await ctx.coordinator.handleUserRequest(input.message, thinkingMsg.id);
 

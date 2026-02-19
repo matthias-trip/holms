@@ -8,6 +8,7 @@ interface ChatMessageRow {
   timestamp: number;
   status: string | null;
   approval_id: string | null;
+  channel: string | null;
 }
 
 function rowToMessage(row: ChatMessageRow): ChatMessage {
@@ -19,6 +20,7 @@ function rowToMessage(row: ChatMessageRow): ChatMessage {
   };
   if (row.status) msg.status = row.status as ChatMessage["status"];
   if (row.approval_id) msg.approvalId = row.approval_id;
+  if (row.channel) msg.channel = row.channel;
   return msg;
 }
 
@@ -51,14 +53,19 @@ export class ChatStore {
       this.db.exec(`ALTER TABLE chat_messages ADD COLUMN approval_id TEXT`);
       this.db.exec(`CREATE INDEX IF NOT EXISTS idx_chat_approval_id ON chat_messages(approval_id) WHERE approval_id IS NOT NULL`);
     }
+
+    // Migrate: add channel column if missing
+    if (!columns.some((c) => c.name === "channel")) {
+      this.db.exec(`ALTER TABLE chat_messages ADD COLUMN channel TEXT DEFAULT 'web:default'`);
+    }
   }
 
   add(msg: ChatMessage): void {
     this.db
       .prepare(
-        `INSERT INTO chat_messages (id, role, content, timestamp, status, approval_id) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_messages (id, role, content, timestamp, status, approval_id, channel) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(msg.id, msg.role, msg.content, msg.timestamp, msg.status ?? null, msg.approvalId ?? null);
+      .run(msg.id, msg.role, msg.content, msg.timestamp, msg.status ?? null, msg.approvalId ?? null, msg.channel ?? "web:default");
   }
 
   updateMessage(id: string, fields: { content?: string; status?: string | null; timestamp?: number }): void {
@@ -72,27 +79,30 @@ export class ChatStore {
     this.db.prepare(`UPDATE chat_messages SET ${sets.join(", ")} WHERE id = ?`).run(...values);
   }
 
-  getHistory(limit = 100, before?: number): ChatMessage[] {
+  getHistory(limit = 100, before?: number, channel?: string): ChatMessage[] {
+    const channelFilter = channel ? " AND channel = ?" : "";
+    const channelArgs = channel ? [channel] : [];
+
     if (before !== undefined) {
       return (this.db
         .prepare(
-          `SELECT id, role, content, timestamp, status, approval_id FROM chat_messages WHERE timestamp < ? ORDER BY timestamp ASC LIMIT ?`,
+          `SELECT id, role, content, timestamp, status, approval_id, channel FROM chat_messages WHERE timestamp < ?${channelFilter} ORDER BY timestamp ASC LIMIT ?`,
         )
-        .all(before, limit) as ChatMessageRow[]).map(rowToMessage);
+        .all(before, ...channelArgs, limit) as ChatMessageRow[]).map(rowToMessage);
     }
 
     return (this.db
       .prepare(
-        `SELECT id, role, content, timestamp, status, approval_id FROM (SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
+        `SELECT id, role, content, timestamp, status, approval_id, channel FROM (SELECT * FROM chat_messages WHERE 1=1${channelFilter} ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
       )
-      .all(limit) as ChatMessageRow[]).map(rowToMessage);
+      .all(...channelArgs, limit) as ChatMessageRow[]).map(rowToMessage);
   }
 
   /** Find a chat message by its approval_id column */
   findByApprovalId(approvalId: string): ChatMessage | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, role, content, timestamp, status, approval_id FROM chat_messages WHERE approval_id = ?`,
+        `SELECT id, role, content, timestamp, status, approval_id, channel FROM chat_messages WHERE approval_id = ?`,
       )
       .get(approvalId) as ChatMessageRow | undefined;
     return row ? rowToMessage(row) : undefined;

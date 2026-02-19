@@ -28,6 +28,33 @@ export const memoryRouter = t.router({
       return { memories, meta };
     }),
 
+  entityNotes: t.procedure.query(({ ctx }) => {
+    const notes = ctx.memoryStore.getEntityNotes();
+    return Array.from(notes.entries()).map(([entityId, mem]) => ({
+      id: mem.id,
+      entityId,
+      content: mem.content,
+      retrievalCues: mem.retrievalCues,
+      tags: mem.tags,
+      updatedAt: mem.updatedAt,
+    }));
+  }),
+
+  searchEntityNotes: t.procedure
+    .input(z.object({ query: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const results = await ctx.memoryStore.queryEntityNotes(input.query, 50);
+      return results.map((mem) => ({
+        id: mem.id,
+        entityId: mem.entityId,
+        content: mem.content,
+        retrievalCues: mem.retrievalCues,
+        tags: mem.tags,
+        updatedAt: mem.updatedAt,
+        similarity: mem.similarity,
+      }));
+    }),
+
   delete: t.procedure
     .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => {

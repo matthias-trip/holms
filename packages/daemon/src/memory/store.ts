@@ -7,6 +7,8 @@ interface MemoryRow {
   content: string;
   retrieval_cues: string;
   tags: string;
+  type: string;
+  entity_id: string | null;
   embedding: Buffer | null;
   created_at: number;
   updated_at: number;
@@ -24,36 +26,64 @@ export class MemoryStore {
   static async create(dbPath: string, hfCacheDir: string): Promise<MemoryStore> {
     const db = new Database(dbPath);
 
-    // Drop old table if it exists
-    db.exec(`DROP TABLE IF EXISTS memories`);
+    // Migrate from memories_v2 to memories if needed
+    const hasV2 = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='memories_v2'`).get();
+    const hasMemories = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='memories'`).get();
 
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS memories_v2 (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        content TEXT NOT NULL,
-        retrieval_cues TEXT NOT NULL,
-        tags TEXT NOT NULL DEFAULT '[]',
-        embedding BLOB,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
+    if (hasV2 && !hasMemories) {
+      db.exec(`ALTER TABLE memories_v2 RENAME TO memories`);
+    } else if (!hasMemories) {
+      db.exec(`
+        CREATE TABLE memories (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          content TEXT NOT NULL,
+          retrieval_cues TEXT NOT NULL,
+          tags TEXT NOT NULL DEFAULT '[]',
+          type TEXT NOT NULL DEFAULT 'memory',
+          entity_id TEXT,
+          embedding BLOB,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        )
+      `);
+    }
+
+    // Drop the old v2 table if both exist (shouldn't happen, but safety)
+    if (hasV2 && hasMemories) {
+      db.exec(`DROP TABLE IF EXISTS memories_v2`);
+    }
+
+    // Add new columns if missing (migration for existing memories table)
+    const cols = db.prepare(`PRAGMA table_info(memories)`).all() as { name: string }[];
+    const colNames = new Set(cols.map((c) => c.name));
+
+    if (!colNames.has("type")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'memory'`);
+    }
+    if (!colNames.has("entity_id")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN entity_id TEXT`);
+    }
+
+    // Create indexes
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_entity_id ON memories(entity_id) WHERE entity_id IS NOT NULL`);
 
     const embedder = await createEmbeddingPipeline(hfCacheDir);
     return new MemoryStore(db, embedder);
   }
 
-  async write(content: string, retrievalCues: string, tags: string[]): Promise<Memory> {
-    console.log(`[Memory] Writing: "${content.slice(0, 80)}${content.length > 80 ? "…" : ""}" tags=[${tags.join(", ")}]`);
+  async write(content: string, retrievalCues: string, tags: string[], entityId?: string, type?: string): Promise<Memory> {
+    const memType = type ?? "memory";
+    console.log(`[Memory] Writing: "${content.slice(0, 80)}${content.length > 80 ? "..." : ""}" tags=[${tags.join(", ")}] type=${memType}${entityId ? ` entity=${entityId}` : ""}`);
     const now = Date.now();
     const embedding = await this.embedder.embed(retrievalCues);
     const embeddingBuf = Buffer.from(embedding.buffer);
 
     const result = this.db
       .prepare(
-        `INSERT INTO memories_v2 (content, retrieval_cues, tags, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memories (content, retrieval_cues, tags, type, entity_id, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(content, retrievalCues, JSON.stringify(tags), embeddingBuf, now, now);
+      .run(content, retrievalCues, JSON.stringify(tags), memType, entityId ?? null, embeddingBuf, now, now);
 
     const id = Number(result.lastInsertRowid);
     console.log(`[Memory] Stored memory #${id}`);
@@ -69,8 +99,8 @@ export class MemoryStore {
     console.log(`[Memory] Query: ${opts.query ? `"${opts.query}"` : "(no text)"} tags=${opts.tags?.join(",") || "any"} limit=${opts.limit ?? 20}`);
     const limit = opts.limit ?? 20;
 
-    // Build SQL filter
-    const conditions: string[] = [];
+    // Build SQL filter — only standard memories, not entity notes
+    const conditions: string[] = [`type = 'memory'`];
     const params: unknown[] = [];
 
     if (opts.tags && opts.tags.length > 0) {
@@ -91,9 +121,9 @@ export class MemoryStore {
       params.push(opts.timeRange.end);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const where = `WHERE ${conditions.join(" AND ")}`;
     const rows = this.db
-      .prepare(`SELECT * FROM memories_v2 ${where} ORDER BY updated_at DESC`)
+      .prepare(`SELECT * FROM memories ${where} ORDER BY updated_at DESC`)
       .all(...params) as MemoryRow[];
 
     let ranked: { memory: Memory; similarity: number }[];
@@ -172,13 +202,13 @@ export class MemoryStore {
     if (embeddingBuf) {
       this.db
         .prepare(
-          `UPDATE memories_v2 SET content = ?, retrieval_cues = ?, tags = ?, embedding = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, embedding = ?, updated_at = ? WHERE id = ?`,
         )
         .run(newContent, newCues, JSON.stringify(newTags), embeddingBuf, now, id);
     } else {
       this.db
         .prepare(
-          `UPDATE memories_v2 SET content = ?, retrieval_cues = ?, tags = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, updated_at = ? WHERE id = ?`,
         )
         .run(newContent, newCues, JSON.stringify(newTags), now, id);
     }
@@ -188,7 +218,7 @@ export class MemoryStore {
 
   forget(id: number): boolean {
     const result = this.db
-      .prepare(`DELETE FROM memories_v2 WHERE id = ?`)
+      .prepare(`DELETE FROM memories WHERE id = ?`)
       .run(id);
     console.log(`[Memory] Forget #${id}: ${result.changes > 0 ? "deleted" : "not found"}`);
     return result.changes > 0;
@@ -282,16 +312,61 @@ export class MemoryStore {
 
   getAll(): Memory[] {
     const rows = this.db
-      .prepare(`SELECT * FROM memories_v2 ORDER BY updated_at DESC`)
+      .prepare(`SELECT * FROM memories WHERE type = 'memory' ORDER BY updated_at DESC`)
       .all() as MemoryRow[];
     return rows.map((r) => this.rowToMemory(r));
   }
 
   getById(id: number): Memory | null {
     const row = this.db
-      .prepare(`SELECT * FROM memories_v2 WHERE id = ?`)
+      .prepare(`SELECT * FROM memories WHERE id = ?`)
       .get(id) as MemoryRow | undefined;
     return row ? this.rowToMemory(row) : null;
+  }
+
+  getEntityNotes(): Map<string, Memory> {
+    const rows = this.db
+      .prepare(`SELECT * FROM memories WHERE type = 'entity_note'`)
+      .all() as MemoryRow[];
+    const map = new Map<string, Memory>();
+    for (const row of rows) {
+      if (row.entity_id) {
+        map.set(row.entity_id, this.rowToMemory(row));
+      }
+    }
+    return map;
+  }
+
+  findByEntityId(entityId: string): Memory | null {
+    const row = this.db
+      .prepare(`SELECT * FROM memories WHERE type = 'entity_note' AND entity_id = ?`)
+      .get(entityId) as MemoryRow | undefined;
+    return row ? this.rowToMemory(row) : null;
+  }
+
+  async queryEntityNotes(queryText: string, limit: number = 10): Promise<ScoredMemory[]> {
+    const rows = this.db
+      .prepare(`SELECT * FROM memories WHERE type = 'entity_note'`)
+      .all() as MemoryRow[];
+
+    const queryEmbedding = await this.embedder.embed(queryText);
+    const ranked = rows
+      .filter((r) => r.embedding !== null)
+      .map((r) => {
+        const emb = new Float32Array(
+          (r.embedding as Buffer).buffer,
+          (r.embedding as Buffer).byteOffset,
+          EMBEDDING_DIM,
+        );
+        return {
+          memory: this.rowToMemory(r),
+          similarity: cosineSimilarity(queryEmbedding, emb),
+        };
+      })
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
+
+    return ranked.map((r) => ({ ...r.memory, similarity: r.similarity }));
   }
 
   close(): void {
@@ -300,7 +375,7 @@ export class MemoryStore {
 
   private getAllRows(): MemoryRow[] {
     return this.db
-      .prepare(`SELECT * FROM memories_v2 ORDER BY updated_at DESC`)
+      .prepare(`SELECT * FROM memories ORDER BY updated_at DESC`)
       .all() as MemoryRow[];
   }
 
@@ -310,6 +385,8 @@ export class MemoryStore {
       content: row.content,
       retrievalCues: row.retrieval_cues,
       tags: JSON.parse(row.tags),
+      type: row.type,
+      entityId: row.entity_id ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

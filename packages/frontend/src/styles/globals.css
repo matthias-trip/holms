@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500&display=swap');
 
 /* ── Light, Modern Theme ── */
 
@@ -169,8 +168,13 @@ body {
   to { opacity: 0; transform: translateY(-100%); }
 }
 
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
 .animate-slide-down { animation: slide-down 0.25s ease-out both; }
 .animate-breathe { animation: breathe 3s ease-in-out infinite; }
+.animate-spin-slow { animation: spin-slow 1.2s linear infinite; }
 .animate-fade-in { animation: fade-in 0.3s ease-out both; }
 .animate-slide-in { animation: slide-in 0.25s ease-out both; }
 .content-reveal { animation: content-reveal 0.25s ease-out both; }

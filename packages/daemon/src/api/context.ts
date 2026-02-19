@@ -9,6 +9,7 @@ import type { EventBus } from "../event-bus.js";
 import type { ScheduleStore } from "../schedule/store.js";
 import type { ProactiveScheduler } from "../scheduler/proactive.js";
 import type { PluginManager } from "../plugins/manager.js";
+import type { ChannelManager } from "../channels/manager.js";
 
 export interface TRPCContext {
   deviceManager: DeviceManager;
@@ -22,6 +23,7 @@ export interface TRPCContext {
   scheduleStore: ScheduleStore;
   scheduler: ProactiveScheduler;
   pluginManager: PluginManager;
+  channelManager: ChannelManager;
 }
 
 export function createContext(deps: TRPCContext): TRPCContext {

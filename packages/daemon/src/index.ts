@@ -16,6 +16,8 @@ import { ScheduleStore } from "./schedule/store.js";
 import { TriageStore } from "./triage/store.js";
 import { TriageEngine } from "./triage/engine.js";
 import { PluginManager } from "./plugins/manager.js";
+import { ChannelManager } from "./channels/manager.js";
+import { WebProvider } from "./channels/web-provider.js";
 import { startApiServer } from "./api/server.js";
 import { initActivityPersistence } from "./api/routers/chat.js";
 
@@ -71,6 +73,10 @@ async function main() {
     triageStore,
     pluginManager,
   );
+
+  // 9. Init ChannelManager + register WebProvider
+  const channelManager = new ChannelManager(eventBus, chatStore, coordinator);
+  await channelManager.register(new WebProvider());
 
   // 9b. Init TriageEngine
   const triageEngine = new TriageEngine(triageStore, eventBus, deviceManager, config);
@@ -158,6 +164,7 @@ async function main() {
       timestamp: data.createdAt,
       status: "approval_pending",
       approvalId: data.id,
+      channel: "web:default",
     });
   });
 
@@ -178,6 +185,7 @@ async function main() {
       scheduleStore,
       scheduler,
       pluginManager,
+      channelManager,
     },
     config.apiPort,
   );
@@ -192,6 +200,7 @@ async function main() {
   // 15. Graceful shutdown
   const shutdown = async () => {
     console.log("\n\nShutting down...");
+    await channelManager.stopAll();
     scheduler.stop();
     triageEngine.stopBatchTicker();
     apiServer.close();

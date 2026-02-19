@@ -47,7 +47,7 @@ export class Coordinator {
     private triageStore: TriageStore,
     private pluginManager?: PluginManager,
   ) {
-    this.deviceQueryServer = createDeviceQueryServer(deviceManager);
+    this.deviceQueryServer = createDeviceQueryServer(deviceManager, memoryStore);
     this.deviceCommandServer = createDeviceCommandServer(deviceManager);
     this.memoryServer = createMemoryToolsServer(memoryStore);
     this.reflexServer = createReflexToolsServer(reflexStore);
@@ -145,8 +145,13 @@ export class Coordinator {
 
   private async buildContext(): Promise<string> {
     const devices = await this.deviceManager.getAllDevices();
+    const entityNotes = this.memoryStore.getEntityNotes();
     const deviceSummary = devices
-      .map((d) => `${d.name} (${d.id}): ${JSON.stringify(d.state)}`)
+      .map((d) => {
+        const line = `${d.name} (${d.id}): ${JSON.stringify(d.state)}`;
+        const note = entityNotes.get(d.id);
+        return note ? `${line}\n  note: "${note.content}"` : line;
+      })
       .join("\n");
 
     return buildSystemPrompt({

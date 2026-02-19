@@ -69,7 +69,10 @@ function similarityColor(score: number): { color: string; bg: string } {
   return { color: "var(--err)", bg: "var(--err-dim)" };
 }
 
+type Tab = "memories" | "entity-notes";
+
 export default function MemoryPanel() {
+  const [activeTab, setActiveTab] = useState<Tab>("memories");
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
@@ -77,19 +80,36 @@ export default function MemoryPanel() {
 
   const { data: memories, refetch } = trpc.memory.list.useQuery(
     tagsInput,
-    { refetchInterval: 5000 },
+    { refetchInterval: 5000, enabled: activeTab === "memories" },
   );
 
   const { data: searchData } = trpc.memory.search.useQuery(
     { query: search },
-    { enabled: search.length > 0 },
+    { enabled: search.length > 0 && activeTab === "memories" },
+  );
+
+  const { data: entityNotes, refetch: refetchNotes } = trpc.memory.entityNotes.useQuery(
+    undefined,
+    { refetchInterval: 5000, enabled: activeTab === "entity-notes" },
+  );
+
+  const [entitySearch, setEntitySearch] = useState("");
+
+  const { data: entitySearchResults } = trpc.memory.searchEntityNotes.useQuery(
+    { query: entitySearch },
+    { enabled: entitySearch.length > 0 && activeTab === "entity-notes" },
   );
 
   const searchResults = searchData?.memories;
   const searchMeta = searchData?.meta;
 
+  const displayEntityNotes = entitySearch.length > 0 ? entitySearchResults : entityNotes;
+
   const deleteMutation = trpc.memory.delete.useMutation({
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      refetch();
+      refetchNotes();
+    },
   });
 
   // Derive unique tags from all memories
@@ -123,10 +143,14 @@ export default function MemoryPanel() {
   };
 
   return (
-    <div className="h-full flex flex-col p-6" style={{ background: "var(--void)" }}>
-      <div className="flex items-center justify-between mb-5">
+    <div className="h-full flex flex-col" style={{ background: "var(--void)" }}>
+      {/* Header */}
+      <div
+        className="px-6 py-4 flex items-center justify-between flex-shrink-0"
+        style={{ borderBottom: "1px solid var(--graphite)" }}
+      >
         <span className="section-label">What I Remember</span>
-        {displayMemories && (
+        {activeTab === "memories" && displayMemories && (
           <span
             className="text-[11px]"
             style={{ color: "var(--pewter)" }}
@@ -134,188 +158,329 @@ export default function MemoryPanel() {
             {displayMemories.length} entries
           </span>
         )}
-      </div>
-
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative">
-          <svg
-            width="14" height="14" viewBox="0 0 14 14" fill="none"
-            className="absolute left-3 top-1/2 -translate-y-1/2"
+        {activeTab === "entity-notes" && entityNotes && (
+          <span
+            className="text-[11px]"
+            style={{ color: "var(--pewter)" }}
           >
-            <circle cx="6" cy="6" r="4.5" stroke="var(--pewter)" strokeWidth="1.2" />
-            <path d="M9.5 9.5L12.5 12.5" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search memories..."
-            className="input-base w-full"
-            style={{ paddingLeft: "34px" }}
-          />
-        </div>
-      </div>
-
-      {/* Search meta */}
-      {search.length > 0 && searchMeta && (
-        <div
-          className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg text-[11px]"
-          style={{ background: "var(--obsidian)", border: "1px solid var(--graphite)", color: "var(--steel)" }}
-        >
-          <span>{searchMeta.totalMatches} matches</span>
-          {searchMeta.highSimilarityCluster && (
-            <span
-              className="px-1.5 py-0.5 rounded"
-              style={{ background: "var(--ok-dim)", color: "var(--ok)" }}
-            >
-              tight cluster
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Tag filters */}
-      {allTags.length > 0 && (
-        <div className="flex gap-1.5 mb-4 flex-wrap">
-          {allTags.map((tag) => {
-            const isActive = activeTags.has(tag);
-            const tc = tagColor(tag);
-            return (
-              <button
-                key={tag}
-                onClick={() => toggleTag(tag)}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150"
-                style={{
-                  background: isActive ? tc.bg : "var(--slate)",
-                  color: isActive ? tc.color : "var(--steel)",
-                  border: isActive
-                    ? `1px solid ${tc.color}33`
-                    : "1px solid var(--graphite)",
-                }}
-              >
-                #{tag}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Memory list grouped by day */}
-      <div className="flex-1 overflow-auto">
-        {(!displayMemories || displayMemories.length === 0) ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.3" />
-                <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
-            </div>
-            <div className="empty-state-text">
-              No memories yet. As I learn about your home and preferences, they'll show up here.
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {dayGroups.map((group) => (
-              <section key={group.day}>
-                {/* Day header */}
-                <div className="flex items-center gap-3 mb-3">
-                  <h3
-                    className="text-[12px] font-semibold uppercase tracking-wider flex-shrink-0"
-                    style={{ color: "var(--steel)" }}
-                  >
-                    {group.label}
-                  </h3>
-                  <div
-                    className="flex-1 h-px"
-                    style={{ background: "var(--graphite)" }}
-                  />
-                  <span
-                    className="text-[10px] tabular-nums flex-shrink-0"
-                    style={{ color: "var(--pewter)" }}
-                  >
-                    {group.memories.length}
-                  </span>
-                </div>
-
-                {/* Memory cards for this day */}
-                <div className="space-y-2">
-                  {group.memories.map((mem) => (
-                    <div
-                      key={mem.id}
-                      className="rounded-xl p-4 group"
-                      style={{
-                        background: "var(--obsidian)",
-                        border: "1px solid var(--graphite)",
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            {mem.tags.map((tag) => {
-                              const tc = tagColor(tag);
-                              return (
-                                <span
-                                  key={tag}
-                                  className="badge"
-                                  style={{ background: tc.bg, color: tc.color }}
-                                >
-                                  #{tag}
-                                </span>
-                              );
-                            })}
-                            {"similarity" in mem && (mem as ScoredMemory).similarity > 0 && (
-                              <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums"
-                                style={{
-                                  background: similarityColor((mem as ScoredMemory).similarity).bg,
-                                  color: similarityColor((mem as ScoredMemory).similarity).color,
-                                }}
-                              >
-                                {((mem as ScoredMemory).similarity * 100).toFixed(0)}%
-                              </span>
-                            )}
-                            <span
-                              className="text-[10px] tabular-nums ml-auto"
-                              style={{ color: "var(--pewter)" }}
-                            >
-                              {new Date(mem.createdAt).toLocaleTimeString(undefined, {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                          </div>
-                          <p className="text-[13px] leading-relaxed" style={{ color: "var(--mist)" }}>
-                            {mem.content}
-                          </p>
-                          {mem.retrievalCues && (
-                            <p
-                              className="text-[11px] mt-1.5 leading-relaxed"
-                              style={{ color: "var(--pewter)" }}
-                            >
-                              {mem.retrievalCues}
-                            </p>
-                          )}
-                        </div>
-                        <button
-                          onClick={() => deleteMutation.mutate({ id: mem.id })}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--err-dim)]"
-                          style={{ color: "var(--steel)" }}
-                          title="Delete memory"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                            <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
+            {entityNotes.length} notes
+          </span>
         )}
       </div>
+
+      {/* Tab bar */}
+      <div
+        className="px-6 py-2.5 flex gap-1 flex-shrink-0"
+        style={{ borderBottom: "1px solid var(--graphite)", background: "var(--abyss)" }}
+      >
+        {([
+          { key: "memories" as Tab, label: "Memories" },
+          { key: "entity-notes" as Tab, label: "Entity Notes" },
+        ]).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0"
+            style={{
+              background: activeTab === tab.key ? "var(--obsidian)" : "transparent",
+              border: activeTab === tab.key ? "1px solid var(--graphite)" : "1px solid transparent",
+              color: activeTab === tab.key ? "var(--white)" : "var(--steel)",
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "memories" && (
+        <div className="flex-1 flex flex-col overflow-hidden p-6">
+          {/* Search */}
+          <div className="mb-4">
+            <div className="relative">
+              <svg
+                width="14" height="14" viewBox="0 0 14 14" fill="none"
+                className="absolute left-3 top-1/2 -translate-y-1/2"
+              >
+                <circle cx="6" cy="6" r="4.5" stroke="var(--pewter)" strokeWidth="1.2" />
+                <path d="M9.5 9.5L12.5 12.5" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search memories..."
+                className="input-base w-full"
+                style={{ paddingLeft: "34px" }}
+              />
+            </div>
+          </div>
+
+          {/* Search meta */}
+          {search.length > 0 && searchMeta && (
+            <div
+              className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg text-[11px]"
+              style={{ background: "var(--obsidian)", border: "1px solid var(--graphite)", color: "var(--steel)" }}
+            >
+              <span>{searchMeta.totalMatches} matches</span>
+              {searchMeta.highSimilarityCluster && (
+                <span
+                  className="px-1.5 py-0.5 rounded"
+                  style={{ background: "var(--ok-dim)", color: "var(--ok)" }}
+                >
+                  tight cluster
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Tag filters */}
+          {allTags.length > 0 && (
+            <div className="flex gap-1.5 mb-4 flex-wrap">
+              {allTags.map((tag) => {
+                const isActive = activeTags.has(tag);
+                const tc = tagColor(tag);
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => toggleTag(tag)}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-150"
+                    style={{
+                      background: isActive ? tc.bg : "var(--slate)",
+                      color: isActive ? tc.color : "var(--steel)",
+                      border: isActive
+                        ? `1px solid ${tc.color}33`
+                        : "1px solid var(--graphite)",
+                    }}
+                  >
+                    #{tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Memory list grouped by day */}
+          <div className="flex-1 overflow-auto">
+            {(!displayMemories || displayMemories.length === 0) ? (
+              <div className="empty-state">
+                <div className="empty-state-icon">
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.3" />
+                    <circle cx="9" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.3" />
+                  </svg>
+                </div>
+                <div className="empty-state-text">
+                  No memories yet. As I learn about your home and preferences, they'll show up here.
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {dayGroups.map((group) => (
+                  <section key={group.day}>
+                    {/* Day header */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <h3
+                        className="text-[12px] font-semibold uppercase tracking-wider flex-shrink-0"
+                        style={{ color: "var(--steel)" }}
+                      >
+                        {group.label}
+                      </h3>
+                      <div
+                        className="flex-1 h-px"
+                        style={{ background: "var(--graphite)" }}
+                      />
+                      <span
+                        className="text-[10px] tabular-nums flex-shrink-0"
+                        style={{ color: "var(--pewter)" }}
+                      >
+                        {group.memories.length}
+                      </span>
+                    </div>
+
+                    {/* Memory cards for this day */}
+                    <div className="space-y-2">
+                      {group.memories.map((mem) => (
+                        <div
+                          key={mem.id}
+                          className="rounded-xl p-4 group"
+                          style={{
+                            background: "var(--obsidian)",
+                            border: "1px solid var(--graphite)",
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-2">
+                                {mem.tags.map((tag) => {
+                                  const tc = tagColor(tag);
+                                  return (
+                                    <span
+                                      key={tag}
+                                      className="badge"
+                                      style={{ background: tc.bg, color: tc.color }}
+                                    >
+                                      #{tag}
+                                    </span>
+                                  );
+                                })}
+                                {"similarity" in mem && (mem as ScoredMemory).similarity > 0 && (
+                                  <span
+                                    className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums"
+                                    style={{
+                                      background: similarityColor((mem as ScoredMemory).similarity).bg,
+                                      color: similarityColor((mem as ScoredMemory).similarity).color,
+                                    }}
+                                  >
+                                    {((mem as ScoredMemory).similarity * 100).toFixed(0)}%
+                                  </span>
+                                )}
+                                <span
+                                  className="text-[10px] tabular-nums ml-auto"
+                                  style={{ color: "var(--pewter)" }}
+                                >
+                                  {new Date(mem.createdAt).toLocaleTimeString(undefined, {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-[13px] leading-relaxed" style={{ color: "var(--mist)" }}>
+                                {mem.content}
+                              </p>
+                              {mem.retrievalCues && (
+                                <p
+                                  className="text-[11px] mt-1.5 leading-relaxed"
+                                  style={{ color: "var(--pewter)" }}
+                                >
+                                  {mem.retrievalCues}
+                                </p>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => deleteMutation.mutate({ id: mem.id })}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--err-dim)]"
+                              style={{ color: "var(--steel)" }}
+                              title="Delete memory"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "entity-notes" && (
+        <div className="flex-1 flex flex-col overflow-hidden p-6">
+          {/* Search */}
+          <div className="mb-4">
+            <div className="relative">
+              <svg
+                width="14" height="14" viewBox="0 0 14 14" fill="none"
+                className="absolute left-3 top-1/2 -translate-y-1/2"
+              >
+                <circle cx="6" cy="6" r="4.5" stroke="var(--pewter)" strokeWidth="1.2" />
+                <path d="M9.5 9.5L12.5 12.5" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+              <input
+                value={entitySearch}
+                onChange={(e) => setEntitySearch(e.target.value)}
+                placeholder="Search entity notes..."
+                className="input-base w-full"
+                style={{ paddingLeft: "34px" }}
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+          {(!displayEntityNotes || displayEntityNotes.length === 0) ? (
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <rect x="3" y="4" width="12" height="10" rx="2" stroke="currentColor" strokeWidth="1.3" />
+                  <path d="M6 7.5h6M6 10h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="empty-state-text">
+                {entitySearch.length > 0
+                  ? "No entity notes match your search."
+                  : "No entity notes yet. The agent will annotate devices as it learns about them."}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {displayEntityNotes.map((note) => (
+                <div
+                  key={note.id}
+                  className="rounded-xl p-4 group"
+                  style={{
+                    background: "var(--obsidian)",
+                    border: "1px solid var(--graphite)",
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span
+                          className="text-[11px] font-mono px-2 py-0.5 rounded"
+                          style={{ background: "var(--slate)", color: "var(--steel)" }}
+                        >
+                          {note.entityId}
+                        </span>
+                        {"similarity" in note && typeof note.similarity === "number" && note.similarity > 0 && (
+                          <span
+                            className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums"
+                            style={{
+                              background: similarityColor(note.similarity).bg,
+                              color: similarityColor(note.similarity).color,
+                            }}
+                          >
+                            {(note.similarity * 100).toFixed(0)}%
+                          </span>
+                        )}
+                        <span
+                          className="text-[10px] tabular-nums ml-auto"
+                          style={{ color: "var(--pewter)" }}
+                        >
+                          {new Date(note.updatedAt).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          {new Date(note.updatedAt).toLocaleTimeString(undefined, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-[13px] leading-relaxed" style={{ color: "var(--mist)" }}>
+                        {note.content}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => deleteMutation.mutate({ id: note.id })}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-[var(--err-dim)]"
+                      style={{ color: "var(--steel)" }}
+                      title="Delete entity note"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

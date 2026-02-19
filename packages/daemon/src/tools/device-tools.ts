@@ -1,19 +1,25 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { DeviceManager } from "../devices/manager.js";
+import type { MemoryStore } from "../memory/store.js";
 
-export function createDeviceQueryServer(manager: DeviceManager) {
+export function createDeviceQueryServer(manager: DeviceManager, memoryStore: MemoryStore) {
   const listDevices = tool(
     "list_devices",
-    "List all devices in the home with their current state",
+    "List all devices in the home with their current state and any entity notes",
     {},
     async () => {
       const devices = await manager.getAllDevices();
+      const notes = memoryStore.getEntityNotes();
+      const devicesWithNotes = devices.map((d) => {
+        const note = notes.get(d.id);
+        return note ? { ...d, note: note.content } : d;
+      });
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(devices, null, 2),
+            text: JSON.stringify(devicesWithNotes, null, 2),
           },
         ],
       };
@@ -22,7 +28,7 @@ export function createDeviceQueryServer(manager: DeviceManager) {
 
   const getDeviceState = tool(
     "get_device_state",
-    "Get the current state of a specific device by ID",
+    "Get the current state of a specific device by ID, including any entity note",
     {
       deviceId: z.string().describe("The device ID to query"),
     },
@@ -36,9 +42,104 @@ export function createDeviceQueryServer(manager: DeviceManager) {
           isError: true,
         };
       }
+      const note = memoryStore.findByEntityId(args.deviceId);
+      const result = note ? { ...device, note: note.content } : device;
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(device, null, 2) },
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        ],
+      };
+    },
+  );
+
+  const annotateEntity = tool(
+    "annotate_entity",
+    "Set a short factual annotation (max 300 chars) on a device — what it is, what it controls, known quirks. Overwrites any previous note. Empty string clears.",
+    {
+      entity_id: z.string().describe("The device ID to annotate"),
+      notes: z.string().max(300).describe("The annotation text (max 300 chars). Empty string clears the note."),
+    },
+    async (args) => {
+      const device = await manager.getDevice(args.entity_id);
+      if (!device) {
+        return {
+          content: [
+            { type: "text" as const, text: `Device ${args.entity_id} not found` },
+          ],
+          isError: true,
+        };
+      }
+
+      const existing = memoryStore.findByEntityId(args.entity_id);
+
+      // Empty notes = clear
+      if (args.notes === "") {
+        if (existing) {
+          memoryStore.forget(existing.id);
+          return {
+            content: [
+              { type: "text" as const, text: `Cleared entity note for ${device.name} (${args.entity_id})` },
+            ],
+          };
+        }
+        return {
+          content: [
+            { type: "text" as const, text: `No entity note exists for ${device.name} (${args.entity_id})` },
+          ],
+        };
+      }
+
+      // Build retrieval cues from device info + note keywords
+      const noteKeywords = args.notes.split(/\s+/).slice(0, 8).join(" ");
+      const retrievalCues = `${device.name} ${device.room} ${device.type} entity note identity ${noteKeywords}`;
+
+      if (existing) {
+        // Upsert — rewrite existing note
+        await memoryStore.rewrite(existing.id, {
+          content: args.notes,
+          retrievalCues,
+          tags: ["entity_note"],
+        });
+        return {
+          content: [
+            { type: "text" as const, text: `Updated entity note for ${device.name} (${args.entity_id}): "${args.notes}"` },
+          ],
+        };
+      } else {
+        // Create new note
+        await memoryStore.write(args.notes, retrievalCues, ["entity_note"], args.entity_id, "entity_note");
+        return {
+          content: [
+            { type: "text" as const, text: `Created entity note for ${device.name} (${args.entity_id}): "${args.notes}"` },
+          ],
+        };
+      }
+    },
+  );
+
+  const queryEntityNotes = tool(
+    "query_entity_notes",
+    "Search entity annotations by semantic similarity. Use to find devices related to a concept (e.g., 'heating', 'security', 'entrance area'). Returns matching device annotations ranked by relevance.",
+    {
+      query: z.string().describe("Semantic search query"),
+      limit: z.number().optional().default(10).describe("Max results to return"),
+    },
+    async (args) => {
+      const results = await memoryStore.queryEntityNotes(args.query, args.limit);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              results.map((r) => ({
+                entityId: r.entityId,
+                note: r.content,
+                similarity: r.similarity,
+              })),
+              null,
+              2,
+            ),
+          },
         ],
       };
     },
@@ -47,7 +148,7 @@ export function createDeviceQueryServer(manager: DeviceManager) {
   return createSdkMcpServer({
     name: "device-query",
     version: "1.0.0",
-    tools: [listDevices, getDeviceState],
+    tools: [listDevices, getDeviceState, annotateEntity, queryEntityNotes],
   });
 }
 

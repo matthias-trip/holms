@@ -6,6 +6,7 @@ import MarkdownMessage from "./MarkdownMessage";
 interface StreamingMessage extends ChatMessage {
   streaming?: boolean;
   reasoning?: string;
+  thinkingStartedAt?: number;
 }
 
 function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
@@ -31,32 +32,62 @@ function parseApprovalData(content: string): ApprovalMessageData | null {
   return null;
 }
 
-function ReasoningBlock({ reasoning, live }: { reasoning: string; live?: boolean }) {
-  const [manualToggle, setManualToggle] = useState<boolean | null>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
+/** Live reasoning — streams as plain text (no markdown re-parse flicker), auto-scrolls */
+function LiveReasoningBlock({ reasoning, startedAt }: { reasoning: string; startedAt: number }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [elapsed, setElapsed] = useState(0);
 
-  // Live blocks start expanded, finished blocks start collapsed.
-  // Once the user manually toggles, that choice sticks.
-  const expanded = manualToggle ?? !!live;
-
-  // Auto-scroll to bottom while streaming
   useEffect(() => {
-    if (live && expanded && contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  });
+  }, [reasoning]);
 
   return (
-    <div
-      className="mb-2 rounded-lg overflow-hidden"
-      style={{
-        background: "var(--abyss)",
-        border: "1px solid var(--graphite)",
-      }}
-    >
+    <div className="mb-2">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin-slow flex-shrink-0">
+          <circle cx="8" cy="8" r="6" stroke="var(--graphite)" strokeWidth="1.5" />
+          <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--steel)" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span className="text-[11px] font-medium" style={{ color: "var(--steel)" }}>
+          Thinking{elapsed > 0 ? ` (${elapsed}s)` : ""}...
+        </span>
+      </div>
+      <div
+        ref={scrollRef}
+        className="pl-4 text-[11px] overflow-auto whitespace-pre-wrap"
+        style={{
+          color: "var(--silver)",
+          maxHeight: "200px",
+          lineHeight: 1.6,
+          borderLeft: "2px solid var(--graphite)",
+        }}
+      >
+        {reasoning}
+      </div>
+    </div>
+  );
+}
+
+/** Collapsed reasoning toggle — shows "Thought for Xs", click to expand full markdown */
+function ReasoningBlock({ reasoning, durationSec }: { reasoning: string; durationSec?: number }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const label = durationSec != null && durationSec > 0
+    ? `Thought for ${durationSec}s`
+    : "Reasoning";
+
+  return (
+    <div className="mb-2">
       <button
-        onClick={() => setManualToggle((prev) => !(prev ?? !!live))}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left"
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-left"
       >
         <svg
           width="10" height="10" viewBox="0 0 10 10" fill="none"
@@ -66,33 +97,25 @@ function ReasoningBlock({ reasoning, live }: { reasoning: string; live?: boolean
           <path d="M3.5 2l3 3-3 3" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
         <span className="text-[11px] font-medium" style={{ color: "var(--steel)" }}>
-          Reasoning
+          {label}
         </span>
-        {live && (
-          <span className="inline-flex gap-[3px] ml-1">
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="inline-block w-[3px] h-[3px] rounded-full"
-                style={{
-                  background: "var(--steel)",
-                  animation: "thinking-dot 1.4s ease-in-out infinite",
-                  animationDelay: `${i * 0.2}s`,
-                }}
-              />
-            ))}
-          </span>
-        )}
       </button>
-      {expanded && (
+      <div
+        className="overflow-hidden transition-all duration-200 ease-in-out"
+        style={{ maxHeight: expanded ? "400px" : "0px", opacity: expanded ? 1 : 0 }}
+      >
         <div
-          ref={contentRef}
-          className="px-2.5 pb-2 text-[11px] overflow-auto"
-          style={{ color: "var(--silver)", maxHeight: "300px", lineHeight: 1.5 }}
+          className="mt-1.5 pl-4 text-[11px] overflow-auto"
+          style={{
+            color: "var(--silver)",
+            maxHeight: "380px",
+            lineHeight: 1.6,
+            borderLeft: "2px solid var(--graphite)",
+          }}
         >
           <MarkdownMessage content={reasoning} />
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -240,12 +263,14 @@ export default function ChatPanel() {
 
       // Append streaming placeholder for the coordinator response
       if (data.thinkingMessageId) {
+        const now = Date.now();
         const placeholder: StreamingMessage = {
           id: data.thinkingMessageId,
           role: "assistant",
           content: "",
-          timestamp: Date.now(),
+          timestamp: now,
           streaming: true,
+          thinkingStartedAt: now,
         };
         liveMessageIdsRef.current.add(data.thinkingMessageId);
         streamPlaceholderIdRef.current = data.thinkingMessageId;
@@ -274,12 +299,14 @@ export default function ChatPanel() {
 
       // Append streaming placeholder for the coordinator response
       if (data.thinkingMessageId) {
+        const now = Date.now();
         const placeholder: StreamingMessage = {
           id: data.thinkingMessageId,
           role: "assistant",
           content: "",
-          timestamp: Date.now(),
+          timestamp: now,
           streaming: true,
+          thinkingStartedAt: now,
         };
         liveMessageIdsRef.current.add(data.thinkingMessageId);
         streamPlaceholderIdRef.current = data.thinkingMessageId;
@@ -335,7 +362,7 @@ export default function ChatPanel() {
           if (hasStreaming) {
             return prev.map((m) =>
               m.streaming
-                ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning }
+                ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning, thinkingStartedAt: m.thinkingStartedAt }
                 : m,
             );
           }
@@ -377,7 +404,7 @@ export default function ChatPanel() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === placeholderId
-            ? { ...data.assistantMsg, reasoning: m.reasoning }
+            ? { ...data.assistantMsg, reasoning: m.reasoning, thinkingStartedAt: m.thinkingStartedAt }
             : m,
         ),
       );
@@ -409,12 +436,14 @@ export default function ChatPanel() {
     };
 
     const placeholderId = crypto.randomUUID();
+    const now = Date.now();
     const placeholder: StreamingMessage = {
       id: placeholderId,
       role: "assistant",
       content: "",
-      timestamp: Date.now(),
+      timestamp: now,
       streaming: true,
+      thinkingStartedAt: now,
     };
 
     liveMessageIdsRef.current.add(userMsg.id);
@@ -538,40 +567,29 @@ export default function ChatPanel() {
                   {msg.role === "assistant" ? (
                     msg.streaming ? (
                       msg.reasoning ? (
-                        <>
-                          <ReasoningBlock reasoning={msg.reasoning} live />
-                          <div className="flex gap-1.5 py-1">
-                            {[0, 1, 2].map((i) => (
-                              <div
-                                key={i}
-                                className="w-1.5 h-1.5 rounded-full"
-                                style={{
-                                  background: "var(--steel)",
-                                  animation: "thinking-dot 1.4s ease-in-out infinite",
-                                  animationDelay: `${i * 0.2}s`,
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </>
+                        <LiveReasoningBlock
+                          reasoning={msg.reasoning}
+                          startedAt={msg.thinkingStartedAt ?? msg.timestamp}
+                        />
                       ) : (
-                        <div className="flex gap-1.5 py-1">
-                          {[0, 1, 2].map((i) => (
-                            <div
-                              key={i}
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{
-                                background: "var(--steel)",
-                                animation: "thinking-dot 1.4s ease-in-out infinite",
-                                animationDelay: `${i * 0.2}s`,
-                              }}
-                            />
-                          ))}
+                        <div className="flex items-center gap-2 py-0.5">
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin-slow flex-shrink-0">
+                            <circle cx="8" cy="8" r="6" stroke="var(--graphite)" strokeWidth="1.5" />
+                            <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--steel)" strokeWidth="1.5" strokeLinecap="round" />
+                          </svg>
+                          <span className="text-[11px]" style={{ color: "var(--steel)" }}>Thinking...</span>
                         </div>
                       )
                     ) : (
                       <>
-                        {msg.reasoning && <ReasoningBlock reasoning={msg.reasoning} />}
+                        {msg.reasoning && (
+                          <ReasoningBlock
+                            reasoning={msg.reasoning}
+                            durationSec={msg.thinkingStartedAt
+                              ? Math.round((msg.timestamp - msg.thinkingStartedAt) / 1000)
+                              : undefined}
+                          />
+                        )}
                         <MarkdownMessage content={msg.content} />
                       </>
                     )

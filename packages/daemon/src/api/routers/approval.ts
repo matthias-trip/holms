@@ -76,7 +76,11 @@ export const approvalRouter = t.router({
         content: "",
         timestamp: Date.now(),
         status: "thinking",
+        channel: "web:default",
       });
+
+      // Track the response for channel routing
+      ctx.channelManager.trackResponse(thinkingId, "web", "web:default");
 
       // (c) Background: run coordinator, streaming into the thinking message
       processApprovalResult(ctx, input.id, true, {
@@ -116,7 +120,11 @@ export const approvalRouter = t.router({
         content: "",
         timestamp: Date.now(),
         status: "thinking",
+        channel: "web:default",
       });
+
+      // Track the response for channel routing
+      ctx.channelManager.trackResponse(thinkingId, "web", "web:default");
 
       // (c) Background: run coordinator, streaming into the thinking message
       processApprovalResult(ctx, input.id, false, {

@@ -37,6 +37,8 @@ export interface Memory {
   content: string;
   retrievalCues: string;
   tags: string[];
+  type?: string;
+  entityId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -132,6 +134,7 @@ export interface ChatMessage {
   timestamp: number;
   status?: ChatMessageStatus;
   approvalId?: string;
+  channel?: string;
 }
 
 /** JSON shape stored in content when status is approval_pending or approval_resolved */
@@ -142,6 +145,15 @@ export interface ApprovalMessageData {
   params: Record<string, unknown>;
   reason: string;
   resolved?: { approved: boolean };
+}
+
+// ── Channel Types ──
+
+export interface ChannelConversationInfo {
+  id: string;
+  providerId: string;
+  displayName: string;
+  topic?: string;
 }
 
 // ── Agent Activity Types ──
