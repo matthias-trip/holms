@@ -5,19 +5,19 @@ import type { MemoryStore } from "./store.js";
 export function createMemoryToolsServer(store: MemoryStore) {
   const memoryWrite = tool(
     "memory_write",
-    "Store a new memory. Write retrieval_cues that describe the situations where this memory should surface — these cues are what gets searched, not the content itself. Use tags to organize memories however you see fit.",
+    "Store a new memory. Write retrieval_cues that describe the situations where this memory should surface — these cues are what gets searched, not the content itself. Use tags to organize memories (searchable via memory_query tag filter).",
     {
       content: z.string().describe("The memory content to store"),
       retrieval_cues: z
         .string()
         .describe(
-          "Search-optimized cues describing when this memory should surface (e.g., 'kitchen light brightness preference evening bedtime')",
+          "10–30 word search-optimized cues describing when this memory should surface. Pack with keywords and context — don't repeat the content verbatim. Example: 'kitchen light brightness preference evening bedtime routine dimming'",
         ),
       tags: z
         .array(z.string())
         .optional()
         .default([])
-        .describe("Free-form tags for categorization (e.g., 'preference', 'observation', 'pattern')"),
+        .describe("Free-form tags for categorization (e.g., 'preference', 'observation', 'pattern'). Used by memory_query tag filter to narrow searches."),
     },
     async (args) => {
       const memory = await store.write(args.content, args.retrieval_cues, args.tags);
@@ -34,7 +34,7 @@ export function createMemoryToolsServer(store: MemoryStore) {
 
   const memoryQuery = tool(
     "memory_query",
-    "Search memories using semantic similarity. Returns ranked results with metadata about the result set. Use this before any device command to check for relevant preferences and context.",
+    "Search memories by semantic similarity, tag filter, time range, or any combination. Returns ranked results plus meta: totalMatches (how many matched before limit), ageRangeMs (span of matched memories), highSimilarityCluster (groups with >0.85 similarity — consolidation candidates). Omitting query returns memories by recency. Use before any device command to check for preferences.",
     {
       query: z
         .string()
@@ -43,11 +43,11 @@ export function createMemoryToolsServer(store: MemoryStore) {
       tags: z
         .array(z.string())
         .optional()
-        .describe("Filter to memories with any of these tags"),
+        .describe("Filter to memories with any of these tags. Combined as AND with query when both provided. Omit to search all tags."),
       time_range: z
         .object({
-          start: z.number().optional().describe("Start timestamp (ms)"),
-          end: z.number().optional().describe("End timestamp (ms)"),
+          start: z.number().optional().describe("Start timestamp in Unix epoch milliseconds (e.g., Date.now() - 86400000 for last 24h)"),
+          end: z.number().optional().describe("End timestamp in Unix epoch milliseconds (e.g., Date.now() for now)"),
         })
         .optional()
         .describe("Filter by creation time range"),
@@ -89,7 +89,7 @@ export function createMemoryToolsServer(store: MemoryStore) {
 
   const memoryRewrite = tool(
     "memory_rewrite",
-    "Update an existing memory. Use this to consolidate similar memories, update stale content, or refine retrieval cues. If retrieval_cues are changed, the embedding is recomputed.",
+    "Update an existing memory. Use to consolidate similar memories (query similar → rewrite the best one with merged content → forget the rest), update stale content, or refine retrieval cues. Re-embeds if retrieval_cues change.",
     {
       id: z.number().describe("ID of the memory to update"),
       content: z.string().optional().describe("New content (omit to keep existing)"),
@@ -154,7 +154,7 @@ export function createMemoryToolsServer(store: MemoryStore) {
 
   const memoryReflect = tool(
     "memory_reflect",
-    "Get statistics about your memory store for self-maintenance. Returns total count, tag distribution, age distribution, similarity clusters (consolidation opportunities), and growth rate.",
+    "Get memory store statistics for self-maintenance. Returns: totalCount, tagDistribution, ageDistribution (bucketed), similarClusters (groups with >0.85 similarity — merge candidates), recentGrowthRate (memories/day over last 7 days).",
     {},
     async () => {
       const stats = await store.reflect();
