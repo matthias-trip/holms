@@ -8,12 +8,14 @@ export function humanizeToolUse(tool: string, input: unknown): string {
   }
   if (tool === "mcp__device-query__list_devices") return "Checked device states";
   if (tool === "mcp__device-query__get_device") return `Checked ${inp.device_id ?? inp.deviceId ?? "device"}`;
-  if (tool === "mcp__memory__remember") return `Stored memory: ${inp.key ?? ""}`;
-  if (tool === "mcp__memory__recall") return `Recalled memories about ${inp.query ?? ""}`;
-  if (tool === "mcp__memory__recall_multi") {
-    const queries = inp.queries as string[] | undefined;
-    return queries ? `Recalled memories about ${queries.join(", ")}` : "Recalled memories (multi)";
+  if (tool === "mcp__memory__memory_write") {
+    const tags = inp.tags as string[] | undefined;
+    return `Stored memory: ${tags?.length ? tags.join(", ") : "memory"}`;
   }
+  if (tool === "mcp__memory__memory_query") return `Queried memories: ${inp.query ?? "all"}`;
+  if (tool === "mcp__memory__memory_rewrite") return `Updated memory #${inp.id ?? "?"}`;
+  if (tool === "mcp__memory__memory_forget") return `Forgot memory #${inp.id ?? "?"}`;
+  if (tool === "mcp__memory__memory_reflect") return "Reflecting on memory health";
   if (tool === "mcp__deep-reason__deep_reason") return `Deep reasoning: ${(inp.problem as string)?.slice(0, 60) ?? "analyzing"}`;
   if (tool === "mcp__reflex__create_reflex") return "Created automation rule";
   if (tool === "mcp__triage__set_triage_rule") return `Set triage rule: ${inp.lane ?? "rule"}`;
@@ -38,8 +40,8 @@ export function isWriteAction(tool: string): boolean {
   // Read-only tools to filter out
   if (tool === "mcp__device-query__list_devices") return false;
   if (tool === "mcp__device-query__get_device") return false;
-  if (tool === "mcp__memory__recall") return false;
-  if (tool === "mcp__memory__recall_multi") return false;
+  if (tool === "mcp__memory__memory_query") return false;
+  if (tool === "mcp__memory__memory_reflect") return false;
   if (tool === "mcp__triage__list_triage_rules") return false;
   return true;
 }

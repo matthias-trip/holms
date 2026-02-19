@@ -32,22 +32,27 @@ export interface DeviceCommand {
 
 // ── Memory Types ──
 
-export type MemoryType =
-  | "observation"
-  | "preference"
-  | "pattern"
-  | "goal"
-  | "reflection"
-  | "plan";
-
 export interface Memory {
-  key: string;
+  id: number;
   content: string;
-  type: MemoryType;
+  retrievalCues: string;
   tags: string[];
-  scope: string | null;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface MemoryQueryMeta {
+  totalMatches: number;
+  ageRangeMs: [number, number];
+  highSimilarityCluster: boolean;
+}
+
+export interface MemoryReflectStats {
+  totalCount: number;
+  countsByTag: Record<string, number>;
+  ageDistribution: { bucket: string; count: number }[];
+  similarClusters: { size: number; sample: string }[];
+  recentGrowthRate: number;
 }
 
 // ── Schedule Types ──

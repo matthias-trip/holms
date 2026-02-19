@@ -29,7 +29,7 @@ async function main() {
   const eventBus = new EventBus();
 
   // 3. Init stores
-  const memoryStore = new MemoryStore(config.dbPath);
+  const memoryStore = await MemoryStore.create(config.dbPath, config.hfCacheDir);
   const reflexStore = new ReflexStore(config.dbPath);
   const chatStore = new ChatStore(config.dbPath);
   const activityStore = new ActivityStore(config.dbPath);

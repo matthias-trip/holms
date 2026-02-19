@@ -8,6 +8,7 @@ const repoRoot = resolve(__dirname, "..", "..", "..");
 export interface HolmsConfig {
   apiPort: number;
   dbPath: string;
+  hfCacheDir: string;
   claudeConfigDir?: string;
   builtinPluginsDir: string;
   pluginsDir: string;
@@ -42,6 +43,7 @@ const holmsHome = resolve(homedir(), ".holms");
 const defaults: HolmsConfig = {
   apiPort: 3100,
   dbPath: resolve(process.cwd(), "holms.db"),
+  hfCacheDir: resolve(holmsHome, "models"),
   builtinPluginsDir: resolve(repoRoot, "plugins"),
   pluginsDir: resolve(holmsHome, "plugins"),
   pluginsStatePath: resolve(holmsHome, "plugins.json"),
@@ -75,6 +77,7 @@ export function loadConfig(): HolmsConfig {
     ...defaults,
     apiPort: parseInt(process.env.HOLMS_PORT ?? String(defaults.apiPort), 10),
     dbPath: process.env.HOLMS_DB_PATH ?? defaults.dbPath,
+    hfCacheDir: (process.env.HOLMS_HF_CACHE_DIR ?? defaults.hfCacheDir).replace(/^~(?=$|\/)/, homedir()),
     pluginsDir: (process.env.HOLMS_PLUGINS_DIR ?? defaults.pluginsDir).replace(/^~(?=$|\/)/, homedir()),
     pluginsStatePath: defaults.pluginsStatePath,
     claudeConfigDir: process.env.HOLMS_CLAUDE_CONFIG_DIR?.replace(/^~(?=$|\/)/, homedir()) || undefined,

@@ -61,7 +61,7 @@ export class ProactiveScheduler {
       const recentMemories = this.memoryStore
         .getAll()
         .slice(0, 5)
-        .map((m) => `[${m.type}] ${m.key}: ${m.content}`)
+        .map((m) => `[#${m.id}] [${m.tags.join(", ")}] ${m.content}`)
         .join("\n");
       extraContext = `Recent memories:\n${recentMemories}`;
     }

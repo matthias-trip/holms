@@ -9,35 +9,28 @@ export const memoryRouter = t.router({
     .input(
       z
         .object({
-          type: z
-            .enum([
-              "observation",
-              "preference",
-              "pattern",
-              "goal",
-              "reflection",
-              "plan",
-            ])
-            .optional(),
+          tags: z.array(z.string()).optional(),
         })
         .optional(),
     )
-    .query(({ ctx, input }) => {
-      if (input?.type) {
-        return ctx.memoryStore.getByType(input.type);
+    .query(async ({ ctx, input }) => {
+      if (input?.tags && input.tags.length > 0) {
+        const { memories } = await ctx.memoryStore.query({ tags: input.tags });
+        return memories;
       }
       return ctx.memoryStore.getAll();
     }),
 
   search: t.procedure
     .input(z.object({ query: z.string() }))
-    .query(({ ctx, input }) => {
-      return ctx.memoryStore.recall(input.query);
+    .query(async ({ ctx, input }) => {
+      const { memories } = await ctx.memoryStore.query({ query: input.query, limit: 50 });
+      return memories;
     }),
 
   delete: t.procedure
-    .input(z.object({ key: z.string() }))
+    .input(z.object({ id: z.number() }))
     .mutation(({ ctx, input }) => {
-      return ctx.memoryStore.forget(input.key);
+      return ctx.memoryStore.forget(input.id);
     }),
 });

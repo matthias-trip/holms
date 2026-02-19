@@ -18,7 +18,7 @@ import type { ScheduleStore } from "../schedule/store.js";
 import type { TriageStore } from "../triage/store.js";
 import type { PluginManager } from "../plugins/manager.js";
 
-const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command, you MUST follow the Before Acting protocol — recall memories (search by device name, room, AND device ID), check for preference constraints, and obey them. Use propose_action if any memory requires approval, if the action is novel, security-sensitive, or uncertain.`;
+const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command, you MUST follow the Before Acting protocol — use memory_query to search for relevant memories (by device name, room, device ID), check for preference constraints, and obey them. Use propose_action if any memory requires approval, if the action is novel, security-sensitive, or uncertain.`;
 
 export class Coordinator {
   private eventQueue: DeviceEvent[] = [];
@@ -82,7 +82,7 @@ export class Coordinator {
     const prompts: Record<string, string> = {
       situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, and constraints in the problem description.${BEFORE_ACTING_REMINDER}`,
       reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Review your recent actions and their outcomes. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Also review your event triage configuration. Were you woken up for events you never acted on? Use list_triage_rules to see your current rules, then silence or batch noisy event sources. Were there events you missed because they were batched or silent? Escalate those to immediate.`,
-      goal_review: `${context}\n\nGOAL REVIEW: Check your active goals (recall memories of type "goal"). Are you making progress? Should any goals be updated or retired? Are there new goals worth setting based on what you've observed?`,
+      goal_review: `${context}\n\nGOAL REVIEW: Check your active goals (use memory_query with tags ["goal"]). Are you making progress? Should any goals be updated or retired? Are there new goals worth setting based on what you've observed?`,
       daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity. What patterns did you notice? What did you learn? What will you do differently tomorrow? Store your summary as a reflection memory.`,
       schedule: `${context}\n\n${extraContext}\n\nSCHEDULE FIRED: A scheduled task has triggered. Follow the Before Acting protocol, then handle the instruction above. Do NOT create a reflex right now — just handle it. Only promote to a reflex after you've successfully handled this same schedule multiple times and are confident the action never varies.${BEFORE_ACTING_REMINDER}`,
     };
