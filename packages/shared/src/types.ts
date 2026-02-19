@@ -41,6 +41,10 @@ export interface Memory {
   updatedAt: number;
 }
 
+export interface ScoredMemory extends Memory {
+  similarity: number; // 0–1 cosine similarity, present only for semantic queries
+}
+
 export interface MemoryQueryMeta {
   totalMatches: number;
   ageRangeMs: [number, number];

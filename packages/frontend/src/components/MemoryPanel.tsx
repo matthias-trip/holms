@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "../trpc";
-import type { Memory } from "@holms/shared";
+import type { Memory, ScoredMemory, MemoryQueryMeta } from "@holms/shared";
 
 // Deterministic color from tag name
 function tagColor(tag: string): { color: string; bg: string } {
@@ -40,8 +40,8 @@ function formatDayLabel(dateStr: string): string {
   });
 }
 
-function groupByDay(memories: Memory[]): { day: string; label: string; memories: Memory[] }[] {
-  const groups = new Map<string, Memory[]>();
+function groupByDay<T extends Memory>(memories: T[]): { day: string; label: string; memories: T[] }[] {
+  const groups = new Map<string, T[]>();
 
   const sorted = [...memories].sort((a, b) => b.createdAt - a.createdAt);
 
@@ -63,6 +63,12 @@ function groupByDay(memories: Memory[]): { day: string; label: string; memories:
   }));
 }
 
+function similarityColor(score: number): { color: string; bg: string } {
+  if (score > 0.7) return { color: "var(--ok)", bg: "var(--ok-dim)" };
+  if (score > 0.4) return { color: "var(--warn)", bg: "var(--warn-dim)" };
+  return { color: "var(--err)", bg: "var(--err-dim)" };
+}
+
 export default function MemoryPanel() {
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
@@ -74,10 +80,13 @@ export default function MemoryPanel() {
     { refetchInterval: 5000 },
   );
 
-  const { data: searchResults } = trpc.memory.search.useQuery(
+  const { data: searchData } = trpc.memory.search.useQuery(
     { query: search },
     { enabled: search.length > 0 },
   );
+
+  const searchResults = searchData?.memories;
+  const searchMeta = searchData?.meta;
 
   const deleteMutation = trpc.memory.delete.useMutation({
     onSuccess: () => refetch(),
@@ -146,6 +155,24 @@ export default function MemoryPanel() {
           />
         </div>
       </div>
+
+      {/* Search meta */}
+      {search.length > 0 && searchMeta && (
+        <div
+          className="flex items-center gap-3 mb-3 px-3 py-2 rounded-lg text-[11px]"
+          style={{ background: "var(--obsidian)", border: "1px solid var(--graphite)", color: "var(--steel)" }}
+        >
+          <span>{searchMeta.totalMatches} matches</span>
+          {searchMeta.highSimilarityCluster && (
+            <span
+              className="px-1.5 py-0.5 rounded"
+              style={{ background: "var(--ok-dim)", color: "var(--ok)" }}
+            >
+              tight cluster
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Tag filters */}
       {allTags.length > 0 && (
@@ -237,6 +264,17 @@ export default function MemoryPanel() {
                                 </span>
                               );
                             })}
+                            {"similarity" in mem && (mem as ScoredMemory).similarity > 0 && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums"
+                                style={{
+                                  background: similarityColor((mem as ScoredMemory).similarity).bg,
+                                  color: similarityColor((mem as ScoredMemory).similarity).color,
+                                }}
+                              >
+                                {((mem as ScoredMemory).similarity * 100).toFixed(0)}%
+                              </span>
+                            )}
                             <span
                               className="text-[10px] tabular-nums ml-auto"
                               style={{ color: "var(--pewter)" }}

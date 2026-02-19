@@ -24,8 +24,8 @@ export const memoryRouter = t.router({
   search: t.procedure
     .input(z.object({ query: z.string() }))
     .query(async ({ ctx, input }) => {
-      const { memories } = await ctx.memoryStore.query({ query: input.query, limit: 50 });
-      return memories;
+      const { memories, meta } = await ctx.memoryStore.query({ query: input.query, limit: 50 });
+      return { memories, meta };
     }),
 
   delete: t.procedure

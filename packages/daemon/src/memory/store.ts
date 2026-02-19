@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { Memory, MemoryQueryMeta, MemoryReflectStats } from "@holms/shared";
+import type { Memory, ScoredMemory, MemoryQueryMeta, MemoryReflectStats } from "@holms/shared";
 import { createEmbeddingPipeline, cosineSimilarity, EMBEDDING_DIM, type EmbeddingPipeline } from "./embeddings.js";
 
 interface MemoryRow {
@@ -65,7 +65,7 @@ export class MemoryStore {
     tags?: string[];
     timeRange?: { start?: number; end?: number };
     limit?: number;
-  }): Promise<{ memories: Memory[]; meta: MemoryQueryMeta }> {
+  }): Promise<{ memories: ScoredMemory[]; meta: MemoryQueryMeta }> {
     console.log(`[Memory] Query: ${opts.query ? `"${opts.query}"` : "(no text)"} tags=${opts.tags?.join(",") || "any"} limit=${opts.limit ?? 20}`);
     const limit = opts.limit ?? 20;
 
@@ -127,7 +127,7 @@ export class MemoryStore {
 
     const totalMatches = ranked.length;
     const limited = ranked.slice(0, limit);
-    const memories = limited.map((r) => r.memory);
+    const memories: ScoredMemory[] = limited.map((r) => ({ ...r.memory, similarity: r.similarity }));
 
     // Compute meta
     const timestamps = memories.map((m) => m.createdAt);
