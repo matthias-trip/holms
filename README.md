@@ -57,10 +57,18 @@ Five memory tools give the agent full control over its own knowledge:
 | **memory_rewrite** | Update content, cues, or tags of an existing memory (re-embeds if cues change) |
 | **memory_forget** | Delete a memory that's no longer relevant |
 | **memory_reflect** | Get store statistics: tag distribution, age buckets, similarity clusters, growth rate |
+| **annotate_entity** | Set or update a short factual note on a device (max 300 chars); empty string clears it |
+| **query_entity_notes** | Semantic search across all device annotations |
 
 The `memory_reflect` tool supports self-maintenance — the agent can spot redundant memories (similarity clusters), track growth rate, and consolidate during reflection cycles.
 
 When a user reverses an agent action (e.g. turns off a light the agent turned on), the outcome observer detects the reversal and sends feedback to the agent, which stores lessons learned.
+
+### Entity annotations
+
+The agent can attach short factual notes (max 300 chars) to individual devices using `annotate_entity`. These notes capture stable device knowledge — what it controls, known quirks, physical location details — and are automatically included in device state queries. This gives the agent baseline context about every device at the start of each cycle without needing explicit memory lookups.
+
+Entity notes answer *"what is this thing?"* while regular memories answer *"what do I know about situations involving this thing?"*. Notes are searchable via semantic similarity, so the agent (or user) can query across all annotations — e.g. "heating devices" or "entrance area" — to find relevant devices.
 
 ### Reflexes
 
@@ -110,7 +118,7 @@ packages/
 
 **Daemon** runs on port 3100 and exposes a tRPC API over HTTP and WebSocket. Subsystems:
 
-- **Coordinator** — wraps Claude Agent SDK, manages the agent session, exposes 8 MCP tool servers (device-query, device-command, memory, reflex, approval, deep-reason, schedule, triage)
+- **Coordinator** — wraps Claude Agent SDK, manages the agent session, exposes MCP tool servers (device-query, device-command, memory, reflex, approval, schedule, triage)
 - **Deep Reason** — spawns a focused sub-agent for complex multi-device trade-offs, competing constraints, and novel situations; has read-only tool access (no device commands)
 - **DeviceManager** — provider-based device abstraction (ships with a dummy provider for 6 simulated devices)
 - **MemoryStore** — SQLite-backed persistence with local embedding vectors (all-MiniLM-L6-v2 via `@huggingface/transformers`) for semantic search
@@ -123,7 +131,7 @@ packages/
 - **PluginManager** — discovers and manages local Claude Code extensions in `~/.holms/plugins/`
 - **EventBus** — typed pub/sub connecting all subsystems
 
-**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview (proactive cycle summaries), Chat, Devices, Memory, Reflexes, Schedules, Activity, Plugins.
+**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview (proactive cycle summaries), Chat, Devices, Memory (with Entity Notes tab), Reflexes, Schedules, Activity, Plugins.
 
 ## Getting started
 
