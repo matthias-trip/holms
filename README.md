@@ -40,16 +40,25 @@ Engine    (immediate / batch / silent)
 
 ### Memory & learning
 
-The agent maintains persistent memory in six categories:
+The agent has a free-form, embedding-based memory system. Each memory consists of:
 
-| Type | Purpose |
+- **content** — the actual information to remember
+- **retrieval cues** — search-optimized descriptions of when this memory should surface
+- **tags** — agent-chosen labels for organization (no fixed categories)
+
+Memories are embedded using [all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2) vectors (384-dim, runs locally via `@huggingface/transformers`). The agent searches memories with **semantic similarity** rather than keyword matching, so a query like "bedtime routine" surfaces relevant preferences even if they don't contain those exact words.
+
+Five memory tools give the agent full control over its own knowledge:
+
+| Tool | Purpose |
 |------|---------|
-| **observation** | Facts about the home and patterns noticed |
-| **preference** | Learned user preferences (e.g. "likes bedroom at 19°C") |
-| **pattern** | Recurring behaviors (e.g. "leaves for work at 8:30") |
-| **goal** | Active objectives the agent is working toward |
-| **reflection** | Self-assessment of past decisions |
-| **plan** | Multi-step strategies for achieving goals |
+| **memory_write** | Store a new memory with content, retrieval cues, and tags |
+| **memory_query** | Semantic search with optional tag/time filters; returns ranked results and metadata |
+| **memory_rewrite** | Update content, cues, or tags of an existing memory (re-embeds if cues change) |
+| **memory_forget** | Delete a memory that's no longer relevant |
+| **memory_reflect** | Get store statistics: tag distribution, age buckets, similarity clusters, growth rate |
+
+The `memory_reflect` tool supports self-maintenance — the agent can spot redundant memories (similarity clusters), track growth rate, and consolidate during reflection cycles.
 
 When a user reverses an agent action (e.g. turns off a light the agent turned on), the outcome observer detects the reversal and sends feedback to the agent, which stores lessons learned.
 
@@ -104,7 +113,8 @@ packages/
 - **Coordinator** — wraps Claude Agent SDK, manages the agent session, exposes 8 MCP tool servers (device-query, device-command, memory, reflex, approval, deep-reason, schedule, triage)
 - **Deep Reason** — spawns a focused sub-agent for complex multi-device trade-offs, competing constraints, and novel situations; has read-only tool access (no device commands)
 - **DeviceManager** — provider-based device abstraction (ships with a dummy provider for 6 simulated devices)
-- **MemoryStore** / **ReflexStore** / **ScheduleStore** / **TriageStore** — SQLite-backed persistence via better-sqlite3
+- **MemoryStore** — SQLite-backed persistence with local embedding vectors (all-MiniLM-L6-v2 via `@huggingface/transformers`) for semantic search
+- **ReflexStore** / **ScheduleStore** / **TriageStore** — SQLite-backed persistence via better-sqlite3
 - **ReflexEngine** — evaluates local automation rules on device events
 - **ApprovalQueue** — routes agent actions by confidence/category, auto-executes safe ones
 - **OutcomeObserver** — detects user reversals within a 5-minute observation window
@@ -146,6 +156,7 @@ All config is via environment variables in `packages/daemon/.env`:
 |----------|---------|-------------|
 | `HOLMS_PORT` | `3100` | Daemon API port |
 | `HOLMS_DB_PATH` | `./holms.db` | SQLite database path |
+| `HOLMS_HF_CACHE_DIR` | `~/.holms/models` | HuggingFace model cache for embeddings |
 | `HOLMS_CLAUDE_CONFIG_DIR` | `~/.claude` | Claude config directory |
 | `HOLMS_PLUGINS_DIR` | `~/.holms/plugins` | Plugin discovery directory |
 | `HOLMS_MODEL_COORDINATOR` | `claude-sonnet-4-6` | Model for the main coordinator agent |
