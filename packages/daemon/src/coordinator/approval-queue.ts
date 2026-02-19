@@ -33,9 +33,9 @@ export class ApprovalQueue {
     return entry;
   }
 
-  async approve(id: string): Promise<void> {
+  async approve(id: string): Promise<PendingApproval | undefined> {
     const entry = this.pending.get(id);
-    if (!entry) return;
+    if (!entry) return undefined;
 
     entry.status = "approved";
     this.pending.delete(id);
@@ -46,11 +46,15 @@ export class ApprovalQueue {
       entry.params,
     );
 
-    this.eventBus.emit("approval:resolved", { id, approved: true });
+    this.eventBus.emit("approval:resolved", {
+      id, approved: true,
+      deviceId: entry.deviceId, command: entry.command, params: entry.params, actionReason: entry.reason,
+    });
     console.log(`[ApprovalQueue] Approved and executed: ${id}`);
+    return entry;
   }
 
-  reject(id: string, reason?: string): void {
+  reject(id: string, reason?: string): PendingApproval | undefined {
     const entry = this.pending.get(id);
     if (!entry) return;
 
@@ -58,11 +62,11 @@ export class ApprovalQueue {
     this.pending.delete(id);
 
     this.eventBus.emit("approval:resolved", {
-      id,
-      approved: false,
-      reason,
+      id, approved: false, reason,
+      deviceId: entry.deviceId, command: entry.command, params: entry.params, actionReason: entry.reason,
     });
     console.log(`[ApprovalQueue] Rejected: ${id}${reason ? ` — ${reason}` : ""}`);
+    return entry;
   }
 
   getPending(): PendingApproval[] {

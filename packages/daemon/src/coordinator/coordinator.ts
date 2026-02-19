@@ -70,10 +70,10 @@ export class Coordinator {
     return this.currentTurnId;
   }
 
-  async handleUserRequest(message: string): Promise<string> {
+  async handleUserRequest(message: string, messageId?: string): Promise<string> {
     const context = await this.buildContext();
     const prompt = `${context}\n\nUser message: ${message}${BEFORE_ACTING_REMINDER}`;
-    return this.runQuery(prompt, "user_message", `User: ${message.slice(0, 80)}`);
+    return this.runQuery(prompt, "user_message", `User: ${message.slice(0, 80)}`, messageId);
   }
 
   async handleProactiveWakeup(wakeupType: string, extraContext: string = ""): Promise<string> {
@@ -107,12 +107,15 @@ export class Coordinator {
   async handleApprovalResult(
     id: string,
     approved: boolean,
-    reason?: string,
+    action: { deviceId: string; command: string; params: Record<string, unknown>; reason?: string },
+    userReason?: string,
+    messageId?: string,
   ): Promise<string> {
-    const status = approved ? "approved" : `rejected${reason ? `: ${reason}` : ""}`;
+    const status = approved ? "approved" : "rejected";
+    const actionDesc = `${action.command} on ${action.deviceId} (${JSON.stringify(action.params)})`;
     const context = await this.buildContext();
-    const prompt = `${context}\n\nAPPROVAL RESULT: Your proposed action (ID: ${id}) was ${status}. ${reason ? `User's reason: ${reason}` : ""}\n\nIf rejected, reflect on why and store the lesson. If approved, note that this type of action is acceptable.`;
-    return this.runQuery(prompt, "approval_result", `Approval ${approved ? "granted" : "denied"}`);
+    const prompt = `${context}\n\nAPPROVAL RESULT: The user ${status} your proposed action: ${actionDesc}.${action.reason ? ` Your reason for proposing: ${action.reason}.` : ""}${userReason ? ` User's reason for rejecting: ${userReason}.` : ""}\n\n${approved ? "The action has already been executed. No further action needed — just acknowledge briefly." : "Reflect on why and store a brief lesson in memory so you avoid repeating the mistake."}`;
+    return this.runQuery(prompt, "approval_result", `Approval ${approved ? "granted" : "denied"}`, messageId);
   }
 
   isProcessing(): boolean {
@@ -153,9 +156,9 @@ export class Coordinator {
     });
   }
 
-  private async runQuery(promptText: string, trigger: TurnTrigger, summary: string): Promise<string> {
+  private async runQuery(promptText: string, trigger: TurnTrigger, summary: string, externalMessageId?: string): Promise<string> {
     this.processing = true;
-    const messageId = crypto.randomUUID();
+    const messageId = externalMessageId ?? crypto.randomUUID();
     const turnId = crypto.randomUUID();
     this.currentTurnId = turnId;
 
@@ -186,6 +189,7 @@ export class Coordinator {
       }
 
       let result = "";
+      let streamedText = "";
       let deepReasonToolUseId: string | null = null;
       const deepReasonStartTime = { value: 0 };
 
@@ -242,6 +246,7 @@ export class Coordinator {
           if (event?.type === "content_block_delta") {
             const delta = event.delta as Record<string, unknown> | undefined;
             if (delta?.type === "text_delta" && typeof delta.text === "string") {
+              streamedText += delta.text;
               this.eventBus.emit("chat:token", {
                 token: delta.text,
                 messageId,
@@ -329,9 +334,15 @@ export class Coordinator {
         }
       }
 
+      // Include intermediate reasoning if it differs from the final result
+      const reasoning = streamedText.trim() && streamedText.trim() !== result.trim()
+        ? streamedText.trim()
+        : undefined;
+
       this.eventBus.emit("chat:stream_end", {
         messageId,
         content: result,
+        reasoning,
         timestamp: Date.now(),
       });
 

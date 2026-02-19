@@ -98,7 +98,7 @@ export function initActivityPersistence(
     if (turnId) approvalTurnMap.set(data.id, turnId);
     store({
       id: uuid(), type: "approval_pending",
-      data: { approvalId: data.id, deviceId: data.deviceId, command: data.command, reason: data.reason },
+      data: { approvalId: data.id, deviceId: data.deviceId, command: data.command, params: data.params, reason: data.reason },
       timestamp: data.createdAt, agentId: "coordinator", turnId,
     });
   });
@@ -117,6 +117,14 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "triage",
       data: { eventCount: data.eventCount },
+      timestamp: data.timestamp, agentId: "triage",
+    });
+  });
+
+  eventBus.on("agent:triage_classify", (data: { deviceId: string; eventType: string; lane: string; ruleId: string | null; reason: string; deviceName?: string; room?: string; timestamp: number }) => {
+    store({
+      id: uuid(), type: "triage_classify",
+      data: { deviceId: data.deviceId, eventType: data.eventType, lane: data.lane, ruleId: data.ruleId, reason: data.reason, deviceName: data.deviceName, room: data.room },
       timestamp: data.timestamp, agentId: "triage",
     });
   });
@@ -153,15 +161,32 @@ export const chatRouter = t.router({
       };
       ctx.chatStore.add(userMsg);
 
-      const result = await ctx.coordinator.handleUserRequest(input.message);
-
-      const assistantMsg = {
+      // Insert a thinking placeholder so it persists across remounts
+      const thinkingMsg = {
         id: uuid(),
         role: "assistant" as const,
-        content: result,
+        content: "",
         timestamp: Date.now(),
+        status: "thinking" as const,
       };
-      ctx.chatStore.add(assistantMsg);
+      ctx.chatStore.add(thinkingMsg);
+
+      const result = await ctx.coordinator.handleUserRequest(input.message, thinkingMsg.id);
+
+      // Update the thinking row in-place with the actual response
+      const now = Date.now();
+      ctx.chatStore.updateMessage(thinkingMsg.id, {
+        content: result,
+        status: null,
+        timestamp: now,
+      });
+
+      const assistantMsg = {
+        id: thinkingMsg.id,
+        role: "assistant" as const,
+        content: result,
+        timestamp: now,
+      };
 
       return { userMsg, assistantMsg };
     }),
@@ -176,13 +201,13 @@ export const chatRouter = t.router({
   onChatStream: t.procedure.subscription(({ ctx }) => {
     return observable<
       | { type: "token"; token: string; messageId: string }
-      | { type: "end"; messageId: string; content: string }
+      | { type: "end"; messageId: string; content: string; reasoning?: string }
     >((emit) => {
       const tokenHandler = (data: { token: string; messageId: string; timestamp: number }) => {
         emit.next({ type: "token", token: data.token, messageId: data.messageId });
       };
-      const endHandler = (data: { messageId: string; content: string; timestamp: number }) => {
-        emit.next({ type: "end", messageId: data.messageId, content: data.content });
+      const endHandler = (data: { messageId: string; content: string; reasoning?: string; timestamp: number }) => {
+        emit.next({ type: "end", messageId: data.messageId, content: data.content, reasoning: data.reasoning });
       };
       ctx.eventBus.on("chat:token", tokenHandler);
       ctx.eventBus.on("chat:stream_end", endHandler);

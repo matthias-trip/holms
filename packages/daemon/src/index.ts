@@ -1,3 +1,4 @@
+import { v4 as uuid } from "uuid";
 import { loadConfig } from "./config.js";
 import { EventBus } from "./event-bus.js";
 import { MemoryStore } from "./memory/store.js";
@@ -139,11 +140,25 @@ async function main() {
     }
   });
 
-  // Wire approval results back to coordinator
-  eventBus.on("approval:resolved", (data) => {
-    coordinator
-      .handleApprovalResult(data.id, data.approved, data.reason)
-      .catch(console.error);
+  // Approval results are fed back to the coordinator from the approval router
+  // (which also posts the response to chat), so no duplicate wiring here.
+
+  // 12a. Persist approval proposals as chat messages (resolution handled in approval router)
+  eventBus.on("approval:pending", (data) => {
+    chatStore.add({
+      id: uuid(),
+      role: "assistant",
+      content: JSON.stringify({
+        approvalId: data.id,
+        deviceId: data.deviceId,
+        command: data.command,
+        params: data.params,
+        reason: data.reason,
+      }),
+      timestamp: data.createdAt,
+      status: "approval_pending",
+      approvalId: data.id,
+    });
   });
 
   // 12b. Init activity persistence (stores agent events to DB + re-emits on activity:stored)

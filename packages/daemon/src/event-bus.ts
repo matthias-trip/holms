@@ -43,6 +43,10 @@ export interface EventBusEvents {
     id: string;
     approved: boolean;
     reason?: string;
+    deviceId: string;
+    command: string;
+    params: Record<string, unknown>;
+    actionReason?: string;
   }) => void;
   "agent:outcome": (data: {
     action: string;
@@ -85,6 +89,7 @@ export interface EventBusEvents {
   "chat:stream_end": (data: {
     messageId: string;
     content: string;
+    reasoning?: string;
     timestamp: number;
   }) => void;
   "agent:triage_classify": (data: {
@@ -93,6 +98,8 @@ export interface EventBusEvents {
     lane: TriageLane;
     ruleId: string | null;
     reason: string;
+    deviceName?: string;
+    room?: string;
     timestamp: number;
   }) => void;
   "agent:triage_batch": (data: {

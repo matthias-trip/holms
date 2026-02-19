@@ -5,6 +5,7 @@ export class DeviceManager {
   private providers: DeviceProvider[] = [];
   private listeners: Array<(event: DeviceEvent) => void> = [];
   private commandListeners: Array<(deviceId: string, command: string) => void> = [];
+  private deviceCache = new Map<string, Device>();
 
   registerProvider(provider: DeviceProvider): void {
     this.providers.push(provider);
@@ -28,12 +29,20 @@ export class DeviceManager {
 
   async getAllDevices(): Promise<Device[]> {
     const results = await Promise.all(this.providers.map((p) => p.getDevices()));
-    return results.flat();
+    const devices = results.flat();
+    for (const d of devices) {
+      this.deviceCache.set(d.id, d);
+    }
+    return devices;
   }
 
   async getDevice(id: string): Promise<Device | undefined> {
     const all = await this.getAllDevices();
     return all.find((d) => d.id === id);
+  }
+
+  getCachedDevice(id: string): Device | undefined {
+    return this.deviceCache.get(id);
   }
 
   onEvent(callback: (event: DeviceEvent) => void): void {

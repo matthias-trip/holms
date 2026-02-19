@@ -203,12 +203,15 @@ export class TriageEngine {
     ruleId: string | null,
     reason: string,
   ): void {
+    const device = this.deviceManager.getCachedDevice(event.deviceId);
     this.eventBus.emit("agent:triage_classify", {
       deviceId: event.deviceId,
       eventType: event.type,
       lane,
       ruleId,
       reason,
+      deviceName: device?.name,
+      room: device?.room,
       timestamp: Date.now(),
     });
   }

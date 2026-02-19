@@ -7,8 +7,6 @@ import ActivityPanel from "./components/ActivityPanel";
 import SchedulesPanel from "./components/SchedulesPanel";
 import PluginsPanel from "./components/PluginsPanel";
 import CycleOverview from "./components/CycleOverview";
-import { trpc } from "./trpc";
-import type { PendingApproval } from "@holms/shared";
 
 type Panel = "dashboard" | "chat" | "activity" | "devices" | "memory" | "reflexes" | "schedules" | "plugins";
 
@@ -101,100 +99,6 @@ function NavIcon({ id, active }: { id: Panel; active: boolean }) {
   }
 }
 
-function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
-  const p = params as Record<string, unknown>;
-  if (command.startsWith("set_")) {
-    const prop = command.replace("set_", "").replace(/_/g, " ");
-    const val = Object.values(p)[0];
-    const valStr = typeof val === "number" ? `${val}%` : String(val);
-    return `Set ${deviceId} ${prop} to ${valStr}`;
-  }
-  if (command === "turn_on") return `Turn on ${deviceId}`;
-  if (command === "turn_off") return `Turn off ${deviceId}`;
-  if (command === "lock") return `Lock ${deviceId}`;
-  if (command === "unlock") return `Unlock ${deviceId}`;
-  return `${command.replace(/_/g, " ")} on ${deviceId}`;
-}
-
-function ApprovalBanner({
-  pending,
-  onNavigate,
-}: {
-  pending: PendingApproval[];
-  onNavigate: () => void;
-}) {
-  const latest = pending[pending.length - 1];
-  const utils = trpc.useUtils();
-
-  const approveMutation = trpc.approval.approve.useMutation({
-    onSuccess: () => utils.approval.pending.invalidate(),
-  });
-  const rejectMutation = trpc.approval.reject.useMutation({
-    onSuccess: () => utils.approval.pending.invalidate(),
-  });
-
-  const isLoading = approveMutation.isPending || rejectMutation.isPending;
-
-  return (
-    <div
-      className="flex items-center gap-3 px-4 py-2.5 animate-slide-down"
-      style={{
-        background: "var(--warm-wash)",
-        borderBottom: "1px solid var(--warm-border)",
-      }}
-    >
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-        <path
-          d="M8 1.5L1.5 13.5h13L8 1.5z"
-          stroke="var(--warn)"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-        />
-        <path d="M8 6.5v3" stroke="var(--warn)" strokeWidth="1.3" strokeLinecap="round" />
-        <circle cx="8" cy="11.5" r="0.6" fill="var(--warn)" />
-      </svg>
-      <button
-        onClick={onNavigate}
-        className="flex-1 text-left text-[12px] truncate cursor-pointer"
-        style={{ color: "var(--frost)", background: "none", border: "none", padding: 0 }}
-      >
-        <span style={{ fontWeight: 500 }}>
-          {pending.length > 1 ? `${pending.length} approvals needed` : "Approval needed"}
-        </span>
-        <span style={{ color: "var(--silver)", marginLeft: 6 }}>
-          {formatApprovalAction(latest.command, latest.params, latest.deviceId)}
-        </span>
-      </button>
-      <div className="flex gap-1.5 flex-shrink-0">
-        <button
-          onClick={() => approveMutation.mutate({ id: latest.id })}
-          disabled={isLoading}
-          className="px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-all"
-          style={{
-            background: "var(--ok-dim)",
-            color: "var(--ok)",
-            border: "1px solid rgba(22,163,74,0.15)",
-          }}
-        >
-          Approve
-        </button>
-        <button
-          onClick={() => rejectMutation.mutate({ id: latest.id })}
-          disabled={isLoading}
-          className="px-2.5 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-all"
-          style={{
-            background: "var(--err-dim)",
-            color: "var(--err)",
-            border: "1px solid rgba(220,38,38,0.15)",
-          }}
-        >
-          Reject
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   const [activePanel, setActivePanelRaw] = useState<Panel>(getPanelFromHash);
 
@@ -209,17 +113,6 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Global approval state
-  const utils = trpc.useUtils();
-  const { data: pendingApprovals } = trpc.approval.pending.useQuery(undefined, {
-    refetchInterval: 3000,
-  });
-  trpc.approval.onProposal.useSubscription(undefined, {
-    onData: () => utils.approval.pending.invalidate(),
-  });
-
-  const hasPending = pendingApprovals && pendingApprovals.length > 0;
-  const showBanner = hasPending && activePanel !== "dashboard";
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--void)" }}>
@@ -232,13 +125,18 @@ export default function App() {
         }}
       >
         {/* Logo */}
-        <div className="px-4 pt-5 pb-4">
+        <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
           <img
-            src="/header-bw.png"
+            src="/logo.png"
             alt="Holms"
-            className="h-8"
-            style={{ objectFit: "contain" }}
+            className="w-7 h-7 rounded-lg"
           />
+          <span
+            className="text-[16px]"
+            style={{ color: "var(--white)", fontWeight: 500, fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+          >
+            holms
+          </span>
         </div>
 
         {/* Nav items */}
@@ -258,12 +156,6 @@ export default function App() {
               >
                 <NavIcon id={item.id} active={isActive} />
                 <span style={{ fontWeight: isActive ? 500 : 400 }}>{item.label}</span>
-                {item.id === "dashboard" && hasPending && (
-                  <span
-                    className="absolute right-2.5 w-2 h-2 rounded-full animate-pulse-dot"
-                    style={{ background: "var(--err)" }}
-                  />
-                )}
               </button>
             );
           })}
@@ -289,12 +181,6 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
-        {showBanner && (
-          <ApprovalBanner
-            pending={pendingApprovals}
-            onNavigate={() => setActivePanel("dashboard")}
-          />
-        )}
         <div className="flex-1 overflow-hidden">
           {activePanel === "dashboard" && <CycleOverview />}
           {activePanel === "chat" && <ChatPanel />}

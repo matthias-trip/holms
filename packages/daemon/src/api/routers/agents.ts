@@ -32,6 +32,13 @@ export const agentsRouter = t.router({
       return ctx.activityStore.getProactiveTurns(limit);
     }),
 
+  orphanActivities: t.procedure
+    .input(z.object({ limit: z.number().min(1).max(500).default(100) }).optional())
+    .query(({ ctx, input }) => {
+      const limit = input?.limit ?? 100;
+      return ctx.activityStore.getOrphanActivities(limit);
+    }),
+
   triggerCycle: t.procedure
     .input(z.object({
       type: z.enum(["situational", "reflection", "goal_review", "daily_summary"]),

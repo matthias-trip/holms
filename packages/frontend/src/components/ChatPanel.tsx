@@ -1,21 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { trpc } from "../trpc";
-import type { ChatMessage, PendingApproval } from "@holms/shared";
+import type { ChatMessage, ApprovalMessageData } from "@holms/shared";
 import MarkdownMessage from "./MarkdownMessage";
 
 interface StreamingMessage extends ChatMessage {
   streaming?: boolean;
+  reasoning?: string;
 }
-
-interface ApprovalEntry {
-  kind: "approval";
-  approval: PendingApproval;
-  resolved?: { approved: boolean };
-}
-
-type ChatEntry =
-  | { kind: "message"; message: StreamingMessage }
-  | ApprovalEntry;
 
 function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
   const p = params as Record<string, unknown>;
@@ -32,72 +23,288 @@ function formatApprovalAction(command: string, params: unknown, deviceId: string
   return `${command.replace(/_/g, " ")} on ${deviceId}`;
 }
 
+function parseApprovalData(content: string): ApprovalMessageData | null {
+  try {
+    const data = JSON.parse(content);
+    if (data && typeof data.approvalId === "string") return data as ApprovalMessageData;
+  } catch { /* not JSON */ }
+  return null;
+}
 
-function buildChatEntries(
-  messages: StreamingMessage[],
-  approvals: ApprovalEntry[],
-): ChatEntry[] {
-  const msgEntries: ChatEntry[] = messages.map((m) => ({ kind: "message" as const, message: m }));
-  const apprEntries: ChatEntry[] = approvals.map((a) => a);
+function ReasoningBlock({ reasoning, live }: { reasoning: string; live?: boolean }) {
+  const [manualToggle, setManualToggle] = useState<boolean | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  const all = [...msgEntries, ...apprEntries];
-  all.sort((a, b) => {
-    const tsA = a.kind === "message" ? a.message.timestamp : a.approval.createdAt;
-    const tsB = b.kind === "message" ? b.message.timestamp : b.approval.createdAt;
-    return tsA - tsB;
+  // Live blocks start expanded, finished blocks start collapsed.
+  // Once the user manually toggles, that choice sticks.
+  const expanded = manualToggle ?? !!live;
+
+  // Auto-scroll to bottom while streaming
+  useEffect(() => {
+    if (live && expanded && contentRef.current) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+    }
   });
-  return all;
+
+  return (
+    <div
+      className="mb-2 rounded-lg overflow-hidden"
+      style={{
+        background: "var(--abyss)",
+        border: "1px solid var(--graphite)",
+      }}
+    >
+      <button
+        onClick={() => setManualToggle((prev) => !(prev ?? !!live))}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left"
+      >
+        <svg
+          width="10" height="10" viewBox="0 0 10 10" fill="none"
+          className="flex-shrink-0 transition-transform duration-150"
+          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
+        >
+          <path d="M3.5 2l3 3-3 3" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+        <span className="text-[11px] font-medium" style={{ color: "var(--steel)" }}>
+          Reasoning
+        </span>
+        {live && (
+          <span className="inline-flex gap-[3px] ml-1">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="inline-block w-[3px] h-[3px] rounded-full"
+                style={{
+                  background: "var(--steel)",
+                  animation: "thinking-dot 1.4s ease-in-out infinite",
+                  animationDelay: `${i * 0.2}s`,
+                }}
+              />
+            ))}
+          </span>
+        )}
+      </button>
+      {expanded && (
+        <div
+          ref={contentRef}
+          className="px-2.5 pb-2 text-[11px] overflow-auto"
+          style={{ color: "var(--silver)", maxHeight: "300px", lineHeight: 1.5 }}
+        >
+          <MarkdownMessage content={reasoning} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApprovalCard({
+  data,
+  timestamp,
+  onApprove,
+  onReject,
+  isLoading,
+}: {
+  data: ApprovalMessageData;
+  timestamp: number;
+  onApprove: () => void;
+  onReject: () => void;
+  isLoading: boolean;
+}) {
+  return (
+    <div className="flex justify-start">
+      <img
+        src="/chaticon.png"
+        alt="Holms"
+        className="w-10 h-10 rounded-lg mr-2.5 mt-0.5 flex-shrink-0"
+      />
+      <div
+        className="max-w-[65%] rounded-xl px-4 py-2.5"
+        style={{
+          background: "var(--slate)",
+          border: "1px solid var(--graphite)",
+          fontSize: "13px",
+          lineHeight: "1.6",
+        }}
+      >
+        <div className="flex items-center gap-2 mb-1.5">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
+            <circle cx="8" cy="8" r="6.5" stroke="var(--warn)" strokeWidth="1.3" />
+            <path d="M8 5v3.5M8 10.5h.01" stroke="var(--warn)" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <span className="text-[12px] font-medium" style={{ color: "var(--frost)" }}>
+            Requesting approval
+          </span>
+        </div>
+
+        <p className="text-[13px] mb-2" style={{ color: "var(--frost)", lineHeight: "1.6" }}>
+          {data.reason}
+        </p>
+
+        <div
+          className="rounded-lg px-3 py-2 mb-2.5"
+          style={{
+            fontSize: "12px",
+            fontWeight: 500,
+            fontFamily: "var(--font-mono)",
+            background: "var(--abyss)",
+            border: "1px solid var(--graphite)",
+            color: "var(--mist)",
+          }}
+        >
+          {formatApprovalAction(data.command, data.params, data.deviceId)}
+        </div>
+
+        {data.resolved ? (
+          <div
+            className="text-[11px] font-medium px-2.5 py-1.5 rounded-md inline-block"
+            style={{
+              background: data.resolved.approved ? "var(--ok-dim)" : "var(--err-dim)",
+              color: data.resolved.approved ? "var(--ok)" : "var(--err)",
+            }}
+          >
+            {data.resolved.approved ? "Approved" : "Rejected"}
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={onApprove}
+              disabled={isLoading}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+              style={{
+                background: "var(--ok-dim)",
+                color: "var(--ok)",
+                border: "1px solid rgba(22,163,74,0.15)",
+              }}
+            >
+              Approve
+            </button>
+            <button
+              onClick={onReject}
+              disabled={isLoading}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
+              style={{
+                background: "var(--err-dim)",
+                color: "var(--err)",
+                border: "1px solid rgba(220,38,38,0.15)",
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        )}
+
+        <p
+          className="mt-1"
+          style={{
+            fontSize: "10px",
+            fontFamily: "var(--font-mono)",
+            opacity: 0.4,
+          }}
+        >
+          {new Date(timestamp).toLocaleTimeString()}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState<StreamingMessage[]>([]);
-  const [approvalEntries, setApprovalEntries] = useState<ApprovalEntry[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoadedRef = useRef(false);
   const liveMessageIdsRef = useRef<Set<string>>(new Set());
   const streamEndReceivedRef = useRef(false);
+  const pendingApprovalActionRef = useRef<{ approvalId: string; approved: boolean } | null>(null);
 
   const utils = trpc.useUtils();
   const historyQuery = trpc.chat.history.useQuery({ limit: 100 });
 
-  // Subscribe to new approval proposals
-  const onApprovalProposal = useCallback((approval: PendingApproval) => {
-    setApprovalEntries((prev) => {
-      if (prev.some((e) => e.approval.id === approval.id)) return prev;
-      return [...prev, { kind: "approval", approval }];
-    });
-  }, []);
-
-  trpc.approval.onProposal.useSubscription(undefined, {
-    onData: onApprovalProposal,
-  });
-
   const approveMutation = trpc.approval.approve.useMutation({
-    onSuccess: (_data, variables) => {
-      setApprovalEntries((prev) =>
-        prev.map((e) =>
-          e.approval.id === variables.id ? { ...e, resolved: { approved: true } } : e,
-        ),
-      );
+    onSuccess: (data) => {
       utils.approval.pending.invalidate();
+      const action = pendingApprovalActionRef.current;
+      pendingApprovalActionRef.current = null;
+      if (!action) return;
+
+      // Optimistically update the approval card
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.status !== "approval_pending" && m.status !== "approval_resolved") return m;
+          const parsed = parseApprovalData(m.content);
+          if (!parsed || parsed.approvalId !== action.approvalId) return m;
+          const updated = { ...parsed, resolved: { approved: true } };
+          return { ...m, content: JSON.stringify(updated), status: "approval_resolved" as const };
+        }),
+      );
+
+      // Append streaming placeholder for the coordinator response
+      if (data.thinkingMessageId) {
+        const placeholder: StreamingMessage = {
+          id: data.thinkingMessageId,
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          streaming: true,
+        };
+        liveMessageIdsRef.current.add(data.thinkingMessageId);
+        streamPlaceholderIdRef.current = data.thinkingMessageId;
+        setMessages((prev) => [...prev, placeholder]);
+      }
     },
   });
 
   const rejectMutation = trpc.approval.reject.useMutation({
-    onSuccess: (_data, variables) => {
-      setApprovalEntries((prev) =>
-        prev.map((e) =>
-          e.approval.id === variables.id ? { ...e, resolved: { approved: false } } : e,
-        ),
-      );
+    onSuccess: (data) => {
       utils.approval.pending.invalidate();
+      const action = pendingApprovalActionRef.current;
+      pendingApprovalActionRef.current = null;
+      if (!action) return;
+
+      // Optimistically update the approval card
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.status !== "approval_pending" && m.status !== "approval_resolved") return m;
+          const parsed = parseApprovalData(m.content);
+          if (!parsed || parsed.approvalId !== action.approvalId) return m;
+          const updated = { ...parsed, resolved: { approved: false } };
+          return { ...m, content: JSON.stringify(updated), status: "approval_resolved" as const };
+        }),
+      );
+
+      // Append streaming placeholder for the coordinator response
+      if (data.thinkingMessageId) {
+        const placeholder: StreamingMessage = {
+          id: data.thinkingMessageId,
+          role: "assistant",
+          content: "",
+          timestamp: Date.now(),
+          streaming: true,
+        };
+        liveMessageIdsRef.current.add(data.thinkingMessageId);
+        streamPlaceholderIdRef.current = data.thinkingMessageId;
+        setMessages((prev) => [...prev, placeholder]);
+      }
     },
   });
 
   useEffect(() => {
     if (historyQuery.data) {
-      setMessages(historyQuery.data);
+      // If any message has status="thinking", mark it as streaming so the indicator shows
+      const loaded = historyQuery.data.map((m): StreamingMessage => {
+        if (m.status === "thinking") {
+          return { ...m, streaming: true };
+        }
+        return m;
+      });
+      setMessages(loaded);
+
+      // If there's a thinking message from the DB, wire up the stream placeholder ref
+      const thinkingMsg = loaded.find((m) => m.streaming);
+      if (thinkingMsg) {
+        streamPlaceholderIdRef.current = thinkingMsg.id;
+      }
+
       // After first history load, scroll instantly (no animation)
       if (!historyLoadedRef.current) {
         historyLoadedRef.current = true;
@@ -117,20 +324,46 @@ export default function ChatPanel() {
         setMessages((prev) =>
           prev.map((m) =>
             m.streaming
-              ? { ...m, content: m.content + event.token }
+              ? { ...m, reasoning: (m.reasoning ?? "") + event.token }
               : m,
           ),
         );
       } else if (event.type === "end") {
         streamEndReceivedRef.current = true;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.streaming
-              ? { ...m, content: event.content, streaming: false }
-              : m,
-          ),
-        );
+        setMessages((prev) => {
+          const hasStreaming = prev.some((m) => m.streaming);
+          if (hasStreaming) {
+            return prev.map((m) =>
+              m.streaming
+                ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning }
+                : m,
+            );
+          }
+          return prev;
+        });
       }
+    },
+  });
+
+  // Subscribe to new approval proposals so the card appears in real-time
+  trpc.approval.onProposal.useSubscription(undefined, {
+    onData: (proposal) => {
+      const approvalMsg: StreamingMessage = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: JSON.stringify({
+          approvalId: proposal.id,
+          deviceId: proposal.deviceId,
+          command: proposal.command,
+          params: proposal.params,
+          reason: proposal.reason,
+        }),
+        timestamp: proposal.createdAt,
+        status: "approval_pending",
+        approvalId: proposal.id,
+      };
+      liveMessageIdsRef.current.add(approvalMsg.id);
+      setMessages((prev) => [...prev, approvalMsg]);
     },
   });
 
@@ -140,10 +373,11 @@ export default function ChatPanel() {
       const placeholderId = streamPlaceholderIdRef.current;
       streamPlaceholderIdRef.current = null;
       // Silently swap placeholder with canonical server data, keeping the same position
+      // Preserve reasoning from stream_end event
       setMessages((prev) =>
         prev.map((m) =>
           m.id === placeholderId
-            ? { ...data.assistantMsg }
+            ? { ...data.assistantMsg, reasoning: m.reasoning }
             : m,
         ),
       );
@@ -154,6 +388,9 @@ export default function ChatPanel() {
       setMessages((prev) => prev.filter((m) => !m.streaming));
     },
   });
+
+  // Derive isProcessing purely from message state — no polling needed
+  const isProcessing = messages.some((m) => m.streaming);
 
   useEffect(() => {
     // Skip the initial history scroll (handled above)
@@ -190,6 +427,18 @@ export default function ChatPanel() {
     setInput("");
   };
 
+  const handleApprove = (approvalId: string) => {
+    pendingApprovalActionRef.current = { approvalId, approved: true };
+    approveMutation.mutate({ id: approvalId });
+  };
+
+  const handleReject = (approvalId: string) => {
+    pendingApprovalActionRef.current = { approvalId, approved: false };
+    rejectMutation.mutate({ id: approvalId });
+  };
+
+  const isApprovalLoading = approveMutation.isPending || rejectMutation.isPending;
+
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--void)" }}>
       {/* Header */}
@@ -197,26 +446,36 @@ export default function ChatPanel() {
         className="px-6 py-4 flex items-center justify-between flex-shrink-0"
         style={{ borderBottom: "1px solid var(--graphite)" }}
       >
-        <div className="flex items-center gap-3">
-          <img
-            src="/chaticon.png"
-            alt="Holms"
-            className={`w-8 h-8 rounded-lg${sendMutation.isPending ? " animate-breathe" : ""}`}
-          />
-          <div>
-            <div className="text-[15px] font-medium" style={{ color: "var(--white)" }}>
-              Assistant
-            </div>
-            <div className="text-[11px] mt-0.5" style={{ color: "var(--steel)" }}>
-              {sendMutation.isPending ? "thinking..." : "ready"}
-            </div>
+        <div>
+          <div className="text-[15px] font-medium" style={{ color: "var(--white)" }}>
+            Assistant
+          </div>
+          <div className="text-[11px] mt-0.5" style={{ color: "var(--steel)" }}>
+            {isProcessing ? (
+              <span className="inline-flex items-center gap-1">
+                thinking
+                <span className="inline-flex gap-[3px]">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="inline-block w-[3px] h-[3px] rounded-full"
+                      style={{
+                        background: "var(--steel)",
+                        animation: "thinking-dot 1.4s ease-in-out infinite",
+                        animationDelay: `${i * 0.2}s`,
+                      }}
+                    />
+                  ))}
+                </span>
+              </span>
+            ) : "ready"}
           </div>
         </div>
       </div>
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-auto px-6 py-4">
-        {messages.length === 0 && approvalEntries.length === 0 ? (
+        {messages.length === 0 ? (
           <div className="empty-state" style={{ paddingTop: "80px" }}>
             <img
               src="/chaticon.png"
@@ -233,96 +492,26 @@ export default function ChatPanel() {
           </div>
         ) : (
           <div className="space-y-4">
-            {buildChatEntries(messages, approvalEntries).map((entry) => {
-              if (entry.kind === "approval") {
-                const { approval, resolved } = entry;
-                const isLoading = approveMutation.isPending || rejectMutation.isPending;
-
-                return (
-                  <div key={`approval-${approval.id}`} className="flex justify-center animate-fade-in">
-                    <div
-                      className="w-[85%] rounded-xl p-4"
-                      style={{
-                        background: "var(--obsidian)",
-                        border: `1px solid ${
-                          resolved
-                            ? resolved.approved
-                              ? "rgba(22,163,74,0.2)"
-                              : "rgba(220,38,38,0.2)"
-                            : "var(--graphite)"
-                        }`,
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-[11px] font-medium" style={{ color: "var(--warn)" }}>
-                          Approval requested
-                        </span>
-                        <span className="text-[10px] ml-auto" style={{ color: "var(--pewter)" }}>
-                          {new Date(approval.createdAt).toLocaleTimeString()}
-                        </span>
-                      </div>
-
-                      <div
-                        className="rounded-lg px-3 py-2 mb-2"
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: 500,
-                          background: "var(--abyss)",
-                          border: "1px solid var(--graphite)",
-                          color: "var(--frost)",
-                        }}
-                      >
-                        {formatApprovalAction(approval.command, approval.params, approval.deviceId)}
-                      </div>
-
-                      <p className="text-[12px] mb-3" style={{ color: "var(--silver)", lineHeight: "1.5" }}>
-                        {approval.reason}
-                      </p>
-
-                      {resolved ? (
-                        <div
-                          className="text-[11px] font-medium px-2.5 py-1.5 rounded-md inline-block"
-                          style={{
-                            background: resolved.approved ? "var(--ok-dim)" : "var(--err-dim)",
-                            color: resolved.approved ? "var(--ok)" : "var(--err)",
-                          }}
-                        >
-                          {resolved.approved ? "Approved" : "Rejected"}
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => approveMutation.mutate({ id: approval.id })}
-                            disabled={isLoading}
-                            className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-                            style={{
-                              background: "var(--ok-dim)",
-                              color: "var(--ok)",
-                              border: "1px solid rgba(22,163,74,0.15)",
-                            }}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => rejectMutation.mutate({ id: approval.id })}
-                            disabled={isLoading}
-                            className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-                            style={{
-                              background: "var(--err-dim)",
-                              color: "var(--err)",
-                              border: "1px solid rgba(220,38,38,0.15)",
-                            }}
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
+            {messages.map((msg) => {
+              // Approval card messages
+              const isApproval = msg.status === "approval_pending" || msg.status === "approval_resolved";
+              if (isApproval) {
+                const approvalData = parseApprovalData(msg.content);
+                if (approvalData) {
+                  return (
+                    <ApprovalCard
+                      key={msg.id}
+                      data={approvalData}
+                      timestamp={msg.timestamp}
+                      onApprove={() => handleApprove(approvalData.approvalId)}
+                      onReject={() => handleReject(approvalData.approvalId)}
+                      isLoading={isApprovalLoading}
+                    />
+                  );
+                }
               }
 
-              const msg = entry.message;
+              // Regular messages
               const isLive = liveMessageIdsRef.current.has(msg.id);
               return (
               <div
@@ -347,26 +536,49 @@ export default function ChatPanel() {
                   }}
                 >
                   {msg.role === "assistant" ? (
-                    msg.streaming && !msg.content ? (
-                      <div className="flex gap-1.5 py-1">
-                        {[0, 1, 2].map((i) => (
-                          <div
-                            key={i}
-                            className="w-1.5 h-1.5 rounded-full animate-breathe"
-                            style={{
-                              background: "var(--steel)",
-                              animationDelay: `${i * 200}ms`,
-                            }}
-                          />
-                        ))}
-                      </div>
+                    msg.streaming ? (
+                      msg.reasoning ? (
+                        <>
+                          <ReasoningBlock reasoning={msg.reasoning} live />
+                          <div className="flex gap-1.5 py-1">
+                            {[0, 1, 2].map((i) => (
+                              <div
+                                key={i}
+                                className="w-1.5 h-1.5 rounded-full"
+                                style={{
+                                  background: "var(--steel)",
+                                  animation: "thinking-dot 1.4s ease-in-out infinite",
+                                  animationDelay: `${i * 0.2}s`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex gap-1.5 py-1">
+                          {[0, 1, 2].map((i) => (
+                            <div
+                              key={i}
+                              className="w-1.5 h-1.5 rounded-full"
+                              style={{
+                                background: "var(--steel)",
+                                animation: "thinking-dot 1.4s ease-in-out infinite",
+                                animationDelay: `${i * 0.2}s`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                      )
                     ) : (
-                      <MarkdownMessage content={msg.content} />
+                      <>
+                        {msg.reasoning && <ReasoningBlock reasoning={msg.reasoning} />}
+                        <MarkdownMessage content={msg.content} />
+                      </>
                     )
                   ) : (
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   )}
-                  {!(msg.streaming && !msg.content) && (
+                  {!msg.streaming && (
                     <p
                       className="mt-1"
                       style={{

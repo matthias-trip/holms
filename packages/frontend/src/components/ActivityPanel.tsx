@@ -11,21 +11,11 @@ interface Turn {
   activities: AgentActivity[];
 }
 
-interface TriageClassification {
-  id: string;
-  deviceId: string;
-  eventType: string;
-  lane: TriageLane;
-  ruleId: string | null;
-  reason: string;
-  timestamp: number;
-}
-
 type TimelineEntry =
   | { kind: "turn"; turn: Turn }
   | { kind: "reflex"; activity: AgentActivity }
   | { kind: "triage"; activity: AgentActivity }
-  | { kind: "triage_classify"; classification: TriageClassification };
+  | { kind: "triage_classify"; activity: AgentActivity };
 
 // ── Describe current action (for processing indicator) ──
 
@@ -119,11 +109,10 @@ export default function ActivityPanel() {
   const [rawView, setRawView] = useState<Set<string>>(new Set());
   const [liveTurns, setLiveTurns] = useState<Map<string, Turn>>(new Map);
   const [liveOrphans, setLiveOrphans] = useState<AgentActivity[]>([]);
-  const [triageClassifications, setTriageClassifications] = useState<TriageClassification[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const triageIdCounter = useRef(0);
 
   const { data: historicalTurns } = trpc.agents.turns.useQuery({ limit: 50 });
+  const { data: historicalOrphans } = trpc.agents.orphanActivities.useQuery({ limit: 100 });
 
   // Live activity subscription
   const onActivity = useCallback((activity: AgentActivity) => {
@@ -152,25 +141,6 @@ export default function ActivityPanel() {
   }, []);
 
   trpc.chat.onActivity.useSubscription(undefined, { onData: onActivity });
-
-  // Live triage classification subscription
-  const onTriageClassify = useCallback((data: {
-    deviceId: string;
-    eventType: string;
-    lane: TriageLane;
-    ruleId: string | null;
-    reason: string;
-    timestamp: number;
-  }) => {
-    setTriageClassifications((prev) => {
-      const id = `triage-${++triageIdCounter.current}`;
-      const entry: TriageClassification = { id, ...data };
-      // Keep a rolling window of the last 50 classifications
-      return [...prev.slice(-49), entry];
-    });
-  }, []);
-
-  trpc.events.onTriageClassify.useSubscription(undefined, { onData: onTriageClassify });
 
   // Build merged timeline
   const timeline = useMemo((): TimelineEntry[] => {
@@ -207,37 +177,36 @@ export default function ActivityPanel() {
       entries.push({ kind: "turn", turn });
     }
 
-    // Add orphan reflexes / triage batch events
-    for (const activity of liveOrphans) {
+    // Merge historical + live orphans (dedup by id)
+    const orphanMap = new Map<string, AgentActivity>();
+    if (historicalOrphans) {
+      for (const a of historicalOrphans) orphanMap.set(a.id, a);
+    }
+    for (const a of liveOrphans) orphanMap.set(a.id, a);
+
+    for (const activity of orphanMap.values()) {
       if (activity.type === "triage") {
         entries.push({ kind: "triage", activity });
+      } else if (activity.type === "triage_classify") {
+        entries.push({ kind: "triage_classify", activity });
       } else {
         entries.push({ kind: "reflex", activity });
       }
-    }
-
-    // Add live triage classifications
-    for (const classification of triageClassifications) {
-      entries.push({ kind: "triage_classify", classification });
     }
 
     // Sort by timestamp (newest first)
     entries.sort((a, b) => {
       const tsA = a.kind === "turn"
         ? (a.turn.activities[0]?.timestamp ?? 0)
-        : a.kind === "triage_classify"
-          ? a.classification.timestamp
-          : a.activity.timestamp;
+        : a.activity.timestamp;
       const tsB = b.kind === "turn"
         ? (b.turn.activities[0]?.timestamp ?? 0)
-        : b.kind === "triage_classify"
-          ? b.classification.timestamp
-          : b.activity.timestamp;
+        : b.activity.timestamp;
       return tsB - tsA;
     });
 
     return entries;
-  }, [historicalTurns, liveTurns, liveOrphans, triageClassifications]);
+  }, [historicalTurns, liveTurns, liveOrphans, historicalOrphans]);
 
   const toggleTurn = (turnId: string) => {
     setExpandedTurns((prev) => {
@@ -311,7 +280,7 @@ export default function ActivityPanel() {
                 return <TriageBatchRow key={entry.activity.id} activity={entry.activity} />;
               }
               if (entry.kind === "triage_classify") {
-                return <TriageClassifyRow key={entry.classification.id} classification={entry.classification} />;
+                return <TriageClassifyRow key={entry.activity.id} activity={entry.activity} />;
               }
               return (
                 <TurnCard
@@ -886,7 +855,7 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
     color: "var(--warn)",
     label: "immediate",
     icon: (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
         <path d="M7 1.5L4 6h3L5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
@@ -895,7 +864,7 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
     color: "var(--info)",
     label: "batched",
     icon: (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
         <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.1" />
         <path d="M6 3v3.5l2.5 1" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -905,7 +874,7 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
     color: "var(--pewter)",
     label: "silent",
     icon: (
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
         <path d="M2.5 4.5l7-2v7l-7-2v-3z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
         <path d="M1.5 8.5l9-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
@@ -913,12 +882,20 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
   },
 };
 
-function TriageClassifyRow({ classification }: { classification: TriageClassification }) {
-  const config = LANE_CONFIG[classification.lane];
+function TriageClassifyRow({ activity }: { activity: AgentActivity }) {
+  const d = activity.data as Record<string, unknown>;
+  const lane = (d.lane as TriageLane) ?? "batched";
+  const deviceId = String(d.deviceId ?? "");
+  const eventType = String(d.eventType ?? "");
+  const reason = String(d.reason ?? "");
+  const ruleId = d.ruleId as string | null | undefined;
+  const deviceName = d.deviceName ? String(d.deviceName) : undefined;
+  const room = d.room ? String(d.room) : undefined;
+  const config = LANE_CONFIG[lane];
 
   return (
     <div
-      className="flex items-center gap-2 px-4 py-1.5 rounded-lg animate-fade-in"
+      className="flex items-center gap-3 px-4 py-2 rounded-lg animate-fade-in"
       style={{
         background: `color-mix(in srgb, ${config.color} 2%, var(--obsidian))`,
         border: `1px solid color-mix(in srgb, ${config.color} 6%, var(--graphite))`,
@@ -942,25 +919,57 @@ function TriageClassifyRow({ classification }: { classification: TriageClassific
         {config.label}
       </span>
 
-      <span className="flex-1 text-[11px] truncate" style={{ color: "var(--silver)" }}>
-        <span style={{ color: "var(--mist)", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-          {classification.deviceId}
+      <span className="flex-1 text-[12px] truncate" style={{ color: "var(--silver)" }}>
+        {room && (
+          <>
+            <span style={{ color: "var(--steel)" }}>{room}</span>
+            <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
+          </>
+        )}
+        <span style={{ color: "var(--mist)", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+          {deviceName ?? deviceId}
         </span>
         <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
-        <span style={{ color: "var(--steel)" }}>{classification.eventType}</span>
-        {classification.reason && classification.reason !== "default" && (
+        <span style={{ color: "var(--steel)" }}>{eventType}</span>
+        {reason && reason !== "default" && (
           <>
             <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
-            <span style={{ color: "var(--pewter)" }}>{classification.reason}</span>
+            <span style={{ color: "var(--pewter)" }}>{reason}</span>
           </>
         )}
       </span>
 
+      {ruleId ? (
+        <span
+          className="badge flex-shrink-0"
+          style={{
+            background: "color-mix(in srgb, var(--info) 10%, transparent)",
+            color: "var(--info)",
+            fontSize: "9px",
+            padding: "1px 5px",
+          }}
+        >
+          rule
+        </span>
+      ) : (
+        <span
+          className="badge flex-shrink-0"
+          style={{
+            background: "color-mix(in srgb, var(--pewter) 10%, transparent)",
+            color: "var(--pewter)",
+            fontSize: "9px",
+            padding: "1px 5px",
+          }}
+        >
+          default
+        </span>
+      )}
+
       <span
-        className="text-[10px] tabular-nums flex-shrink-0"
+        className="text-[11px] tabular-nums flex-shrink-0"
         style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
       >
-        {relativeTime(classification.timestamp)}
+        {relativeTime(activity.timestamp)}
       </span>
     </div>
   );

@@ -101,6 +101,24 @@ export class ActivityStore {
     }));
   }
 
+  getOrphanActivities(limit = 100): AgentActivity[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (SELECT * FROM agent_activities WHERE turn_id IS NULL ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
+      )
+      .all(limit) as ActivityRow[];
+    return rows.map(mapRow);
+  }
+
+  getApprovalHistory(limit = 50): AgentActivity[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM (SELECT * FROM agent_activities WHERE type IN ('approval_pending', 'approval_resolved') ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
+      )
+      .all(limit) as ActivityRow[];
+    return rows.map(mapRow);
+  }
+
   getRecentTurns(limit = 50): { turnId: string; activities: AgentActivity[] }[] {
     const turnStarts = this.db
       .prepare(

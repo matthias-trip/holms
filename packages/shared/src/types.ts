@@ -119,11 +119,29 @@ export interface PendingApproval {
 
 // ── Chat Types ──
 
+export type ChatMessageStatus =
+  | "thinking"
+  | "approval_pending"
+  | "approval_resolved"
+  | null;
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: number;
+  status?: ChatMessageStatus;
+  approvalId?: string;
+}
+
+/** JSON shape stored in content when status is approval_pending or approval_resolved */
+export interface ApprovalMessageData {
+  approvalId: string;
+  deviceId: string;
+  command: string;
+  params: Record<string, unknown>;
+  reason: string;
+  resolved?: { approved: boolean };
 }
 
 // ── Agent Activity Types ──
@@ -134,7 +152,8 @@ export type AgentActivityType =
   | "deep_reason_start" | "deep_reason_result"
   | "approval_pending" | "approval_resolved"
   | "reflex_fired"
-  | "triage";
+  | "triage"
+  | "triage_classify";
 
 export interface AgentActivity {
   id: string;
