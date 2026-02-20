@@ -13,7 +13,7 @@ export const agentsRouter = t.router({
         name: "Coordinator",
         role: "coordinator",
         description: "Orchestrates all home automation decisions",
-        processing: ctx.coordinator.isProcessing(),
+        processing: ctx.hub.isProcessing(),
       },
     ];
   }),
@@ -44,7 +44,7 @@ export const agentsRouter = t.router({
       type: z.enum(["situational", "reflection", "goal_review", "daily_summary"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      if (ctx.coordinator.isProcessing()) {
+      if (ctx.hub.isProcessing()) {
         return { triggered: false, reason: "Coordinator is already processing" };
       }
       // Fire and forget — don't block the mutation on the full cycle

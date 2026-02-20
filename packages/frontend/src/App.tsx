@@ -1,4 +1,19 @@
 import { useState, useCallback, useEffect } from "react";
+import { Button } from "@heroui/react";
+import {
+  LayoutGrid,
+  MessageCircle,
+  Activity,
+  BarChart3,
+  Lightbulb,
+  Target,
+  Zap,
+  Clock,
+  Settings,
+  Sun,
+  Moon,
+} from "lucide-react";
+import { useTheme } from "./context/ThemeContext";
 import ChatPanel from "./components/ChatPanel";
 import DevicePanel from "./components/DevicePanel";
 import MemoryPanel from "./components/MemoryPanel";
@@ -6,11 +21,12 @@ import ReflexPanel from "./components/ReflexPanel";
 import ActivityPanel from "./components/ActivityPanel";
 import SchedulesPanel from "./components/SchedulesPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import UsagePanel from "./components/UsagePanel";
 import CycleOverview from "./components/CycleOverview";
 
-type Panel = "dashboard" | "chat" | "activity" | "devices" | "memory" | "reflexes" | "schedules" | "settings";
+type Panel = "dashboard" | "chat" | "activity" | "usage" | "devices" | "memory" | "reflexes" | "schedules" | "settings";
 
-const VALID_PANELS = new Set<string>(["dashboard", "chat", "activity", "devices", "memory", "reflexes", "schedules", "settings"]);
+const VALID_PANELS = new Set<string>(["dashboard", "chat", "activity", "usage", "devices", "memory", "reflexes", "schedules", "settings"]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
@@ -21,6 +37,7 @@ const NAV_ITEMS: { id: Panel; label: string }[] = [
   { id: "dashboard", label: "Overview" },
   { id: "chat", label: "Chat" },
   { id: "activity", label: "Activity" },
+  { id: "usage", label: "Usage" },
   { id: "devices", label: "Devices" },
   { id: "memory", label: "Memory" },
   { id: "reflexes", label: "Automations" },
@@ -28,80 +45,21 @@ const NAV_ITEMS: { id: Panel; label: string }[] = [
   { id: "settings", label: "Settings" },
 ];
 
-function NavIcon({ id, active }: { id: Panel; active: boolean }) {
-  const color = active ? "var(--white)" : "var(--steel)";
-  const size = 16;
-
-  switch (id) {
-    case "dashboard":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <rect x="1" y="1" width="6" height="6" rx="1.5" stroke={color} strokeWidth="1.3" />
-          <rect x="9" y="1" width="6" height="6" rx="1.5" stroke={color} strokeWidth="1.3" />
-          <rect x="1" y="9" width="6" height="6" rx="1.5" stroke={color} strokeWidth="1.3" />
-          <rect x="9" y="9" width="6" height="6" rx="1.5" stroke={color} strokeWidth="1.3" />
-        </svg>
-      );
-    case "chat":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <path
-            d="M2.5 3C2.5 2.17 3.17 1.5 4 1.5h8c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H6l-3 2.5V3z"
-            stroke={color}
-            strokeWidth="1.3"
-            strokeLinejoin="round"
-          />
-          <circle cx="5.5" cy="6.5" r="0.75" fill={color} />
-          <circle cx="8" cy="6.5" r="0.75" fill={color} />
-          <circle cx="10.5" cy="6.5" r="0.75" fill={color} />
-        </svg>
-      );
-    case "devices":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="5" r="3.5" stroke={color} strokeWidth="1.3" />
-          <path d="M8 8.5v4M6 14.5h4" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
-      );
-    case "memory":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.3" />
-          <circle cx="8" cy="8" r="2.5" stroke={color} strokeWidth="1.3" />
-          <path d="M8 1.5v2M8 12.5v2M14.5 8h-2M3.5 8h-2" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
-      );
-    case "activity":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <path d="M1.5 8h3l1.5-5 3 10 1.5-5h3" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      );
-    case "reflexes":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <path d="M9.5 1.5L5 9h4l-2 5.5L12 7H8l1.5-5.5z" stroke={color} strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
-      );
-    case "schedules":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6.5" stroke={color} strokeWidth="1.3" />
-          <path d="M8 4v4.5l3 1.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      );
-    case "settings":
-      return (
-        <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="2" stroke={color} strokeWidth="1.3" />
-          <path d="M8 1.5v1.3M8 13.2v1.3M1.5 8h1.3M13.2 8h1.3M3.4 3.4l.9.9M11.7 11.7l.9.9M3.4 12.6l.9-.9M11.7 4.3l.9-.9" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
-      );
-  }
-}
+const NAV_ICONS: Record<Panel, React.ComponentType<{ size: number; strokeWidth: number; style?: React.CSSProperties }>> = {
+  dashboard: LayoutGrid,
+  chat: MessageCircle,
+  activity: Activity,
+  usage: BarChart3,
+  devices: Lightbulb,
+  memory: Target,
+  reflexes: Zap,
+  schedules: Clock,
+  settings: Settings,
+};
 
 export default function App() {
   const [activePanel, setActivePanelRaw] = useState<Panel>(getPanelFromHash);
+  const { resolved, toggleAppearance } = useTheme();
 
   const setActivePanel = useCallback((panel: Panel) => {
     window.location.hash = panel === "dashboard" ? "" : panel;
@@ -114,71 +72,97 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: "var(--void)" }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--gray-2)" }}>
       {/* Sidebar */}
-      <nav
-        className="w-[200px] flex-shrink-0 flex flex-col"
+      <div
+        className="flex flex-col flex-shrink-0 w-[200px]"
         style={{
-          background: "var(--abyss)",
-          borderRight: "1px solid var(--graphite)",
+          background: "var(--gray-1)",
+          borderRight: "1px solid var(--gray-a3)",
         }}
       >
         {/* Logo */}
-        <div className="px-4 pt-5 pb-4 flex items-center gap-2.5">
+        <div className="flex items-center gap-2 px-4 pt-5 pb-4">
           <img
             src="/logo.png"
             alt="Holms"
             className="w-7 h-7 rounded-lg"
           />
           <span
-            className="text-[16px]"
-            style={{ color: "var(--white)", fontWeight: 500, fontFamily: "var(--font-mono)", letterSpacing: "0.04em" }}
+            className="text-base font-medium"
+            style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.04em", color: "var(--gray-12)" }}
           >
             holms
           </span>
         </div>
 
         {/* Nav items */}
-        <div className="flex-1 px-3 space-y-0.5">
+        <div className="flex flex-col gap-1 flex-1 px-3">
           {NAV_ITEMS.map((item) => {
             const isActive = activePanel === item.id;
+            const Icon = NAV_ICONS[item.id];
             return (
-              <button
+              <Button
                 key={item.id}
-                onClick={() => setActivePanel(item.id)}
-                className="w-full text-left px-3 py-2 rounded-lg text-[13px] flex items-center gap-3 transition-all duration-150 relative"
+                variant="light"
+                color="default"
+                onPress={() => setActivePanel(item.id)}
+                className="justify-start w-full"
                 style={{
-                  background: isActive ? "var(--glow-wash)" : "transparent",
-                  color: isActive ? "var(--white)" : "var(--silver)",
-                  border: isActive ? "1px solid var(--glow-border)" : "1px solid transparent",
+                  gap: "12px",
+                  fontWeight: isActive ? 500 : 400,
+                  background: isActive ? "var(--accent-a3)" : undefined,
+                  borderLeft: isActive ? "3px solid var(--accent-9)" : "3px solid transparent",
+                  borderRadius: "8px",
+                  color: isActive ? "var(--gray-12)" : "var(--gray-9)",
                 }}
+                startContent={
+                  <Icon
+                    size={16}
+                    strokeWidth={1.5}
+                    style={{ color: isActive ? "var(--accent-9)" : "var(--gray-8)" }}
+                  />
+                }
               >
-                <NavIcon id={item.id} active={isActive} />
-                <span style={{ fontWeight: isActive ? 500 : 400 }}>{item.label}</span>
-              </button>
+                {item.label}
+              </Button>
             );
           })}
         </div>
 
-        {/* Status */}
-        <div
-          className="mx-3 mb-4 px-3 py-2.5 rounded-lg flex items-center gap-2.5"
-          style={{ background: "var(--obsidian)", border: "1px solid var(--graphite)" }}
-        >
-          <div
-            className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-            style={{ background: "var(--warm)" }}
-          />
-          <span
-            className="text-[11px]"
-            style={{ color: "var(--silver)" }}
+        {/* Bottom section */}
+        <div className="flex flex-col gap-3 mx-3 mb-4">
+          {/* Theme toggle */}
+          <Button
+            isIconOnly
+            variant="light"
+            color="default"
+            size="md"
+            onPress={toggleAppearance}
+            title={resolved === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            style={{ alignSelf: "flex-start" }}
           >
-            Assistant ready
-          </span>
+            {resolved === "dark" ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
+          </Button>
+
+          {/* Status */}
+          <div
+            className="px-3 py-2.5 rounded-lg"
+            style={{ background: "var(--color-background)", border: "1px solid var(--gray-a5)" }}
+          >
+            <div className="flex items-center gap-2">
+              <div
+                className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
+                style={{ background: "var(--warm)" }}
+              />
+              <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+                Assistant ready
+              </span>
+            </div>
+          </div>
         </div>
-      </nav>
+      </div>
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
@@ -186,6 +170,7 @@ export default function App() {
           {activePanel === "dashboard" && <CycleOverview />}
           {activePanel === "chat" && <ChatPanel />}
           {activePanel === "activity" && <ActivityPanel />}
+          {activePanel === "usage" && <UsagePanel />}
           {activePanel === "devices" && <DevicePanel />}
           {activePanel === "memory" && <MemoryPanel />}
           {activePanel === "reflexes" && <ReflexPanel />}
@@ -196,4 +181,3 @@ export default function App() {
     </div>
   );
 }
-

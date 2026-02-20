@@ -1,10 +1,11 @@
 import { useState } from "react";
+import { CheckSquare } from "lucide-react";
+import { Card, CardBody, Chip, Button, Input } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { PendingApproval } from "@holms/shared";
 
 function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
   const p = params as Record<string, unknown>;
-  // Try to produce a human-readable description
   if (command.startsWith("set_")) {
     const prop = command.replace("set_", "").replace(/_/g, " ");
     const val = Object.values(p)[0];
@@ -15,7 +16,6 @@ function formatApprovalAction(command: string, params: unknown, deviceId: string
   if (command === "turn_off") return `Turn off ${deviceId}`;
   if (command === "lock") return `Lock ${deviceId}`;
   if (command === "unlock") return `Unlock ${deviceId}`;
-  // Fallback: readable command + device
   return `${command.replace(/_/g, " ")} on ${deviceId}`;
 }
 
@@ -41,14 +41,11 @@ export default function ApprovalPanel() {
   return (
     <div className="p-4 h-full flex flex-col">
       <div className="flex items-center gap-3 mb-3">
-        <span className="section-label">Needs Your OK</span>
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Needs Your OK</h3>
         {pending && pending.length > 0 && (
-          <span
-            className="badge"
-            style={{ background: "var(--err-dim)", color: "var(--err)" }}
-          >
+          <Chip variant="flat" color="danger" size="sm">
             {pending.length} pending
-          </span>
+          </Chip>
         )}
       </div>
 
@@ -56,10 +53,7 @@ export default function ApprovalPanel() {
         {(!pending || pending.length === 0) ? (
           <div className="empty-state">
             <div className="empty-state-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect x="3" y="3" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M6.5 9l2 2 3.5-4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <CheckSquare size={18} />
             </div>
             <div className="empty-state-text">
               All clear! The assistant will ask for your OK before doing anything unusual or important.
@@ -114,79 +108,67 @@ function ApprovalCard({
   isLoading: boolean;
 }) {
   return (
-    <div
-      className="rounded-xl p-4 animate-fade-in"
+    <Card
+      className="animate-fade-in"
       style={{
-        background: "var(--obsidian)",
-        border: "1px solid var(--graphite)",
         animationDelay: `${index * 60}ms`,
+        background: "var(--gray-3)",
+        border: "1px solid var(--gray-a5)",
       }}
     >
-      {/* Time */}
-      <div className="flex items-center gap-2 mb-3">
-        <span className="badge" style={{ background: "var(--warn-dim)", color: "var(--warn)" }}>
-          Awaiting approval
-        </span>
-        <span
-          className="text-[10px] ml-auto"
-          style={{ color: "var(--pewter)" }}
-        >
-          {new Date(item.createdAt).toLocaleTimeString()}
-        </span>
-      </div>
+      <CardBody>
+        <div className="flex items-center gap-2 mb-3">
+          <Chip variant="flat" color="warning" size="sm">
+            Awaiting approval
+          </Chip>
+          <span className="text-xs ml-auto" style={{ color: "var(--gray-9)" }}>
+            {new Date(item.createdAt).toLocaleTimeString()}
+          </span>
+        </div>
 
-      {/* Action detail */}
-      <div
-        className="rounded-lg p-3 mb-3"
-        style={{
-          fontSize: "12px",
-          background: "var(--abyss)",
-          border: "1px solid var(--graphite)",
-          color: "var(--frost)",
-        }}
-      >
-        {formatApprovalAction(item.command, item.params, item.deviceId)}
-      </div>
-
-      {/* Reason */}
-      <p className="text-[12px] mb-3" style={{ color: "var(--silver)", lineHeight: "1.5" }}>
-        {item.reason}
-      </p>
-
-      {/* Actions */}
-      <div className="flex gap-2 items-center">
-        <button
-          onClick={onApprove}
-          disabled={isLoading}
-          className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer"
+        <div
+          className="rounded-lg p-3 mb-3"
           style={{
-            background: "var(--ok-dim)",
-            color: "var(--ok)",
-            border: "1px solid rgba(22,163,74,0.15)",
+            fontSize: "12px",
+            background: "var(--gray-a3)",
+            border: "1px solid var(--gray-a5)",
           }}
         >
-          Approve
-        </button>
-        <input
-          value={rejectReason}
-          onChange={(e) => onRejectReasonChange(e.target.value)}
-          placeholder="Reason..."
-          className="input-base flex-1 text-[11px]"
-          style={{ padding: "6px 10px" }}
-        />
-        <button
-          onClick={onReject}
-          disabled={isLoading}
-          className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all cursor-pointer"
-          style={{
-            background: "var(--err-dim)",
-            color: "var(--err)",
-            border: "1px solid rgba(220,38,38,0.15)",
-          }}
-        >
-          Reject
-        </button>
-      </div>
-    </div>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>{formatApprovalAction(item.command, item.params, item.deviceId)}</span>
+        </div>
+
+        <p className="text-xs mb-3" style={{ color: "var(--gray-9)", lineHeight: "1.5" }}>
+          {item.reason}
+        </p>
+
+        <div className="flex gap-2 items-center">
+          <Button
+            variant="flat"
+            color="success"
+            size="sm"
+            onPress={onApprove}
+            isDisabled={isLoading}
+          >
+            Approve
+          </Button>
+          <Input
+            value={rejectReason}
+            onChange={(e) => onRejectReasonChange(e.target.value)}
+            placeholder="Reason..."
+            size="sm"
+            className="flex-1"
+          />
+          <Button
+            variant="flat"
+            color="danger"
+            size="sm"
+            onPress={onReject}
+            isDisabled={isLoading}
+          >
+            Reject
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
   );
 }

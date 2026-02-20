@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { Loader2, ChevronRight, AlertCircle, SendHorizonal, Lightbulb, Cloud, Moon, Activity, Sparkles } from "lucide-react";
+import { Button, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { ChatMessage, ApprovalMessageData } from "@holms/shared";
 import MarkdownMessage from "./MarkdownMessage";
@@ -50,12 +52,9 @@ function LiveReasoningBlock({ reasoning, startedAt }: { reasoning: string; start
 
   return (
     <div className="mb-2">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin-slow flex-shrink-0">
-          <circle cx="8" cy="8" r="6" stroke="var(--graphite)" strokeWidth="1.5" />
-          <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--steel)" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-        <span className="text-[11px] font-medium" style={{ color: "var(--steel)" }}>
+      <div className="flex items-center gap-1 mb-1">
+        <Loader2 size={12} className="animate-spin-slow flex-shrink-0" style={{ color: "var(--gray-9)" }} />
+        <span className="text-xs font-medium" style={{ color: "var(--gray-9)" }}>
           Thinking{elapsed > 0 ? ` (${elapsed}s)` : ""}...
         </span>
       </div>
@@ -63,10 +62,10 @@ function LiveReasoningBlock({ reasoning, startedAt }: { reasoning: string; start
         ref={scrollRef}
         className="pl-4 text-[11px] overflow-auto whitespace-pre-wrap"
         style={{
-          color: "var(--silver)",
+          color: "var(--gray-11)",
           maxHeight: "200px",
           lineHeight: 1.6,
-          borderLeft: "2px solid var(--graphite)",
+          borderLeft: "2px solid var(--gray-a5)",
         }}
       >
         {reasoning}
@@ -89,16 +88,15 @@ function ReasoningBlock({ reasoning, durationSec }: { reasoning: string; duratio
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-left"
       >
-        <svg
-          width="10" height="10" viewBox="0 0 10 10" fill="none"
+        <ChevronRight
+          size={10}
           className="flex-shrink-0 transition-transform duration-150"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-        >
-          <path d="M3.5 2l3 3-3 3" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-        <span className="text-[11px] font-medium" style={{ color: "var(--steel)" }}>
-          {label}
-        </span>
+          style={{
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            color: "var(--gray-8)",
+          }}
+        />
+        <span className="text-xs font-medium" style={{ color: "var(--gray-9)" }}>{label}</span>
       </button>
       <div
         className="overflow-hidden transition-all duration-200 ease-in-out"
@@ -107,10 +105,10 @@ function ReasoningBlock({ reasoning, durationSec }: { reasoning: string; duratio
         <div
           className="mt-1.5 pl-4 text-[11px] overflow-auto"
           style={{
-            color: "var(--silver)",
+            color: "var(--gray-11)",
             maxHeight: "380px",
             lineHeight: 1.6,
-            borderLeft: "2px solid var(--graphite)",
+            borderLeft: "2px solid var(--gray-a5)",
           }}
         >
           <MarkdownMessage content={reasoning} />
@@ -143,23 +141,18 @@ function ApprovalCard({
       <div
         className="max-w-[65%] rounded-xl px-4 py-2.5"
         style={{
-          background: "var(--slate)",
-          border: "1px solid var(--graphite)",
+          background: "var(--gray-3)",
+          border: "1px solid var(--gray-a5)",
           fontSize: "13px",
           lineHeight: "1.6",
         }}
       >
-        <div className="flex items-center gap-2 mb-1.5">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-shrink-0">
-            <circle cx="8" cy="8" r="6.5" stroke="var(--warn)" strokeWidth="1.3" />
-            <path d="M8 5v3.5M8 10.5h.01" stroke="var(--warn)" strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-          <span className="text-[12px] font-medium" style={{ color: "var(--frost)" }}>
-            Requesting approval
-          </span>
+        <div className="flex items-center gap-2 mb-1">
+          <AlertCircle size={14} style={{ color: "var(--warn)" }} className="flex-shrink-0" />
+          <span className="text-sm font-medium" style={{ color: "var(--gray-12)" }}>Requesting approval</span>
         </div>
 
-        <p className="text-[13px] mb-2" style={{ color: "var(--frost)", lineHeight: "1.6" }}>
+        <p className="text-sm mb-2" style={{ lineHeight: "1.6", color: "var(--gray-12)" }}>
           {data.reason}
         </p>
 
@@ -169,60 +162,48 @@ function ApprovalCard({
             fontSize: "12px",
             fontWeight: 500,
             fontFamily: "var(--font-mono)",
-            background: "var(--abyss)",
-            border: "1px solid var(--graphite)",
-            color: "var(--mist)",
+            background: "var(--gray-a3)",
+            border: "1px solid var(--gray-a5)",
+            color: "var(--gray-12)",
           }}
         >
           {formatApprovalAction(data.command, data.params, data.deviceId)}
         </div>
 
         {data.resolved ? (
-          <div
-            className="text-[11px] font-medium px-2.5 py-1.5 rounded-md inline-block"
-            style={{
-              background: data.resolved.approved ? "var(--ok-dim)" : "var(--err-dim)",
-              color: data.resolved.approved ? "var(--ok)" : "var(--err)",
-            }}
+          <Chip
+            variant="flat"
+            color={data.resolved.approved ? "success" : "danger"}
+            size="md"
           >
             {data.resolved.approved ? "Approved" : "Rejected"}
-          </div>
+          </Chip>
         ) : (
           <div className="flex gap-2">
-            <button
-              onClick={onApprove}
-              disabled={isLoading}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-              style={{
-                background: "var(--ok-dim)",
-                color: "var(--ok)",
-                border: "1px solid rgba(22,163,74,0.15)",
-              }}
+            <Button
+              variant="flat"
+              color="success"
+              size="sm"
+              onPress={onApprove}
+              isDisabled={isLoading}
             >
               Approve
-            </button>
-            <button
-              onClick={onReject}
-              disabled={isLoading}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-              style={{
-                background: "var(--err-dim)",
-                color: "var(--err)",
-                border: "1px solid rgba(220,38,38,0.15)",
-              }}
+            </Button>
+            <Button
+              variant="flat"
+              color="danger"
+              size="sm"
+              onPress={onReject}
+              isDisabled={isLoading}
             >
               Reject
-            </button>
+            </Button>
           </div>
         )}
 
         <p
-          className="mt-1"
-          style={{
-            fontSize: "10px",
-            fontFamily: "var(--font-mono)",
-            opacity: 0.4,
-          }}
+          className="text-xs mt-1"
+          style={{ fontFamily: "var(--font-mono)", opacity: 0.4, color: "var(--gray-12)" }}
         >
           {new Date(timestamp).toLocaleTimeString()}
         </p>
@@ -230,6 +211,14 @@ function ApprovalCard({
     </div>
   );
 }
+
+const SUGGESTED_PROMPTS = [
+  { label: "Turn on all lights", icon: Lightbulb },
+  { label: "What's the weather like?", icon: Cloud },
+  { label: "Set a bedtime routine", icon: Moon },
+  { label: "Show device status", icon: Activity },
+];
+
 
 export default function ChatPanel() {
   const [messages, setMessages] = useState<StreamingMessage[]>([]);
@@ -250,7 +239,6 @@ export default function ChatPanel() {
       pendingApprovalActionRef.current = null;
       if (!action) return;
 
-      // Optimistically update the approval card
       setMessages((prev) =>
         prev.map((m) => {
           if (m.status !== "approval_pending" && m.status !== "approval_resolved") return m;
@@ -261,7 +249,6 @@ export default function ChatPanel() {
         }),
       );
 
-      // Append streaming placeholder for the coordinator response
       if (data.thinkingMessageId) {
         const now = Date.now();
         const placeholder: StreamingMessage = {
@@ -286,7 +273,6 @@ export default function ChatPanel() {
       pendingApprovalActionRef.current = null;
       if (!action) return;
 
-      // Optimistically update the approval card
       setMessages((prev) =>
         prev.map((m) => {
           if (m.status !== "approval_pending" && m.status !== "approval_resolved") return m;
@@ -297,7 +283,6 @@ export default function ChatPanel() {
         }),
       );
 
-      // Append streaming placeholder for the coordinator response
       if (data.thinkingMessageId) {
         const now = Date.now();
         const placeholder: StreamingMessage = {
@@ -317,7 +302,6 @@ export default function ChatPanel() {
 
   useEffect(() => {
     if (historyQuery.data) {
-      // If any message has status="thinking", mark it as streaming so the indicator shows
       const loaded = historyQuery.data.map((m): StreamingMessage => {
         if (m.status === "thinking") {
           return { ...m, streaming: true };
@@ -326,13 +310,11 @@ export default function ChatPanel() {
       });
       setMessages(loaded);
 
-      // If there's a thinking message from the DB, wire up the stream placeholder ref
       const thinkingMsg = loaded.find((m) => m.streaming);
       if (thinkingMsg) {
         streamPlaceholderIdRef.current = thinkingMsg.id;
       }
 
-      // After first history load, scroll instantly (no animation)
       if (!historyLoadedRef.current) {
         historyLoadedRef.current = true;
         requestAnimationFrame(() => {
@@ -342,7 +324,6 @@ export default function ChatPanel() {
     }
   }, [historyQuery.data]);
 
-  // Subscribe to streaming events
   const streamPlaceholderIdRef = useRef<string | null>(null);
 
   trpc.chat.onChatStream.useSubscription(undefined, {
@@ -372,7 +353,6 @@ export default function ChatPanel() {
     },
   });
 
-  // Subscribe to new approval proposals so the card appears in real-time
   trpc.approval.onProposal.useSubscription(undefined, {
     onData: (proposal) => {
       const approvalMsg: StreamingMessage = {
@@ -399,8 +379,6 @@ export default function ChatPanel() {
       streamEndReceivedRef.current = false;
       const placeholderId = streamPlaceholderIdRef.current;
       streamPlaceholderIdRef.current = null;
-      // Silently swap placeholder with canonical server data, keeping the same position
-      // Preserve reasoning from stream_end event
       setMessages((prev) =>
         prev.map((m) =>
           m.id === placeholderId
@@ -408,6 +386,7 @@ export default function ChatPanel() {
             : m,
         ),
       );
+      utils.chat.suggestions.reset();
     },
     onError: () => {
       streamEndReceivedRef.current = false;
@@ -416,11 +395,9 @@ export default function ChatPanel() {
     },
   });
 
-  // Derive isProcessing purely from message state — no polling needed
   const isProcessing = messages.some((m) => m.streaming);
 
   useEffect(() => {
-    // Skip the initial history scroll (handled above)
     if (!historyLoadedRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
@@ -456,6 +433,37 @@ export default function ChatPanel() {
     setInput("");
   };
 
+  const handleSendText = (text: string) => {
+    if (!text.trim() || sendMutation.isPending) return;
+
+    const userMsg: StreamingMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text.trim(),
+      timestamp: Date.now(),
+    };
+
+    const placeholderId = crypto.randomUUID();
+    const now = Date.now();
+    const placeholder: StreamingMessage = {
+      id: placeholderId,
+      role: "assistant",
+      content: "",
+      timestamp: now,
+      streaming: true,
+      thinkingStartedAt: now,
+    };
+
+    liveMessageIdsRef.current.add(userMsg.id);
+    liveMessageIdsRef.current.add(placeholderId);
+    streamPlaceholderIdRef.current = placeholderId;
+    streamEndReceivedRef.current = false;
+
+    setMessages((prev) => [...prev, userMsg, placeholder]);
+    sendMutation.mutate({ message: text.trim() });
+    setInput("");
+  };
+
   const handleApprove = (approvalId: string) => {
     pendingApprovalActionRef.current = { approvalId, approved: true };
     approveMutation.mutate({ id: approvalId });
@@ -468,18 +476,23 @@ export default function ChatPanel() {
 
   const isApprovalLoading = approveMutation.isPending || rejectMutation.isPending;
 
+  // Dynamic suggestions via Haiku
+  const suggestionsQuery = trpc.chat.suggestions.useQuery(
+    { limit: 3 },
+    { enabled: messages.length > 0 && !isProcessing, staleTime: Infinity },
+  );
+  const suggestions = suggestionsQuery.data?.suggestions ?? [];
+
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--void)" }}>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="px-6 py-4 flex items-center justify-between flex-shrink-0"
-        style={{ borderBottom: "1px solid var(--graphite)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
         <div>
-          <div className="text-[15px] font-medium" style={{ color: "var(--white)" }}>
-            Assistant
-          </div>
-          <div className="text-[11px] mt-0.5" style={{ color: "var(--steel)" }}>
+          <h3 className="text-base font-medium" style={{ color: "var(--gray-12)" }}>Assistant</h3>
+          <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>
             {isProcessing ? (
               <span className="inline-flex items-center gap-1">
                 thinking
@@ -489,7 +502,7 @@ export default function ChatPanel() {
                       key={i}
                       className="inline-block w-[3px] h-[3px] rounded-full"
                       style={{
-                        background: "var(--steel)",
+                        background: "var(--gray-9)",
                         animation: "thinking-dot 1.4s ease-in-out infinite",
                         animationDelay: `${i * 0.2}s`,
                       }}
@@ -498,31 +511,75 @@ export default function ChatPanel() {
                 </span>
               </span>
             ) : "ready"}
-          </div>
+          </p>
         </div>
       </div>
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-auto px-6 py-4">
+        <div className="mx-auto w-full max-w-3xl">
         {messages.length === 0 ? (
-          <div className="empty-state" style={{ paddingTop: "80px" }}>
-            <img
-              src="/chaticon.png"
-              alt="Holms"
-              className="w-12 h-12 rounded-2xl mb-2"
-              style={{ boxShadow: "0 0 24px rgba(14, 165, 233, 0.15)" }}
-            />
-            <div className="text-[13px] font-medium" style={{ color: "var(--mist)" }}>
-              Talk to your home
+          <div className="flex flex-col items-center justify-center text-center" style={{ paddingTop: "15vh" }}>
+            <div
+              className="relative mb-4"
+            >
+              <div
+                className="absolute inset-0 rounded-2xl animate-pulse"
+                style={{
+                  background: "var(--accent-9)",
+                  opacity: 0.15,
+                  filter: "blur(16px)",
+                  transform: "scale(1.5)",
+                }}
+              />
+              <img
+                src="/chaticon.png"
+                alt="Holms"
+                className="relative w-14 h-14 rounded-2xl"
+                style={{ boxShadow: "0 0 32px rgba(14, 165, 233, 0.2)" }}
+              />
             </div>
-            <div className="empty-state-text">
-              Ask me to control your devices, set preferences, or check what's happening at home.
+            <h2 className="text-lg font-semibold mb-1" style={{ color: "var(--gray-12)" }}>
+              How can I help?
+            </h2>
+            <p className="text-sm mb-6" style={{ color: "var(--gray-9)", maxWidth: "280px" }}>
+              Control devices, set routines, or just ask me anything about your home.
+            </p>
+            <div className="grid grid-cols-2 gap-2" style={{ maxWidth: "360px", width: "100%" }}>
+              {SUGGESTED_PROMPTS.map((prompt) => {
+                const Icon = prompt.icon;
+                return (
+                  <button
+                    key={prompt.label}
+                    onClick={() => handleSendText(prompt.label)}
+                    className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-left transition-all duration-150"
+                    style={{
+                      background: "var(--gray-3)",
+                      border: "1px solid var(--gray-a5)",
+                      color: "var(--gray-11)",
+                      fontSize: "12.5px",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "var(--accent-a3)";
+                      e.currentTarget.style.borderColor = "var(--accent-a5)";
+                      e.currentTarget.style.color = "var(--gray-12)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "var(--gray-3)";
+                      e.currentTarget.style.borderColor = "var(--gray-a5)";
+                      e.currentTarget.style.color = "var(--gray-11)";
+                    }}
+                  >
+                    <Icon size={14} strokeWidth={1.5} style={{ color: "var(--accent-9)", flexShrink: 0 }} />
+                    {prompt.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
         ) : (
           <div className="space-y-4">
             {messages.map((msg) => {
-              // Approval card messages
               const isApproval = msg.status === "approval_pending" || msg.status === "approval_resolved";
               if (isApproval) {
                 const approvalData = parseApprovalData(msg.content);
@@ -540,7 +597,6 @@ export default function ChatPanel() {
                 }
               }
 
-              // Regular messages
               const isLive = liveMessageIdsRef.current.has(msg.id);
               return (
               <div
@@ -557,9 +613,9 @@ export default function ChatPanel() {
                 <div
                   className="max-w-[65%] rounded-xl px-4 py-2.5"
                   style={{
-                    background: msg.role === "user" ? "var(--glow)" : "var(--slate)",
-                    border: msg.role === "user" ? "none" : "1px solid var(--graphite)",
-                    color: msg.role === "user" ? "white" : "var(--frost)",
+                    background: msg.role === "user" ? "var(--accent-9)" : "var(--gray-3)",
+                    border: msg.role === "user" ? "none" : "1px solid var(--gray-a5)",
+                    color: msg.role === "user" ? "white" : "var(--gray-12)",
                     fontSize: "13px",
                     lineHeight: "1.6",
                   }}
@@ -573,11 +629,8 @@ export default function ChatPanel() {
                         />
                       ) : (
                         <div className="flex items-center gap-2 py-0.5">
-                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="animate-spin-slow flex-shrink-0">
-                            <circle cx="8" cy="8" r="6" stroke="var(--graphite)" strokeWidth="1.5" />
-                            <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--steel)" strokeWidth="1.5" strokeLinecap="round" />
-                          </svg>
-                          <span className="text-[11px]" style={{ color: "var(--steel)" }}>Thinking...</span>
+                          <Loader2 size={12} className="animate-spin-slow flex-shrink-0" style={{ color: "var(--gray-9)" }} />
+                          <span className="text-xs" style={{ color: "var(--gray-9)" }}>Thinking...</span>
                         </div>
                       )
                     ) : (
@@ -598,12 +651,8 @@ export default function ChatPanel() {
                   )}
                   {!msg.streaming && (
                     <p
-                      className="mt-1"
-                      style={{
-                        fontSize: "10px",
-                        fontFamily: "var(--font-mono)",
-                        opacity: 0.4,
-                      }}
+                      className="text-xs mt-1"
+                      style={{ fontFamily: "var(--font-mono)", opacity: 0.4 }}
                     >
                       {new Date(msg.timestamp).toLocaleTimeString()}
                     </p>
@@ -614,30 +663,77 @@ export default function ChatPanel() {
             })}
           </div>
         )}
+        </div>
       </div>
 
+      {/* Dynamic suggestions */}
+      {messages.length > 0 && !isProcessing && !input.trim() && suggestions.length > 0 && (
+        <div
+          className="flex gap-2 px-6 pt-2 max-w-3xl mx-auto"
+          style={{ borderTop: "1px solid var(--gray-a3)" }}
+        >
+          {suggestions.map((text, i) => (
+            <button
+              key={text}
+              onClick={() => handleSendText(text)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-all duration-150 animate-suggestion-in"
+              style={{
+                animationDelay: `${i * 60}ms`,
+                background: "var(--gray-3)",
+                border: "1px solid var(--gray-a5)",
+                color: "var(--gray-9)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--accent-a3)";
+                e.currentTarget.style.borderColor = "var(--accent-a5)";
+                e.currentTarget.style.color = "var(--gray-12)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--gray-3)";
+                e.currentTarget.style.borderColor = "var(--gray-a5)";
+                e.currentTarget.style.color = "var(--gray-9)";
+              }}
+            >
+              <Sparkles size={10} strokeWidth={2} style={{ color: "var(--accent-9)", flexShrink: 0 }} />
+              {text}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Input */}
-      <div
-        className="px-6 py-4 flex-shrink-0"
-        style={{ borderTop: "1px solid var(--graphite)" }}
-      >
-        <div className="flex gap-2">
+      <div className="flex-shrink-0 px-6 py-4 max-w-3xl mx-auto w-full">
+        <div
+          className="flex items-center gap-2 rounded-2xl px-4 py-2"
+          style={{
+            background: "var(--gray-3)",
+            border: "1px solid var(--gray-a5)",
+            boxShadow: "inset 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02)",
+          }}
+        >
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
-            placeholder="Talk to your home..."
-            className="input-base flex-1"
+            placeholder="Message your home..."
             disabled={sendMutation.isPending}
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{
+              color: "var(--gray-12)",
+              caretColor: "var(--accent-9)",
+            }}
           />
           <button
             onClick={handleSend}
             disabled={sendMutation.isPending || !input.trim()}
-            className="btn-primary"
+            className="flex items-center justify-center w-8 h-8 rounded-full transition-all duration-150 flex-shrink-0"
+            style={{
+              background: input.trim() ? "var(--accent-9)" : "var(--gray-a3)",
+              color: input.trim() ? "white" : "var(--gray-8)",
+              cursor: input.trim() ? "pointer" : "default",
+            }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ display: "block" }}>
-              <path d="M2 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <SendHorizonal size={14} />
           </button>
         </div>
       </div>

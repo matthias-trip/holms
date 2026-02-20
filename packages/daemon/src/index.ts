@@ -10,7 +10,7 @@ import { DeviceManager } from "./devices/manager.js";
 import { DummyProvider } from "./devices/providers/dummy.js";
 import { ApprovalQueue } from "./coordinator/approval-queue.js";
 import { OutcomeObserver } from "./coordinator/outcome-observer.js";
-import { Coordinator } from "./coordinator/coordinator.js";
+import { CoordinatorHub } from "./coordinator/coordinator-hub.js";
 import { ProactiveScheduler } from "./scheduler/proactive.js";
 import { ScheduleStore } from "./schedule/store.js";
 import { TriageStore } from "./triage/store.js";
@@ -60,14 +60,13 @@ async function main() {
   // 7b. Init PluginManager
   const pluginManager = new PluginManager(config.builtinPluginsDir, config.pluginsDir, config.pluginsStatePath);
 
-  // 8. Init Coordinator
-  const coordinator = new Coordinator(
+  // 8. Init CoordinatorHub (replaces single Coordinator)
+  const hub = new CoordinatorHub(
     eventBus,
     deviceManager,
     memoryStore,
     reflexStore,
     approvalQueue,
-    outcomeObserver,
     config,
     scheduleStore,
     triageStore,
@@ -75,7 +74,7 @@ async function main() {
   );
 
   // 9. Init ChannelManager + register WebProvider
-  const channelManager = new ChannelManager(eventBus, chatStore, coordinator);
+  const channelManager = new ChannelManager(eventBus, chatStore, hub);
   await channelManager.register(new WebProvider());
 
   // 9b. Init TriageEngine
@@ -89,13 +88,13 @@ async function main() {
   // Start batch ticker (flushes batched events to coordinator)
   triageEngine.startBatchTicker((events) => {
     for (const event of events) {
-      coordinator.enqueueEvent(event);
+      hub.enqueueEvent(event);
     }
   });
 
   // 10. Init ProactiveScheduler
   const scheduler = new ProactiveScheduler(
-    coordinator,
+    hub,
     deviceManager,
     memoryStore,
     config,
@@ -117,13 +116,13 @@ async function main() {
     // Check for outcome reversals
     const feedback = outcomeObserver.processEvent(event);
     if (feedback) {
-      coordinator.handleOutcomeFeedback(feedback).catch(console.error);
+      hub.handleOutcomeFeedback(feedback).catch(console.error);
     }
 
     // Triage: classify event into immediate / batched / silent
     const lane = triageEngine.classify(event);
     if (lane === "immediate") {
-      coordinator.enqueueEvent(event);
+      hub.enqueueEvent(event);
     }
     // "batched" → already buffered inside triageEngine, flushed on periodic tick
     // "silent" → nothing, state is already updated by provider
@@ -142,7 +141,7 @@ async function main() {
     // If no reflex matched, coordinator reasons about it
     if (!handled) {
       const context = `Schedule "${schedule.id}" fired.\nInstruction: ${schedule.instruction}\nRecurrence: ${schedule.recurrence}`;
-      coordinator.handleProactiveWakeup("schedule", context).catch(console.error);
+      hub.handleProactiveWakeup("schedule", context).catch(console.error);
     }
   });
 
@@ -151,6 +150,7 @@ async function main() {
 
   // 12a. Persist approval proposals as chat messages (resolution handled in approval router)
   eventBus.on("approval:pending", (data) => {
+    const channel = hub.getApprovalChannel(data.id);
     chatStore.add({
       id: uuid(),
       role: "assistant",
@@ -164,12 +164,12 @@ async function main() {
       timestamp: data.createdAt,
       status: "approval_pending",
       approvalId: data.id,
-      channel: "web:default",
+      channel,
     });
   });
 
   // 12b. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
-  initActivityPersistence(eventBus, activityStore, coordinator);
+  initActivityPersistence(eventBus, activityStore, hub);
 
   // 13. Start tRPC API server
   const apiServer = startApiServer(
@@ -179,13 +179,14 @@ async function main() {
       reflexStore,
       chatStore,
       activityStore,
-      coordinator,
+      hub,
       approvalQueue,
       eventBus,
       scheduleStore,
       scheduler,
       pluginManager,
       channelManager,
+      config,
     },
     config.apiPort,
   );

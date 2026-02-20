@@ -1,29 +1,73 @@
 @import "tailwindcss";
+@plugin '../hero.ts';
+@source '../../../node_modules/@heroui/react/dist/**/*.{js,ts,jsx,tsx}';
+@custom-variant dark (&:is(.dark *));
 
-/* ── Light, Modern Theme ── */
+/* ── HeroUI radius fix for Tailwind v4 ── */
+/* HeroUI components use rounded-small/medium/large classes that
+   Tailwind v4 doesn't resolve. Define them as plain CSS. */
+
+.rounded-small {
+  border-radius: 8px;
+}
+
+.rounded-medium {
+  border-radius: 12px;
+}
+
+.rounded-large {
+  border-radius: 14px;
+}
+
+/* ── Radix → HeroUI CSS variable shim (temporary) ── */
 
 :root {
-  /* Light palette */
-  --void: #f4f5f7;
-  --abyss: #f8f9fb;
-  --obsidian: #ffffff;
-  --slate: #f1f3f6;
-  --graphite: #e4e7ed;
-  --gunmetal: #d1d6e0;
-  --pewter: #9ea8ba;
-  --steel: #6b7690;
-  --silver: #4a5266;
-  --mist: #2d3347;
-  --frost: #1a1f30;
-  --white: #0f1120;
+  --gray-1: #ffffff;
+  --gray-2: #f9fafb;
+  --gray-3: #f1f3f5;
+  --gray-4: #e9ecef;
+  --gray-5: #dee2e6;
+  --gray-6: #ced4da;
+  --gray-7: #adb5bd;
+  --gray-8: #868e96;
+  --gray-9: #6b7280;
+  --gray-10: #4b5563;
+  --gray-11: #374151;
+  --gray-12: #111827;
+  --gray-a3: rgba(0, 0, 0, 0.03);
+  --gray-a5: rgba(0, 0, 0, 0.06);
+  --accent-9: #0ea5e9;
+  --accent-10: #0284c7;
+  --accent-a3: rgba(14, 165, 233, 0.12);
+  --accent-a5: rgba(14, 165, 233, 0.20);
+  --color-background: #ffffff;
+}
 
-  /* Accent — cyan/teal (matches logo circuit lines) */
-  --glow: #0ea5e9;
-  --glow-bright: #38bdf8;
-  --glow-dim: #0284c7;
-  --glow-wash: rgba(14, 165, 233, 0.07);
-  --glow-border: rgba(14, 165, 233, 0.18);
+.dark {
+  --gray-1: #0a0a0a;
+  --gray-2: #111113;
+  --gray-3: #19191b;
+  --gray-4: #222225;
+  --gray-5: #2c2c30;
+  --gray-6: #37373d;
+  --gray-7: #46464f;
+  --gray-8: #5c5c6a;
+  --gray-9: #6e6e80;
+  --gray-10: #7e7e91;
+  --gray-11: #a1a1aa;
+  --gray-12: #ececef;
+  --gray-a3: rgba(255, 255, 255, 0.04);
+  --gray-a5: rgba(255, 255, 255, 0.06);
+  --accent-9: #0ea5e9;
+  --accent-10: #38bdf8;
+  --accent-a3: rgba(14, 165, 233, 0.15);
+  --accent-a5: rgba(14, 165, 233, 0.25);
+  --color-background: #0a0a0a;
+}
 
+/* ── Custom tokens ── */
+
+:root {
   /* Warm accent — amber/orange (matches logo warm side) */
   --warm: #f59e0b;
   --warm-bright: #fbbf24;
@@ -44,12 +88,25 @@
   /* Typography */
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', 'SF Mono', 'Fira Code', monospace;
+}
 
-  /* Radii */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+/* ── Dark mode adjustments ── */
+
+.dark {
+  --warm: #fbbf24;
+  --warm-bright: #fcd34d;
+  --warm-dim: #b45309;
+  --warm-wash: rgba(251, 191, 36, 0.10);
+  --warm-border: rgba(251, 191, 36, 0.22);
+
+  --ok: #22c55e;
+  --ok-dim: rgba(34, 197, 94, 0.12);
+  --warn: #f97316;
+  --warn-dim: rgba(249, 115, 22, 0.12);
+  --err: #ef4444;
+  --err-dim: rgba(239, 68, 68, 0.12);
+  --info: #3b82f6;
+  --info-dim: rgba(59, 130, 246, 0.12);
 }
 
 /* ── Base ── */
@@ -58,10 +115,22 @@
   box-sizing: border-box;
 }
 
+/* Suppress HeroUI's blue focus ring on all elements */
+*:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  ring: none !important;
+}
+
+[data-focus-visible="true"] {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 body {
   margin: 0;
-  background: var(--void);
-  color: var(--frost);
+  background: var(--gray-2);
+  color: var(--gray-12);
   font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.5;
@@ -74,52 +143,10 @@ body {
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--pewter);
+  background: var(--gray-8);
   border-radius: 99px;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--steel); }
-
-/* ── Panel surface ── */
-
-.panel {
-  background: var(--obsidian);
-  border: 1px solid var(--graphite);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.panel-inset {
-  background: var(--abyss);
-  border: 1px solid var(--graphite);
-  border-radius: var(--radius-md);
-}
-
-/* ── Glass ── */
-
-.glass {
-  background: rgba(255, 255, 255, 0.80);
-  backdrop-filter: blur(20px) saturate(1.3);
-  border: 1px solid var(--gunmetal);
-}
-
-.glass-subtle {
-  background: rgba(255, 255, 255, 0.50);
-  backdrop-filter: blur(12px);
-}
-
-/* ── Glow effects ── */
-
-.glow-ring {
-  box-shadow:
-    0 0 0 1px var(--glow-border),
-    0 1px 3px rgba(14, 165, 233, 0.08);
-}
-
-.glow-soft {
-  box-shadow: 0 1px 4px rgba(14, 165, 233, 0.10);
-}
-
-.glow-ok { box-shadow: 0 1px 4px rgba(22, 163, 74, 0.15); }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-9); }
 
 /* ── Animations ── */
 
@@ -136,6 +163,11 @@ body {
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes suggestion-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes slide-in {
@@ -172,10 +204,12 @@ body {
   to { transform: rotate(360deg); }
 }
 
+
 .animate-slide-down { animation: slide-down 0.25s ease-out both; }
 .animate-breathe { animation: breathe 3s ease-in-out infinite; }
 .animate-spin-slow { animation: spin-slow 1.2s linear infinite; }
 .animate-fade-in { animation: fade-in 0.3s ease-out both; }
+.animate-suggestion-in { animation: suggestion-in 0.35s ease-out both; }
 .animate-slide-in { animation: slide-in 0.25s ease-out both; }
 .content-reveal { animation: content-reveal 0.25s ease-out both; }
 .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
@@ -191,6 +225,12 @@ body {
   animation: shimmer 3s ease-in-out infinite;
 }
 
+/* ── Chat empty state placeholder style ── */
+
+input::placeholder {
+  color: var(--gray-8);
+}
+
 /* ── Section header ── */
 
 .section-label {
@@ -198,67 +238,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: var(--frost);
-}
-
-/* ── Input base ── */
-
-.input-base {
-  background: var(--obsidian);
-  border: 1px solid var(--graphite);
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--frost);
-  font-family: var(--font-body);
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.input-base::placeholder {
-  color: var(--pewter);
-}
-
-.input-base:focus {
-  border-color: var(--glow-border);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.08);
-}
-
-/* ── Button ── */
-
-.btn-primary {
-  background: var(--glow);
-  color: white;
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-body);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn-primary:hover { background: var(--glow-bright); }
-.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
-
-.btn-ghost {
-  background: transparent;
-  border: 1px solid var(--gunmetal);
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 500;
-  font-family: var(--font-body);
-  color: var(--silver);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn-ghost:hover {
-  background: var(--slate);
-  border-color: var(--pewter);
-  color: var(--frost);
+  color: var(--gray-12);
 }
 
 /* ── Empty state ── */
@@ -277,30 +257,57 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 12px;
-  background: var(--slate);
+  background: var(--gray-3);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--steel);
+  color: var(--gray-9);
   font-size: 18px;
 }
 
 .empty-state-text {
   font-size: 12px;
-  color: var(--steel);
+  color: var(--gray-9);
   max-width: 240px;
   line-height: 1.6;
 }
 
-/* ── Badge ── */
+/* ── Tab overrides (HeroUI Tabs variant="light") ── */
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 99px;
-  font-family: var(--font-body);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+[data-slot="tabList"] {
+  gap: 2px;
+}
+
+[data-slot="tab"] {
+  color: var(--gray-9);
+  border-radius: 8px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+[data-slot="tab"]:hover:not([data-selected="true"]) {
+  color: var(--gray-11);
+  background: var(--gray-a3);
+}
+
+[data-slot="tab"][data-selected="true"] {
+  color: var(--gray-12);
+  background: var(--gray-3);
+  border: 1px solid var(--gray-a5);
+}
+
+[data-slot="cursor"] {
+  display: none !important;
+}
+
+/* ── Softer card borders ── */
+
+[data-slot="base"][style*="border"] {
+  border-color: var(--gray-a5) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 0 0 0.5px var(--gray-a3);
+}
+
+.dark [data-slot="base"][style*="border"] {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), 0 0 0 0.5px var(--gray-a3);
 }

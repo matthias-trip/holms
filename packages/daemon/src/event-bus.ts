@@ -28,8 +28,12 @@ export interface EventBusEvents {
     costUsd: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
     durationMs: number;
+    durationApiMs: number;
     numTurns: number;
+    totalCostUsd: number;
     timestamp: number;
   }) => void;
   "reflex:triggered": (data: {
@@ -69,8 +73,12 @@ export interface EventBusEvents {
     costUsd: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens: number;
+    cacheCreationTokens: number;
     durationMs: number;
+    durationApiMs: number;
     numTurns: number;
+    totalCostUsd: number;
     timestamp: number;
   }) => void;
   "agent:turn_start": (data: {

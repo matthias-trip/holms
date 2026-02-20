@@ -1,8 +1,14 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import {
+  MessageCircle, Radar, Clock, Eye, CheckCircle2, XCircle, Zap,
+  ListFilter, Check, X, Brain, ChevronRight, AlertCircle, Crosshair,
+} from "lucide-react";
+import { Card, CardBody, Chip, Button } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { AgentActivity, TurnTrigger, TriageLane } from "@holms/shared";
 import { humanizeToolUse, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
+import CycleMenu from "./CycleMenu";
 
 // ── Types ──
 
@@ -44,61 +50,38 @@ function describeCurrentAction(activity: AgentActivity): string {
 const TRIGGER_CONFIG: Record<TurnTrigger, { icon: React.ReactNode; label: string; color: string }> = {
   user_message: {
     label: "User message",
-    color: "var(--glow)",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <path d="M2.5 3C2.5 2.17 3.17 1.5 4 1.5h8c.83 0 1.5.67 1.5 1.5v7c0 .83-.67 1.5-1.5 1.5H6l-3 2.5V3z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-      </svg>
-    ),
+    color: "var(--accent-9)",
+    icon: <MessageCircle size={14} />,
   },
   device_events: {
     label: "Device event",
     color: "var(--warn)",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M4 8a4 4 0 018 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.5" />
-        <path d="M2 8a6 6 0 0112 0" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.3" />
-      </svg>
-    ),
+    icon: <Radar size={14} />,
   },
   schedule: {
     label: "Schedule",
     color: "var(--info)",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
-        <path d="M8 4v4.5l3 1.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <Clock size={14} />,
   },
   proactive: {
     label: "Proactive check",
-    color: "var(--steel)",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" />
-        <circle cx="8" cy="8" r="2" fill="currentColor" opacity="0.4" />
-      </svg>
-    ),
+    color: "var(--gray-9)",
+    icon: <Eye size={14} />,
   },
   approval_result: {
     label: "Approval result",
     color: "var(--ok)",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <path d="M4 8.5l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <CheckCircle2 size={14} />,
   },
   outcome_feedback: {
     label: "Outcome feedback",
     color: "#a855f7",
-    icon: (
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-        <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <XCircle size={14} />,
+  },
+  suggestions: {
+    label: "Suggestions",
+    color: "#94a3b8",
+    icon: <Zap size={14} />,
   },
 };
 
@@ -114,14 +97,12 @@ export default function ActivityPanel() {
   const { data: historicalTurns } = trpc.agents.turns.useQuery({ limit: 50 });
   const { data: historicalOrphans } = trpc.agents.orphanActivities.useQuery({ limit: 100 });
 
-  // Live activity subscription
   const onActivity = useCallback((activity: AgentActivity) => {
     if (activity.turnId) {
       setLiveTurns((prev) => {
         const next = new Map(prev);
         const existing = next.get(activity.turnId!);
         if (existing) {
-          // Deduplicate
           if (existing.activities.some((a) => a.id === activity.id)) return prev;
           next.set(activity.turnId!, {
             ...existing,
@@ -142,23 +123,18 @@ export default function ActivityPanel() {
 
   trpc.chat.onActivity.useSubscription(undefined, { onData: onActivity });
 
-  // Build merged timeline
   const timeline = useMemo((): TimelineEntry[] => {
-    // Merge historical + live turns
     const turnMap = new Map<string, Turn>();
 
-    // Historical first
     if (historicalTurns) {
       for (const t of historicalTurns) {
         turnMap.set(t.turnId, t);
       }
     }
 
-    // Overlay live turns
     for (const [turnId, liveTurn] of liveTurns) {
       const existing = turnMap.get(turnId);
       if (existing) {
-        // Merge activities, deduplicate
         const existingIds = new Set(existing.activities.map((a) => a.id));
         const newActivities = liveTurn.activities.filter((a) => !existingIds.has(a.id));
         turnMap.set(turnId, {
@@ -170,14 +146,12 @@ export default function ActivityPanel() {
       }
     }
 
-    // Create entries
     const entries: TimelineEntry[] = [];
 
     for (const turn of turnMap.values()) {
       entries.push({ kind: "turn", turn });
     }
 
-    // Merge historical + live orphans (dedup by id)
     const orphanMap = new Map<string, AgentActivity>();
     if (historicalOrphans) {
       for (const a of historicalOrphans) orphanMap.set(a.id, a);
@@ -194,7 +168,6 @@ export default function ActivityPanel() {
       }
     }
 
-    // Sort by timestamp (newest first)
     entries.sort((a, b) => {
       const tsA = a.kind === "turn"
         ? (a.turn.activities[0]?.timestamp ?? 0)
@@ -229,25 +202,21 @@ export default function ActivityPanel() {
   const triggerCycle = trpc.agents.triggerCycle.useMutation();
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--void)" }}>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="px-6 py-4 flex items-center justify-between flex-shrink-0"
-        style={{ borderBottom: "1px solid var(--graphite)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
         <div>
-          <div className="text-[15px] font-medium" style={{ color: "var(--white)" }}>
-            Activity
-          </div>
-          <div className="text-[11px] mt-0.5" style={{ color: "var(--steel)" }}>
-            AI reasoning and decision history
-          </div>
+          <h3 className="text-base font-medium" style={{ color: "var(--gray-12)" }}>Activity</h3>
+          <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>AI reasoning and decision history</p>
         </div>
         <div className="flex items-center gap-2">
           <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
-          <div className="text-[11px] tabular-nums" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
+          <span className="text-xs tabular-nums" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
             {timeline.filter((e) => e.kind === "turn").length} turns
-          </div>
+          </span>
         </div>
       </div>
 
@@ -256,16 +225,11 @@ export default function ActivityPanel() {
         {timeline.length === 0 ? (
           <div className="empty-state" style={{ paddingTop: "100px" }}>
             <div className="empty-state-icon">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <circle cx="10" cy="4" r="2.5" stroke="currentColor" strokeWidth="1.3" />
-                <circle cx="4" cy="14" r="2" stroke="currentColor" strokeWidth="1.3" />
-                <circle cx="16" cy="14" r="2" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M8 6l-2.5 6M12 6l2.5 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
+              <Crosshair size={20} />
             </div>
-            <div className="text-[13px] font-medium" style={{ color: "var(--mist)" }}>
+            <p className="text-sm font-medium mb-1" style={{ color: "var(--gray-12)" }}>
               No agent activity yet
-            </div>
+            </p>
             <div className="empty-state-text">
               Send a message or wait for events. The agent's reasoning turns will appear here as a timeline.
             </div>
@@ -296,81 +260,6 @@ export default function ActivityPanel() {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ── Cycle Menu ──
-
-const CYCLE_OPTIONS: Array<{ type: "situational" | "reflection" | "goal_review" | "daily_summary"; label: string; description: string }> = [
-  { type: "situational", label: "Situational check", description: "Assess current home state" },
-  { type: "reflection", label: "Reflection", description: "Review actions and triage rules" },
-  { type: "goal_review", label: "Goal review", description: "Check progress on active goals" },
-  { type: "daily_summary", label: "Daily summary", description: "Summarize today's activity" },
-];
-
-function CycleMenu({ onTrigger, disabled }: { onTrigger: (type: "situational" | "reflection" | "goal_review" | "daily_summary") => void; disabled: boolean }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Close on outside click
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        onClick={() => setOpen(!open)}
-        disabled={disabled}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150"
-        style={{
-          background: open ? "var(--obsidian)" : "transparent",
-          border: "1px solid var(--graphite)",
-          color: disabled ? "var(--pewter)" : "var(--silver)",
-          opacity: disabled ? 0.6 : 1,
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.8 2.8l1.4 1.4M7.8 7.8l1.4 1.4M2.8 9.2l1.4-1.4M7.8 4.2l1.4-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-        Trigger cycle
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="none" style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 150ms" }}>
-          <path d="M1.5 3L4 5.5L6.5 3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-
-      {open && (
-        <div
-          className="absolute right-0 top-full mt-1 py-1 rounded-lg z-50 min-w-[200px]"
-          style={{
-            background: "var(--obsidian)",
-            border: "1px solid var(--graphite)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-          }}
-        >
-          {CYCLE_OPTIONS.map((opt) => (
-            <button
-              key={opt.type}
-              onClick={() => { onTrigger(opt.type); setOpen(false); }}
-              className="w-full text-left px-3 py-2 transition-colors hover:bg-[var(--abyss)]"
-            >
-              <div className="text-[12px] font-medium" style={{ color: "var(--silver)" }}>
-                {opt.label}
-              </div>
-              <div className="text-[10px] mt-0.5" style={{ color: "var(--pewter)" }}>
-                {opt.description}
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -406,11 +295,9 @@ function TurnCard({
   const durationSec = lastTs && firstTs ? (lastTs - firstTs) / 1000 : undefined;
   const isProcessing = !resultActivity && turn.activities.length > 0;
 
-  // Figure out what the agent is currently doing (last non-turn_start activity)
   const lastActivity = [...turn.activities].reverse().find((a) => a.type !== "turn_start");
   const currentAction = isProcessing && lastActivity ? describeCurrentAction(lastActivity) : null;
 
-  // Steps: everything except turn_start, thinking, and deep_reason:* tool calls (those are shown nested in deep_reason_result)
   const steps = turn.activities.filter((a) => {
     if (a.type === "turn_start" || a.type === "thinking") return false;
     if (a.type === "tool_use") {
@@ -421,23 +308,22 @@ function TurnCard({
   });
 
   return (
-    <div
-      className="rounded-xl transition-all duration-200 animate-fade-in"
+    <Card
+      className="animate-fade-in"
       style={{
-        background: "var(--obsidian)",
-        border: `1px solid ${isProcessing ? "var(--glow-border)" : "var(--graphite)"}`,
+        padding: 0,
+        border: `1px solid ${isProcessing ? "var(--accent-a5)" : "var(--gray-a5)"}`,
         boxShadow: isProcessing
-          ? "0 0 0 1px var(--glow-border), 0 2px 8px rgba(79,110,247,0.06)"
+          ? "0 0 0 1px var(--accent-a5), 0 2px 8px rgba(79,110,247,0.06)"
           : "0 1px 2px rgba(0,0,0,0.03)",
+        background: "var(--gray-3)",
       }}
     >
       {/* Collapsed header */}
       <button
         onClick={onToggle}
-        className="w-full text-left flex items-center gap-3 px-4 py-3 transition-colors"
-        style={{ borderRadius: "var(--radius-xl)" }}
+        className="w-full text-left flex items-center gap-3 px-4 py-3 transition-colors rounded-xl"
       >
-        {/* Trigger icon */}
         <span
           className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center"
           style={{
@@ -448,64 +334,57 @@ function TurnCard({
           {config.icon}
         </span>
 
-        {/* Summary + outcome preview */}
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] truncate" style={{ color: "var(--white)" }}>
-            {summary}
-          </div>
+          <p className="text-sm truncate" style={{ color: "var(--gray-12)" }}>{summary}</p>
 
-          {/* When processing: show what the agent is currently doing */}
           {isProcessing && currentAction && (
-            <div className="flex items-center gap-1.5 mt-1">
+            <div className="flex items-center gap-1 mt-1">
               <span
                 className="w-[5px] h-[5px] rounded-full flex-shrink-0"
                 style={{
-                  background: "var(--glow)",
+                  background: "var(--accent-9)",
                   animation: "pulse-dot 1.5s ease-in-out infinite",
                 }}
               />
-              <span className="text-[11px] truncate animate-fade-in" style={{ color: "var(--glow-bright)" }}>
+              <span className="text-xs truncate animate-fade-in" style={{ color: "var(--accent-10)" }}>
                 {currentAction}
               </span>
             </div>
           )}
 
-          {/* When processing but no specific action yet: shimmer */}
           {isProcessing && !currentAction && (
             <div className="mt-1.5 shimmer rounded" style={{ height: "6px", width: "120px", borderRadius: "3px" }} />
           )}
 
-          {/* When done: show result preview */}
           {!isProcessing && resultText && (
-            <div className="text-[11px] mt-0.5 truncate" style={{ color: "var(--steel)" }}>
+            <p className="text-xs mt-1 truncate" style={{ color: "var(--gray-9)" }}>
               {resultText.slice(0, 120)}
-            </div>
+            </p>
           )}
 
-          {/* Always-visible meta line: trigger, steps, cost/tokens */}
           {!isProcessing && (
-            <div className="flex items-center gap-1 text-[10px] mt-1 flex-wrap" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
-              <span>{config.label}</span>
-              <span>&middot;</span>
-              <span className="tabular-nums">{steps.length} step{steps.length !== 1 ? "s" : ""}</span>
+            <div className="flex items-center gap-1 mt-1 flex-wrap" style={{ fontFamily: "var(--font-mono)" }}>
+              <span className="text-xs" style={{ color: "var(--gray-9)" }}>{config.label}</span>
+              <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+              <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>{steps.length} step{steps.length !== 1 ? "s" : ""}</span>
               {costUsd != null && costUsd > 0 && (
                 <>
-                  <span>&middot;</span>
-                  <span className="tabular-nums">${costUsd.toFixed(4)}</span>
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>${costUsd.toFixed(4)}</span>
                 </>
               )}
               {(inputTokens != null && inputTokens > 0 || outputTokens != null && outputTokens > 0) && (
                 <>
-                  <span>&middot;</span>
-                  <span className="tabular-nums">
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>
                     {((inputTokens ?? 0) + (outputTokens ?? 0)).toLocaleString()} tok
                   </span>
                 </>
               )}
               {durationSec != null && durationSec > 0 && (
                 <>
-                  <span>&middot;</span>
-                  <span className="tabular-nums">
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>
                     {durationSec < 60
                       ? `${durationSec.toFixed(1)}s`
                       : `${Math.floor(durationSec / 60)}m ${Math.round(durationSec % 60)}s`}
@@ -516,29 +395,28 @@ function TurnCard({
           )}
         </div>
 
-        {/* Time */}
         <span
-          className="text-[11px] tabular-nums flex-shrink-0"
-          style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
+          className="text-xs tabular-nums flex-shrink-0"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
         >
           {relativeTime(firstTs)}
         </span>
 
-        {/* Chevron */}
-        <svg
-          width="12" height="12" viewBox="0 0 12 12" fill="none"
+        <ChevronRight
+          size={12}
           className="flex-shrink-0 transition-transform duration-200"
-          style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-        >
-          <path d="M4 2.5l4 3.5-4 3.5" stroke="var(--pewter)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+          style={{
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            color: "var(--gray-8)",
+          }}
+        />
       </button>
 
       {/* Expanded steps */}
       {expanded && steps.length > 0 && (
         <div
           className="px-4 pb-3"
-          style={{ marginLeft: "14px", borderLeft: "2px solid var(--graphite)" }}
+          style={{ marginLeft: "14px", borderLeft: "2px solid var(--gray-a5)" }}
         >
           <div className="pl-5 space-y-0.5">
             {steps.map((activity) => (
@@ -546,23 +424,24 @@ function TurnCard({
             ))}
           </div>
 
-          {/* Raw toggle */}
-          <div className="pl-5 mt-2 pt-2" style={{ borderTop: "1px solid var(--graphite)" }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleRaw(); }}
-              className="text-[10px] font-medium transition-colors"
-              style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
+          <div className="pl-5 mt-2 pt-2" style={{ borderTop: "1px solid var(--gray-a3)" }}>
+            <Button
+              variant="light"
+              color="default"
+              size="sm"
+              onPress={(e) => { onToggleRaw(); }}
+              style={{ fontFamily: "var(--font-mono)", fontSize: "10px" }}
             >
               {showRaw ? "Hide raw" : "Show raw"}
-            </button>
+            </Button>
             {showRaw && (
               <pre
                 className="mt-2 p-3 rounded-lg overflow-x-auto text-[10px]"
                 style={{
                   fontFamily: "var(--font-mono)",
-                  background: "var(--abyss)",
-                  border: "1px solid var(--graphite)",
-                  color: "var(--silver)",
+                  background: "var(--gray-a3)",
+                  border: "1px solid var(--gray-a5)",
+                  color: "var(--gray-11)",
                   maxHeight: "300px",
                 }}
               >
@@ -572,7 +451,7 @@ function TurnCard({
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -588,12 +467,10 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       const label = humanizeToolUse(tool, d.input);
       return (
         <div className="flex items-start gap-2 py-1.5">
-          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--glow-bright)" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M7 2L4 6h3L5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-10)" }}>
+            <Zap size={12} />
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>{label}</span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>{label}</span>
         </div>
       );
     }
@@ -603,15 +480,11 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-              <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.4" />
-              <path d="M6 1.5v1M6 9.5v1M1.5 6h1M9.5 6h1" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" />
-            </svg>
+            <Brain size={12} />
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
             Deep reasoning:{" "}
-            <span style={{ color: "var(--steel)" }}>
+            <span style={{ color: "var(--gray-9)" }}>
               {problem.slice(0, 120)}{problem.length > 120 ? "..." : ""}
             </span>
           </span>
@@ -627,7 +500,6 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       const outTok = d.outputTokens as number | undefined;
       const numTurns = d.numTurns as number | undefined;
 
-      // Collect deep_reason:* tool calls from this turn
       const deepReasonTools = (allActivities ?? []).filter((s) => {
         if (s.type !== "tool_use") return false;
         const td = s.data as Record<string, unknown>;
@@ -641,37 +513,32 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
             className="w-full text-left flex items-start gap-2"
           >
             <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-                <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.4" />
-                <path d="M6 1.5v1M6 9.5v1M1.5 6h1M9.5 6h1" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" />
-              </svg>
+              <Brain size={12} />
             </span>
             <div className="flex-1 min-w-0">
-              <div className="text-[12px] flex items-center gap-1.5" style={{ color: "var(--silver)" }}>
-                <span className="font-medium" style={{ color: "var(--mist)" }}>
-                  Deep reasoning result
-                </span>
-                <svg
-                  width="10" height="10" viewBox="0 0 10 10" fill="none"
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium" style={{ color: "var(--gray-12)" }}>Deep reasoning result</span>
+                <ChevronRight
+                  size={10}
                   className="flex-shrink-0 transition-transform duration-150"
-                  style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}
-                >
-                  <path d="M3.5 2l3 3-3 3" stroke="var(--pewter)" strokeWidth="1.2" strokeLinecap="round" />
-                </svg>
+                  style={{
+                    transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                    color: "var(--gray-8)",
+                  }}
+                />
               </div>
               {!expanded && analysis && (
-                <div className="mt-0.5 text-[11px]" style={{ color: "var(--steel)" }}>
+                <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>
                   {analysis.slice(0, 200)}{analysis.length > 200 ? "..." : ""}
-                </div>
+                </p>
               )}
-              <div className="flex items-center gap-2 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
-                {model && <span>{model}</span>}
-                {costUsd != null && costUsd > 0 && <span>${costUsd.toFixed(4)}</span>}
+              <div className="flex items-center gap-2 mt-1 tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                {model && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{model}</span>}
+                {costUsd != null && costUsd > 0 && <span className="text-xs" style={{ color: "var(--gray-9)" }}>${costUsd.toFixed(4)}</span>}
                 {(inTok != null && inTok > 0 || outTok != null && outTok > 0) && (
-                  <span>{((inTok ?? 0) + (outTok ?? 0)).toLocaleString()} tok</span>
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>{((inTok ?? 0) + (outTok ?? 0)).toLocaleString()} tok</span>
                 )}
-                {numTurns != null && numTurns > 0 && <span>{numTurns} turn{numTurns !== 1 ? "s" : ""}</span>}
+                {numTurns != null && numTurns > 0 && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{numTurns} turn{numTurns !== 1 ? "s" : ""}</span>}
               </div>
             </div>
           </button>
@@ -679,36 +546,30 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
           {expanded && (
             <div
               className="mt-2 ml-5 rounded-lg overflow-hidden"
-              style={{ border: "1px solid var(--graphite)", background: "var(--abyss)" }}
+              style={{ border: "1px solid var(--gray-a5)", background: "var(--gray-a3)" }}
             >
-              {/* Nested tool calls */}
               {deepReasonTools.length > 0 && (
-                <div className="px-3 pt-2 pb-1 space-y-0.5" style={{ borderBottom: "1px solid var(--graphite)" }}>
-                  <div className="text-[10px] font-medium mb-1" style={{ color: "var(--pewter)" }}>
-                    Tools used
-                  </div>
+                <div className="px-3 pt-2 pb-1 space-y-0.5" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--gray-9)" }}>Tools used</p>
                   {deepReasonTools.map((step) => {
                     const td = step.data as Record<string, unknown>;
                     const toolName = String(td.tool ?? "").replace(/^deep_reason:/, "");
                     const label = humanizeToolUse(toolName, td.input);
                     return (
-                      <div key={step.id} className="flex items-center gap-1.5 text-[11px] py-0.5">
-                        <span style={{ color: "var(--glow-bright)" }}>
-                          <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                            <path d="M7 2L4 6h3L5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
+                      <div key={step.id} className="flex items-center gap-1 py-0.5">
+                        <span style={{ color: "var(--accent-10)" }}>
+                          <Zap size={10} />
                         </span>
-                        <span style={{ color: "var(--silver)" }}>{label}</span>
+                        <span className="text-xs" style={{ color: "var(--gray-12)" }}>{label}</span>
                       </div>
                     );
                   })}
                 </div>
               )}
 
-              {/* Full analysis */}
               <div
                 className="p-3 text-[11px] overflow-auto"
-                style={{ color: "var(--silver)", maxHeight: "400px", lineHeight: 1.5 }}
+                style={{ color: "var(--gray-11)", maxHeight: "400px", lineHeight: 1.5 }}
               >
                 <MarkdownMessage content={analysis} />
               </div>
@@ -723,20 +584,12 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--warn)" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M6 3.5v3M6 8h.01" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
+            <AlertCircle size={12} />
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
             Requested approval:{" "}
-            <span
-              className="badge"
-              style={{ background: "var(--warn-dim)", color: "var(--warn)" }}
-            >
-              pending
-            </span>
-            {reason && <span className="ml-1" style={{ color: "var(--steel)" }}>{reason.slice(0, 80)}</span>}
+            <Chip variant="flat" color="warning" size="sm">pending</Chip>
+            {reason && <span className="ml-1" style={{ color: "var(--gray-9)" }}>{reason.slice(0, 80)}</span>}
           </span>
         </div>
       );
@@ -747,27 +600,13 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: approved ? "var(--ok)" : "var(--err)" }}>
-            {approved ? (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-            )}
+            {approved ? <Check size={12} /> : <X size={12} />}
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>
-            <span
-              className="badge"
-              style={{
-                background: approved ? "var(--ok-dim)" : "var(--err-dim)",
-                color: approved ? "var(--ok)" : "var(--err)",
-              }}
-            >
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            <Chip variant="flat" color={approved ? "success" : "danger"} size="sm">
               {approved ? "Approved" : "Denied"}
-            </span>
-            {d.reason != null && <span className="ml-1" style={{ color: "var(--steel)" }}>{String(d.reason).slice(0, 80)}</span>}
+            </Chip>
+            {d.reason != null && <span className="ml-1" style={{ color: "var(--gray-9)" }}>{String(d.reason).slice(0, 80)}</span>}
           </span>
         </div>
       );
@@ -782,21 +621,18 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--ok)" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-              <path d="M4 6l1.5 1.5L8 5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <CheckCircle2 size={12} />
           </span>
           <div className="flex-1 min-w-0">
-            <span className="text-[12px]" style={{ color: "var(--steel)" }}>
+            <span className="text-xs" style={{ color: "var(--gray-9)" }}>
               {result.slice(0, 120) || "Completed"}
               {result.length > 120 ? "..." : ""}
             </span>
-            <div className="flex items-center gap-2 mt-0.5 text-[10px] tabular-nums" style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}>
-              {model && <span>{model}</span>}
-              {costUsd != null && costUsd > 0 && <span>${costUsd.toFixed(4)}</span>}
+            <div className="flex items-center gap-2 mt-1 tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+              {model && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{model}</span>}
+              {costUsd != null && costUsd > 0 && <span className="text-xs" style={{ color: "var(--gray-9)" }}>${costUsd.toFixed(4)}</span>}
               {(inTok != null && inTok > 0 || outTok != null && outTok > 0) && (
-                <span>{(inTok ?? 0).toLocaleString()}↑ {(outTok ?? 0).toLocaleString()}↓</span>
+                <span className="text-xs" style={{ color: "var(--gray-9)" }}>{(inTok ?? 0).toLocaleString()}&uarr; {(outTok ?? 0).toLocaleString()}&darr;</span>
               )}
             </div>
           </div>
@@ -809,12 +645,9 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "#a855f7" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2" />
-              <circle cx="6" cy="6" r="1.5" fill="currentColor" opacity="0.3" />
-            </svg>
+            <Brain size={12} />
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
             {insight.slice(0, 120)}{insight.length > 120 ? "..." : ""}
           </span>
         </div>
@@ -825,11 +658,9 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
       return (
         <div className="flex items-start gap-2 py-1.5">
           <span className="flex-shrink-0 mt-0.5" style={{ color: "#a855f7" }}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
+            <XCircle size={12} />
           </span>
-          <span className="text-[12px]" style={{ color: "var(--silver)" }}>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
             Feedback: {String(d.feedback ?? "").slice(0, 100)}
           </span>
         </div>
@@ -839,8 +670,8 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
     default:
       return (
         <div className="flex items-start gap-2 py-1.5">
-          <span className="flex-shrink-0 w-3 h-3 mt-0.5 rounded-full" style={{ background: "var(--graphite)" }} />
-          <span className="text-[12px]" style={{ color: "var(--steel)" }}>
+          <span className="flex-shrink-0 w-3 h-3 mt-0.5 rounded-full" style={{ background: "var(--gray-a5)" }} />
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>
             {activity.type}: {JSON.stringify(d).slice(0, 80)}
           </span>
         </div>
@@ -854,31 +685,17 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
   immediate: {
     color: "var(--warn)",
     label: "immediate",
-    icon: (
-      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-        <path d="M7 1.5L4 6h3L5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <Zap size={13} />,
   },
   batched: {
     color: "var(--info)",
     label: "batched",
-    icon: (
-      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-        <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.1" />
-        <path d="M6 3v3.5l2.5 1" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
+    icon: <Clock size={13} />,
   },
   silent: {
-    color: "var(--pewter)",
+    color: "var(--gray-8)",
     label: "silent",
-    icon: (
-      <svg width="13" height="13" viewBox="0 0 12 12" fill="none">
-        <path d="M2.5 4.5l7-2v7l-7-2v-3z" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
-        <path d="M1.5 8.5l9-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      </svg>
-    ),
+    icon: <Eye size={13} />,
   },
 };
 
@@ -895,79 +712,59 @@ function TriageClassifyRow({ activity }: { activity: AgentActivity }) {
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-lg animate-fade-in"
+      className="flex items-center gap-3 px-4 py-2 rounded-xl animate-fade-in"
       style={{
-        background: `color-mix(in srgb, ${config.color} 2%, var(--obsidian))`,
-        border: `1px solid color-mix(in srgb, ${config.color} 6%, var(--graphite))`,
+        background: `color-mix(in srgb, ${config.color} 2%, var(--color-background))`,
+        border: `1px solid color-mix(in srgb, ${config.color} 6%, var(--gray-a5))`,
       }}
     >
       <span className="flex-shrink-0" style={{ color: config.color }}>
         {config.icon}
       </span>
 
-      <span
-        className="badge flex-shrink-0"
+      <Chip
+        variant="flat"
+        size="sm"
         style={{
           background: `color-mix(in srgb, ${config.color} 12%, transparent)`,
           color: config.color,
-          fontSize: "9px",
-          padding: "1px 6px",
           minWidth: "52px",
           textAlign: "center",
+          justifyContent: "center",
         }}
       >
         {config.label}
-      </span>
+      </Chip>
 
-      <span className="flex-1 text-[12px] truncate" style={{ color: "var(--silver)" }}>
+      <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
         {room && (
           <>
-            <span style={{ color: "var(--steel)" }}>{room}</span>
-            <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
+            <span style={{ color: "var(--gray-9)" }}>{room}</span>
+            <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
           </>
         )}
-        <span style={{ color: "var(--mist)", fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
           {deviceName ?? deviceId}
         </span>
-        <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
-        <span style={{ color: "var(--steel)" }}>{eventType}</span>
+        <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+        <span style={{ color: "var(--gray-9)" }}>{eventType}</span>
         {reason && reason !== "default" && (
           <>
-            <span className="mx-1" style={{ color: "var(--pewter)" }}>&middot;</span>
-            <span style={{ color: "var(--pewter)" }}>{reason}</span>
+            <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+            <span style={{ color: "var(--gray-9)" }}>{reason}</span>
           </>
         )}
       </span>
 
       {ruleId ? (
-        <span
-          className="badge flex-shrink-0"
-          style={{
-            background: "color-mix(in srgb, var(--info) 10%, transparent)",
-            color: "var(--info)",
-            fontSize: "9px",
-            padding: "1px 5px",
-          }}
-        >
-          rule
-        </span>
+        <Chip variant="flat" color="primary" size="sm">rule</Chip>
       ) : (
-        <span
-          className="badge flex-shrink-0"
-          style={{
-            background: "color-mix(in srgb, var(--pewter) 10%, transparent)",
-            color: "var(--pewter)",
-            fontSize: "9px",
-            padding: "1px 5px",
-          }}
-        >
-          default
-        </span>
+        <Chip variant="flat" size="sm">default</Chip>
       )}
 
       <span
-        className="text-[11px] tabular-nums flex-shrink-0"
-        style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
+        className="text-xs tabular-nums flex-shrink-0"
+        style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
       >
         {relativeTime(activity.timestamp)}
       </span>
@@ -983,27 +780,25 @@ function TriageBatchRow({ activity }: { activity: AgentActivity }) {
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-lg animate-fade-in"
+      className="flex items-center gap-3 px-4 py-2 rounded-xl animate-fade-in"
       style={{
-        background: "color-mix(in srgb, var(--info) 3%, var(--obsidian))",
-        border: "1px solid color-mix(in srgb, var(--info) 10%, var(--graphite))",
+        background: "color-mix(in srgb, var(--info) 3%, var(--color-background))",
+        border: "1px solid color-mix(in srgb, var(--info) 10%, var(--gray-a5))",
       }}
     >
       <span style={{ color: "var(--info)" }}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
+        <ListFilter size={13} />
       </span>
 
-      <span className="flex-1 text-[12px] truncate" style={{ color: "var(--silver)" }}>
+      <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
         <span className="font-medium" style={{ color: "var(--info)" }}>Triage</span>
-        <span className="mx-1.5" style={{ color: "var(--pewter)" }}>&middot;</span>
+        <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
         Flushed {eventCount} batched event{eventCount !== 1 ? "s" : ""} to coordinator
       </span>
 
       <span
-        className="text-[11px] tabular-nums flex-shrink-0"
-        style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
+        className="text-xs tabular-nums flex-shrink-0"
+        style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
       >
         {relativeTime(activity.timestamp)}
       </span>
@@ -1022,33 +817,30 @@ function ReflexRow({ activity }: { activity: AgentActivity }) {
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-lg animate-fade-in"
+      className="flex items-center gap-3 px-4 py-2 rounded-xl animate-fade-in"
       style={{
-        background: "color-mix(in srgb, var(--warn) 3%, var(--obsidian))",
-        border: "1px solid color-mix(in srgb, var(--warn) 10%, var(--graphite))",
+        background: "color-mix(in srgb, var(--warn) 3%, var(--color-background))",
+        border: "1px solid color-mix(in srgb, var(--warn) 10%, var(--gray-a5))",
       }}
     >
-      {/* Lightning icon */}
       <span style={{ color: "var(--warn)" }}>
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-          <path d="M9.5 1.5L5 9h4l-2 5.5L12 7H8l1.5-5.5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-        </svg>
+        <Zap size={13} />
       </span>
 
-      <span className="flex-1 text-[12px] truncate" style={{ color: "var(--silver)" }}>
+      <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
         <span className="font-medium" style={{ color: "var(--warn)" }}>Reflex</span>
-        <span className="mx-1.5" style={{ color: "var(--pewter)" }}>&middot;</span>
+        <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
         {reason}
         {triggerDevice && actionCommand && (
-          <span style={{ color: "var(--steel)" }}>
+          <span style={{ color: "var(--gray-9)" }}>
             {" "}({triggerDevice} &rarr; {actionCommand})
           </span>
         )}
       </span>
 
       <span
-        className="text-[11px] tabular-nums flex-shrink-0"
-        style={{ color: "var(--pewter)", fontFamily: "var(--font-mono)" }}
+        className="text-xs tabular-nums flex-shrink-0"
+        style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
       >
         {relativeTime(activity.timestamp)}
       </span>

@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { MessageSquare } from "lucide-react";
+import { Tabs, Tab, Card, CardBody, Chip, Button, Input } from "@heroui/react";
 import { trpc } from "../trpc";
 import PluginsPanel from "./PluginsPanel";
-
-type SettingsTab = "channels" | "plugins";
 
 function ChannelsSection() {
   const { data: conversations } = trpc.channels.conversations.useQuery(undefined, {
@@ -35,11 +35,8 @@ function ChannelsSection() {
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="mb-5">
-        <span className="section-label">Channels</span>
-        <p
-          className="text-[12px] mt-2"
-          style={{ color: "var(--steel)", maxWidth: "500px", lineHeight: "1.6" }}
-        >
+        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Channels</h3>
+        <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
           Communication channels connect the assistant to different interfaces.
           Each channel can have conversations with their own topic for context.
         </p>
@@ -49,14 +46,7 @@ function ChannelsSection() {
         {!conversations || conversations.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M3 5.5A2.5 2.5 0 0 1 5.5 3h7A2.5 2.5 0 0 1 15 5.5v5a2.5 2.5 0 0 1-2.5 2.5H7l-3 2.5V5.5z"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <MessageSquare size={18} />
             </div>
             <div className="empty-state-text">
               No channels registered. The web channel is created automatically on startup.
@@ -64,51 +54,34 @@ function ChannelsSection() {
           </div>
         ) : (
           conversations.map((conv, i) => (
-            <div
+            <Card
               key={conv.id}
-              className="rounded-xl p-4 animate-fade-in"
+              className="animate-fade-in"
               style={{
-                background: "var(--obsidian)",
-                border: "1px solid var(--graphite)",
                 animationDelay: `${i * 40}ms`,
+                background: "var(--gray-3)",
+                border: "1px solid var(--gray-a5)",
               }}
             >
-              <div className="flex items-start justify-between gap-3">
+              <CardBody>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <span
-                      className="text-[14px] font-medium"
-                      style={{ color: "var(--frost)" }}
-                    >
-                      {conv.displayName}
-                    </span>
-                    <span
-                      className="badge"
-                      style={{
-                        background: "var(--glow-wash)",
-                        color: "var(--glow)",
-                        border: "1px solid var(--glow-border)",
-                      }}
-                    >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-base font-medium" style={{ color: "var(--gray-12)" }}>{conv.displayName}</span>
+                    <Chip variant="flat" color="primary" size="sm">
                       {conv.providerId}
-                    </span>
+                    </Chip>
                   </div>
 
-                  <div
-                    className="text-[11px] mb-2"
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      color: "var(--pewter)",
-                    }}
+                  <p
+                    className="text-xs mb-2"
+                    style={{ fontFamily: "var(--font-mono)", color: "var(--gray-8)" }}
                   >
                     {conv.id}
-                  </div>
+                  </p>
 
                   {editingId === conv.id ? (
                     <div className="flex items-center gap-2">
-                      <input
-                        className="input-base flex-1 text-[12px]"
-                        style={{ padding: "5px 10px" }}
+                      <Input
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
                         onKeyDown={(e) => {
@@ -116,55 +89,45 @@ function ChannelsSection() {
                           if (e.key === "Escape") cancelEdit();
                         }}
                         placeholder="Conversation topic..."
+                        size="sm"
+                        className="flex-1"
                         autoFocus
                       />
-                      <button
-                        onClick={() => commitEdit(conv.id)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-                        style={{
-                          background: "var(--ok-dim)",
-                          color: "var(--ok)",
-                          border: "1px solid rgba(22, 163, 74, 0.15)",
-                        }}
+                      <Button
+                        variant="flat"
+                        color="success"
+                        size="sm"
+                        onPress={() => commitEdit(conv.id)}
                       >
                         Save
-                      </button>
-                      <button
-                        onClick={cancelEdit}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium cursor-pointer transition-all"
-                        style={{
-                          background: "var(--slate)",
-                          color: "var(--steel)",
-                          border: "1px solid var(--graphite)",
-                        }}
+                      </Button>
+                      <Button
+                        variant="flat"
+                        color="default"
+                        size="sm"
+                        onPress={cancelEdit}
                       >
                         Cancel
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span
-                        className="text-[12px]"
-                        style={{ color: conv.topic ? "var(--mist)" : "var(--pewter)", lineHeight: "1.5" }}
-                      >
+                      <span className="text-sm" style={{ color: conv.topic ? "var(--gray-12)" : "var(--gray-9)", lineHeight: "1.5" }}>
                         {conv.topic || "No topic set"}
                       </span>
-                      <button
-                        onClick={() => startEdit(conv.id, conv.topic)}
-                        className="px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-all"
-                        style={{
-                          background: "transparent",
-                          color: "var(--pewter)",
-                          border: "1px solid var(--graphite)",
-                        }}
+                      <Button
+                        variant="light"
+                        color="default"
+                        size="sm"
+                        onPress={() => startEdit(conv.id, conv.topic)}
                       >
                         Edit
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           ))
         )}
       </div>
@@ -172,41 +135,27 @@ function ChannelsSection() {
   );
 }
 
-const TABS: { id: SettingsTab; label: string }[] = [
-  { id: "channels", label: "Channels" },
-  { id: "plugins", label: "Plugins" },
-];
-
 export default function SettingsPanel() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("channels");
+  const [activeTab, setActiveTab] = useState<string>("channels");
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--void)" }}>
-      {/* Tab bar */}
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       <div
-        className="px-6 py-2.5 flex gap-1 flex-shrink-0"
-        style={{ borderBottom: "1px solid var(--graphite)", background: "var(--abyss)" }}
+        className="px-6 py-2.5 flex-shrink-0 overflow-x-auto"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        {TABS.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0"
-              style={{
-                background: isActive ? "var(--obsidian)" : "transparent",
-                border: isActive ? "1px solid var(--graphite)" : "1px solid transparent",
-                color: isActive ? "var(--white)" : "var(--steel)",
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+        <Tabs
+          selectedKey={activeTab}
+          onSelectionChange={(key) => setActiveTab(key as string)}
+          size="sm"
+          variant="light"
+          classNames={{ tabList: "flex-nowrap" }}
+        >
+          <Tab key="channels" title="Channels" />
+          <Tab key="plugins" title="Plugins" />
+        </Tabs>
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === "channels" && <ChannelsSection />}
         {activeTab === "plugins" && <PluginsPanel />}

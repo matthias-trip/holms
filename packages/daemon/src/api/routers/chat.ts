@@ -6,9 +6,12 @@ import type { AgentActivity } from "@holms/shared";
 import { v4 as uuid } from "uuid";
 import type { EventBus } from "../../event-bus.js";
 import type { ActivityStore } from "../../activity/store.js";
-import type { Coordinator } from "../../coordinator/coordinator.js";
+import type { CoordinatorHub } from "../../coordinator/coordinator-hub.js";
+import { runTrackedQuery } from "../../coordinator/query-runner.js";
 
 const t = initTRPC.context<TRPCContext>().create();
+
+let suggestionsCache: { key: number; suggestions: string[] } | null = null;
 
 /**
  * Register a single set of event bus listeners that persist agent activities to the DB
@@ -18,9 +21,10 @@ const t = initTRPC.context<TRPCContext>().create();
 export function initActivityPersistence(
   eventBus: EventBus,
   activityStore: ActivityStore,
-  coordinator: Coordinator,
+  hub: CoordinatorHub,
 ): void {
-  const getTurnId = () => coordinator.getCurrentTurnId() ?? undefined;
+  let lastTurnId: string | undefined;
+  const getTurnId = () => hub.getCurrentTurnId() ?? lastTurnId;
   const approvalTurnMap = new Map<string, string>(); // approvalId → turnId
 
   const store = (activity: AgentActivity) => {
@@ -30,10 +34,11 @@ export function initActivityPersistence(
   };
 
   eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; summary: string; model?: string; timestamp: number }) => {
+    lastTurnId = data.turnId;
     store({
       id: uuid(), type: "turn_start",
       data: { trigger: data.trigger, summary: data.summary, model: data.model },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
+      timestamp: data.timestamp, agentId: data.trigger === "suggestions" ? "suggestions" : "coordinator", turnId: data.turnId,
     });
   });
 
@@ -53,10 +58,10 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("agent:result", (data: { result: string; model?: string; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; numTurns: number; timestamp: number }) => {
+  eventBus.on("agent:result", (data: { result: string; model?: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; timestamp: number }) => {
     store({
       id: uuid(), type: "result",
-      data: { result: data.result, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, durationMs: data.durationMs, numTurns: data.numTurns },
+      data: { result: data.result, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
       timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
     });
   });
@@ -85,10 +90,10 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("deep_reason:result", (data: { problem: string; analysis: string; model: string; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; numTurns: number; timestamp: number }) => {
+  eventBus.on("deep_reason:result", (data: { problem: string; analysis: string; model: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; timestamp: number }) => {
     store({
       id: uuid(), type: "deep_reason_result",
-      data: { problem: data.problem, analysis: data.analysis, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, durationMs: data.durationMs, numTurns: data.numTurns },
+      data: { problem: data.problem, analysis: data.analysis, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
       timestamp: data.timestamp, agentId: "deep_reason", turnId: getTurnId(),
     });
   });
@@ -177,7 +182,7 @@ export const chatRouter = t.router({
       // Track the response for channel routing
       ctx.channelManager.trackResponse(thinkingMsg.id, "web", "web:default");
 
-      const result = await ctx.coordinator.handleUserRequest(input.message, thinkingMsg.id);
+      const result = await ctx.hub.handleUserRequest(input.message, thinkingMsg.id, "web:default");
 
       // Update the thinking row in-place with the actual response
       const now = Date.now();
@@ -223,6 +228,51 @@ export const chatRouter = t.router({
       };
     });
   }),
+
+  suggestions: t.procedure
+    .input(z.object({ limit: z.number().min(1).max(20).default(6) }).optional())
+    .query(async ({ ctx, input }) => {
+      const limit = input?.limit ?? 6;
+      try {
+        const history = ctx.chatStore.getHistory(20);
+        const relevant = history.filter(
+          (m) => (m.role === "user" || m.role === "assistant") && m.status !== "thinking" && m.status !== "approval_pending" && m.status !== "approval_resolved" && m.content,
+        );
+        if (relevant.length === 0) return { suggestions: [] };
+
+        const cacheKey = relevant.at(-1)!.timestamp;
+        if (suggestionsCache?.key === cacheKey) {
+          return { suggestions: suggestionsCache.suggestions };
+        }
+
+        const transcript = relevant
+          .slice(-10)
+          .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.slice(0, 300)}`)
+          .join("\n");
+
+        const { result: resultText } = await runTrackedQuery({
+          eventBus: ctx.eventBus,
+          model: ctx.config.models.suggestions,
+          trigger: "suggestions",
+          summary: `Suggestions from: ${transcript.slice(0, 80)}`,
+          promptText: transcript,
+          systemPrompt: `You generate chat message suggestions for a home automation assistant. Given the conversation, return a JSON array of exactly ${limit} short messages the user might send next (max 6 words each). These should read naturally as things a person would type — casual commands, requests, or questions. Examples: "dim the living room lights", "what's the bedroom temperature?", "turn everything off". Return ONLY the JSON array, no other text.`,
+          maxTurns: 1,
+          claudeConfigDir: ctx.config.claudeConfigDir,
+        });
+
+        const match = resultText.match(/\[[\s\S]*\]/);
+        if (!match) return { suggestions: [] };
+        const parsed = JSON.parse(match[0]);
+        if (!Array.isArray(parsed)) return { suggestions: [] };
+        const suggestions = parsed.filter((s: unknown) => typeof s === "string").slice(0, limit);
+        suggestionsCache = { key: cacheKey, suggestions };
+        return { suggestions };
+      } catch (err) {
+        console.error("[Suggestions] Failed to generate:", err);
+        return { suggestions: [] };
+      }
+    }),
 
   // Subscription only forwards already-stored activities — no DB writes here
   onActivity: t.procedure.subscription(({ ctx }) => {

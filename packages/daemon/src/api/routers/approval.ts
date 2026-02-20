@@ -21,8 +21,9 @@ async function processApprovalResult(
   userReason?: string,
 ): Promise<void> {
   try {
-    const result = await ctx.coordinator.handleApprovalResult(
-      approvalId, approved, action, userReason, thinkingMessageId,
+    const channel = ctx.hub.getApprovalChannel(approvalId);
+    const result = await ctx.hub.handleApprovalResult(
+      approvalId, approved, action, userReason, thinkingMessageId, channel,
     );
     // Finalise the thinking row: clear status, set final content
     ctx.chatStore.updateMessage(thinkingMessageId, {
@@ -69,6 +70,8 @@ export const approvalRouter = t.router({
       }
 
       // (b) Insert thinking placeholder
+      const approveChannel = ctx.hub.getApprovalChannel(input.id);
+      const [approvePid, approveConv] = approveChannel.split(":");
       const thinkingId = uuid();
       ctx.chatStore.add({
         id: thinkingId,
@@ -76,11 +79,11 @@ export const approvalRouter = t.router({
         content: "",
         timestamp: Date.now(),
         status: "thinking",
-        channel: "web:default",
+        channel: approveChannel,
       });
 
       // Track the response for channel routing
-      ctx.channelManager.trackResponse(thinkingId, "web", "web:default");
+      ctx.channelManager.trackResponse(thinkingId, approvePid ?? "web", approveConv ? approveChannel : "web:default");
 
       // (c) Background: run coordinator, streaming into the thinking message
       processApprovalResult(ctx, input.id, true, {
@@ -113,6 +116,8 @@ export const approvalRouter = t.router({
       }
 
       // (b) Insert thinking placeholder
+      const rejectChannel = ctx.hub.getApprovalChannel(input.id);
+      const [rejectPid, rejectConv] = rejectChannel.split(":");
       const thinkingId = uuid();
       ctx.chatStore.add({
         id: thinkingId,
@@ -120,11 +125,11 @@ export const approvalRouter = t.router({
         content: "",
         timestamp: Date.now(),
         status: "thinking",
-        channel: "web:default",
+        channel: rejectChannel,
       });
 
       // Track the response for channel routing
-      ctx.channelManager.trackResponse(thinkingId, "web", "web:default");
+      ctx.channelManager.trackResponse(thinkingId, rejectPid ?? "web", rejectConv ? rejectChannel : "web:default");
 
       // (c) Background: run coordinator, streaming into the thinking message
       processApprovalResult(ctx, input.id, false, {

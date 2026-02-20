@@ -13,6 +13,20 @@ A daemon process connects to your smart home devices and feeds events to a Claud
 ### The agent loop
 
 ```
+                       CoordinatorHub
+                      /       |       \
+         ChatCoordinator  ChatCoordinator  EphemeralRunner
+         (web:default)    (slack:#gen)     (stateless, parallel)
+              |               |                |
+              +-------+-------+--------+-------+
+                      |                |
+                McpServerPool       EventBus
+                (7 servers)      (shared pub/sub)
+```
+
+User messages route to a **ChatCoordinator** (one per channel, stateful with SDK session resume). Device events, proactive wakeups, and outcome feedback route to the **EphemeralRunner** (fresh session per turn, fully concurrent). Both tracks share the same MCP tool servers and event bus.
+
+```
 Device event arrives
        ↓
   ┌────┴────┐
@@ -20,7 +34,7 @@ Device event arrives
 Reflex    Triage engine classifies event
 Engine    (immediate / batch / silent)
 (instant)        ↓
-            Coordinator receives event(s)
+          EphemeralRunner receives event(s)
                  ↓
           Agent recalls memories & reasons
                  ↓
@@ -118,7 +132,10 @@ packages/
 
 **Daemon** runs on port 3100 and exposes a tRPC API over HTTP and WebSocket. Subsystems:
 
-- **Coordinator** — wraps Claude Agent SDK, manages the agent session, exposes MCP tool servers (device-query, device-command, memory, reflex, approval, schedule, triage)
+- **CoordinatorHub** — multi-track architecture that routes work to the right executor:
+  - **ChatCoordinator** (per-channel, stateful) — one instance per conversation channel (e.g. `web:default`, `slack:#general`). Maintains SDK session continuity via `resume` so the agent has full conversation history. Serializes turns within a channel via an async queue. Different channels run independently.
+  - **EphemeralRunner** (stateless, parallel) — handles device events, proactive wakeups, outcome feedback, and schedules. Fresh SDK session per turn, no `resume`. Multiple runs execute concurrently — a proactive cycle never blocks user chat.
+  - **McpServerPool** — shared pool of 7 in-process MCP tool servers (device-query, device-command, memory, reflex, approval, schedule, triage) used by both tracks.
 - **Deep Reason** — spawns a focused sub-agent for complex multi-device trade-offs, competing constraints, and novel situations; has read-only tool access (no device commands)
 - **DeviceManager** — provider-based device abstraction (ships with a dummy provider for 6 simulated devices)
 - **MemoryStore** — SQLite-backed persistence with local embedding vectors (all-MiniLM-L6-v2 via `@huggingface/transformers`) for semantic search
@@ -127,8 +144,8 @@ packages/
 - **ApprovalQueue** — routes agent actions by confidence/category, auto-executes safe ones
 - **OutcomeObserver** — detects user reversals within a 5-minute observation window
 - **ProactiveScheduler** — periodic wakeups for reflection, goal review, etc.; agent-created schedules for recurring tasks
-- **TriageStore** — event routing rules (immediate, batch, silent) that the agent self-manages to reduce noise
 - **PluginManager** — discovers and manages local Claude Code extensions in `~/.holms/plugins/`
+- **ChannelManager** — routes inbound messages from channel providers (web, future: Slack, etc.) to the correct ChatCoordinator
 - **EventBus** — typed pub/sub connecting all subsystems
 
 **Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview (proactive cycle summaries), Chat, Devices, Memory (with Entity Notes tab), Reflexes, Schedules, Activity, Plugins.

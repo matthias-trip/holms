@@ -16,6 +16,7 @@ export interface HolmsConfig {
   models: {
     coordinator: string;
     deepReason: string;
+    suggestions: string;
   };
   proactive: {
     situationalCheckInterval: number; // ms
@@ -50,6 +51,7 @@ const defaults: HolmsConfig = {
   models: {
     coordinator: "claude-sonnet-4-6",
     deepReason: "claude-sonnet-4-6",
+    suggestions: "claude-haiku-4-5-20251001",
   },
   proactive: {
     situationalCheckInterval: 30 * 60 * 1000,
@@ -84,6 +86,7 @@ export function loadConfig(): HolmsConfig {
     models: {
       coordinator: process.env.HOLMS_MODEL_COORDINATOR ?? defaults.models.coordinator,
       deepReason: process.env.HOLMS_MODEL_DEEP_REASON ?? defaults.models.deepReason,
+      suggestions: process.env.HOLMS_MODEL_SUGGESTIONS ?? defaults.models.suggestions,
     },
     deepReason: {
       maxTurns: parseInt(process.env.HOLMS_DEEP_REASON_MAX_TURNS ?? String(defaults.deepReason.maxTurns), 10),

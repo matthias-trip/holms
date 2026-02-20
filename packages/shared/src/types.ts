@@ -178,7 +178,7 @@ export interface AgentActivity {
 
 // ── Turn / Agent Status Types ──
 
-export type TurnTrigger = "user_message" | "device_events" | "schedule" | "proactive" | "approval_result" | "outcome_feedback";
+export type TurnTrigger = "user_message" | "device_events" | "schedule" | "proactive" | "approval_result" | "outcome_feedback" | "suggestions";
 
 export interface AgentStatus {
   agentId: string;

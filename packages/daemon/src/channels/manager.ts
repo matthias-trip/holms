@@ -1,7 +1,7 @@
 import type { ChannelProvider, ChannelConversation, InboundMessage } from "./types.js";
 import type { EventBus } from "../event-bus.js";
 import type { ChatStore } from "../chat/store.js";
-import type { Coordinator } from "../coordinator/coordinator.js";
+import type { CoordinatorHub } from "../coordinator/coordinator-hub.js";
 import type { ChannelConversationInfo } from "@holms/shared";
 import { v4 as uuid } from "uuid";
 
@@ -18,7 +18,7 @@ export class ChannelManager {
   constructor(
     private eventBus: EventBus,
     private chatStore: ChatStore,
-    private coordinator: Coordinator,
+    private hub: CoordinatorHub,
   ) {
     // Route streaming tokens to the correct provider
     this.eventBus.on("chat:token", (data: { token: string; messageId: string; timestamp: number }) => {
@@ -98,7 +98,7 @@ export class ChannelManager {
     }
 
     try {
-      const result = await this.coordinator.handleUserRequest(prompt, thinkingId);
+      const result = await this.hub.handleUserRequest(prompt, thinkingId, msg.conversationId);
       this.chatStore.updateMessage(thinkingId, {
         content: result,
         status: null,

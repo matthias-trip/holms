@@ -33,7 +33,10 @@ npm workspaces monorepo: `packages/shared`, `packages/daemon`, `packages/fronten
 
 1. **tRPC API** — HTTP + WebSocket server (manual `http.createServer` for CORS + `applyWSSHandler`). Routers: `devices`, `chat`, `memory`, `reflex`, `approval`, `events`. WebSocket subscriptions push real-time updates.
 
-2. **Coordinator** — Wraps Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). The agent receives batched device events, user messages, proactive wakeups, and outcome feedback. It interacts with 7 MCP tool servers running in-process via `createSdkMcpServer`: device-query, device-command, memory, reflex, approval, schedule, triage. Plugins can add more. Session continuity via stored `sessionId` + SDK `resume` option. Only MCP tools are allowed (`mcp__*` pattern); Bash, Read, Write, and other file tools are explicitly disallowed.
+2. **CoordinatorHub** — Multi-track architecture wrapping Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). Routes work to two executor types:
+   - **ChatCoordinator** (per-channel, stateful) — one instance per conversation channel. Maintains SDK session via `resume` for conversation history. Serializes turns within a channel; different channels run independently.
+   - **EphemeralRunner** (stateless, parallel) — handles device events, proactive wakeups, outcome feedback. Fresh SDK session per turn, fully concurrent.
+   - **McpServerPool** — shared pool of 7 in-process MCP tool servers (`createSdkMcpServer`): device-query, device-command, memory, reflex, approval, schedule, triage. Plugins can add more. Only MCP tools are allowed (`mcp__*` pattern); Bash, Read, Write, and other file tools are explicitly disallowed.
 
 Supporting subsystems wired together in `src/index.ts`:
 - **DeviceManager** — Provider-based device abstraction (currently only `DummyProvider` with 6 simulated devices)

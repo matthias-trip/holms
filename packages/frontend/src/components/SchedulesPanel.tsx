@@ -1,3 +1,5 @@
+import { Clock } from "lucide-react";
+import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 
 const RECURRENCE_LABELS: Record<string, string> = {
@@ -36,13 +38,10 @@ export default function SchedulesPanel() {
   });
 
   return (
-    <div className="h-full flex flex-col p-6" style={{ background: "var(--void)" }}>
+    <div className="h-full flex flex-col p-6" style={{ background: "var(--gray-2)" }}>
       <div className="mb-5">
-        <span className="section-label">Schedules</span>
-        <p
-          className="text-[12px] mt-2"
-          style={{ color: "var(--steel)", maxWidth: "500px", lineHeight: "1.6" }}
-        >
+        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Schedules</h3>
+        <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
           Time-based tasks managed by the assistant. Schedules fire at their set time and the
           assistant decides what to do.
         </p>
@@ -52,16 +51,7 @@ export default function SchedulesPanel() {
         {!schedules || schedules.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="1.3" />
-                <path
-                  d="M9 5v4.5l3 1.5"
-                  stroke="currentColor"
-                  strokeWidth="1.3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <Clock size={18} />
             </div>
             <div className="empty-state-text">
               No scheduled tasks yet. Ask the assistant to schedule things like "turn off lights at
@@ -70,85 +60,67 @@ export default function SchedulesPanel() {
           </div>
         ) : (
           schedules.map((schedule, i) => (
-            <div
+            <Card
               key={schedule.id}
-              className="rounded-xl p-4 animate-fade-in"
+              className="animate-fade-in"
               style={{
-                background: schedule.enabled ? "var(--obsidian)" : "var(--abyss)",
-                border: "1px solid var(--graphite)",
                 opacity: schedule.enabled ? 1 : 0.5,
                 animationDelay: `${i * 40}ms`,
+                background: "var(--gray-3)",
+                border: "1px solid var(--gray-a5)",
               }}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  {/* Time + recurrence */}
-                  <div className="flex items-center gap-2.5 mb-2.5">
-                    <span
-                      className="text-[18px] font-semibold tabular-nums"
-                      style={{ color: "var(--frost)", letterSpacing: "-0.02em" }}
-                    >
-                      {formatTime(schedule.hour, schedule.minute)}
-                    </span>
-                    <span
-                      className="badge"
-                      style={{ background: "var(--glow-wash)", color: "var(--glow)", border: "1px solid var(--glow-border)" }}
-                    >
-                      {RECURRENCE_LABELS[schedule.recurrence] ?? schedule.recurrence}
-                      {schedule.recurrence === "weekly" && schedule.dayOfWeek != null
-                        ? ` (${DAY_NAMES[schedule.dayOfWeek]})`
-                        : ""}
-                    </span>
-                    {!schedule.enabled && (
-                      <span
-                        className="badge"
-                        style={{ background: "var(--err-dim)", color: "var(--err)" }}
-                      >
-                        Disabled
+              <CardBody>
+                <div className="flex justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg font-bold tabular-nums" style={{ letterSpacing: "-0.02em", color: "var(--gray-12)" }}>
+                        {formatTime(schedule.hour, schedule.minute)}
                       </span>
-                    )}
-                  </div>
+                      <Chip variant="flat" color="primary" size="sm">
+                        {RECURRENCE_LABELS[schedule.recurrence] ?? schedule.recurrence}
+                        {schedule.recurrence === "weekly" && schedule.dayOfWeek != null
+                          ? ` (${DAY_NAMES[schedule.dayOfWeek]})`
+                          : ""}
+                      </Chip>
+                      {!schedule.enabled && (
+                        <Chip variant="flat" color="danger" size="sm">
+                          Disabled
+                        </Chip>
+                      )}
+                    </div>
 
-                  {/* Instruction */}
-                  <div
-                    className="text-[13px] leading-relaxed"
-                    style={{ color: "var(--mist)" }}
-                  >
-                    {schedule.instruction}
-                  </div>
+                    <p className="text-sm" style={{ lineHeight: "1.6", color: "var(--gray-12)" }}>
+                      {schedule.instruction}
+                    </p>
 
-                  {/* Meta */}
-                  <div
-                    className="flex items-center gap-3 mt-3 text-[10px]"
-                    style={{ color: "var(--pewter)" }}
-                  >
-                    {schedule.enabled && (
-                      <>
-                        <span>Next: {formatNextFire(schedule.nextFireAt)}</span>
-                        <span>·</span>
-                      </>
-                    )}
-                    {schedule.lastFiredAt && (
-                      <>
-                        <span>
-                          Last: {new Date(schedule.lastFiredAt).toLocaleString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                        <span>·</span>
-                      </>
-                    )}
-                    <span>
-                      Created{" "}
-                      {new Date(schedule.createdAt).toLocaleDateString()}
-                    </span>
+                    <div className="flex items-center gap-3 mt-3">
+                      <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>
+                        {schedule.enabled && (
+                          <>
+                            Next: {formatNextFire(schedule.nextFireAt)}
+                            {" \u00b7 "}
+                          </>
+                        )}
+                        {schedule.lastFiredAt && (
+                          <>
+                            Last: {new Date(schedule.lastFiredAt).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                            {" \u00b7 "}
+                          </>
+                        )}
+                        Created{" "}
+                        {new Date(schedule.createdAt).toLocaleDateString()}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           ))
         )}
       </div>

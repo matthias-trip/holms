@@ -1,4 +1,4 @@
-import type { Coordinator } from "../coordinator/coordinator.js";
+import type { CoordinatorHub } from "../coordinator/coordinator-hub.js";
 import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { ScheduleStore } from "../schedule/store.js";
@@ -16,7 +16,7 @@ export class ProactiveScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    private coordinator: Coordinator,
+    private hub: CoordinatorHub,
     private deviceManager: DeviceManager,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
@@ -67,7 +67,7 @@ export class ProactiveScheduler {
     }
 
     console.log(`[ProactiveScheduler] Manual trigger: ${type}`);
-    await this.coordinator.handleProactiveWakeup(type, extraContext);
+    await this.hub.handleProactiveWakeup(type, extraContext);
   }
 
   stop(): void {
@@ -88,8 +88,6 @@ export class ProactiveScheduler {
         this.scheduleStore.markFired(schedule.id);
       }
     }
-
-    if (this.coordinator.isProcessing()) return;
 
     const now = Date.now();
 
@@ -112,21 +110,19 @@ export class ProactiveScheduler {
     }
 
     // Check for daily summary — only fire once per day
-    if (!this.coordinator.isProcessing()) {
-      const hour = new Date().getHours();
-      const dailyWakeup = this.wakeups.find((w) => w.type === "daily_summary")!;
+    const hour = new Date().getHours();
+    const dailyWakeup = this.wakeups.find((w) => w.type === "daily_summary")!;
 
-      if (
-        hour === this.config.proactive.dailySummaryHour &&
-        dailyWakeup.lastRun < Date.now() - 23 * 60 * 60 * 1000
-      ) {
-        dailyWakeup.lastRun = Date.now();
+    if (
+      hour === this.config.proactive.dailySummaryHour &&
+      dailyWakeup.lastRun < Date.now() - 23 * 60 * 60 * 1000
+    ) {
+      dailyWakeup.lastRun = Date.now();
 
-        try {
-          await this.coordinator.handleProactiveWakeup("daily_summary");
-        } catch (error) {
-          console.error("[ProactiveScheduler] Daily summary error:", error);
-        }
+      try {
+        await this.hub.handleProactiveWakeup("daily_summary");
+      } catch (error) {
+        console.error("[ProactiveScheduler] Daily summary error:", error);
       }
     }
   }
