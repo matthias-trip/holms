@@ -8,7 +8,7 @@ AI-driven home automation coordinator powered by Claude. Instead of rigid if-the
 
 ## How it works
 
-A daemon process connects to your smart home devices and feeds events to a Claude agent via the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk). The agent has access to tools for querying device state, executing commands, storing memories, creating fast local automation rules (reflexes), and spawning deep reasoning sub-agents for complex multi-device decisions. A plugin system lets you extend the agent with local Claude Code extensions. A React frontend gives you a dashboard to monitor everything, chat with the agent, and approve or reject proposed actions.
+A daemon process connects to your smart home devices and feeds events to a Claude agent via the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk). The agent has access to tools for querying device state, executing commands, storing memories, creating automations and fast local rules (reflexes), and spawning deep reasoning sub-agents for complex multi-device decisions. Multiple channel providers (web, Slack, Telegram, WhatsApp) let you chat with the agent from anywhere. A plugin system lets you extend the agent with local Claude Code extensions. A React frontend gives you a dashboard to monitor everything, chat with the agent, and approve or reject proposed actions.
 
 ### The agent loop
 
@@ -29,11 +29,17 @@ User messages route to a **ChatCoordinator** (one per channel, stateful with SDK
 ```
 Device event arrives
        ↓
-  ┌────┴────┐
-  ↓         ↓
-Reflex    Triage engine classifies event
-Engine    (immediate / batch / silent)
-(instant)        ↓
+  ┌────┴──────────┐
+  ↓               ↓
+Reflex     AutomationMatcher
+Engine     (device_event + state_threshold triggers)
+(instant)         ↓
+          ┌───────┴───────┐
+          ↓               ↓
+   Match found?      No match
+   → Wake agent      → Triage engine classifies
+     with context      (immediate / batch / silent)
+          ↓               ↓
           EphemeralRunner receives event(s)
                  ↓
           Agent recalls memories & reasons
@@ -45,12 +51,14 @@ Engine    (immediate / batch / silent)
                remember)    wait for approval)
           ↓      ↓              ↓
           ↓  Deep reason   ApprovalQueue
-          ↓  if complex     → Frontend
+          ↓  if complex     → Channels
           ↓      ↓              ↓
        OutcomeObserver watches for reversals
                  ↓
        If reversed → feedback → agent learns
 ```
+
+Time-triggered automations follow a separate path: `ProactiveScheduler.tick()` (every 30s) → check for due automations → check for linked reflexes → if no reflex, wake coordinator.
 
 ### Memory & learning
 
@@ -84,9 +92,25 @@ The agent can attach short factual notes (max 300 chars) to individual devices u
 
 Entity notes answer *"what is this thing?"* while regular memories answer *"what do I know about situations involving this thing?"*. Notes are searchable via semantic similarity, so the agent (or user) can query across all annotations — e.g. "heating devices" or "entrance area" — to find relevant devices.
 
+### Automations
+
+The agent can create **automations** — trigger-based tasks that wake the AI coordinator when they fire. Unlike reflexes (instant, no reasoning), automations invoke the full agent loop so the coordinator can apply context-aware judgment each time.
+
+Three trigger types are supported:
+
+| Trigger | Example | Fires when |
+|---------|---------|------------|
+| **Time** | "Turn off porch lights at 23:00" | Cron-like schedule (once, daily, weekdays, weekends, weekly) |
+| **Device event** | "When front door unlocks, check who's home" | A specific device emits a matching event |
+| **State threshold** | "When living room temp drops below 18°C, adjust heating" | A numeric device state crosses a threshold (gt/lt/eq/gte/lte) |
+
+When an automation fires, the coordinator receives the trigger context alongside device state and memories, reasons about what to do, and executes. Event-triggered automations are matched *before* triage — if an automation claims an event, triage is skipped entirely. Time-triggered automations fire via the proactive scheduler on a 30-second tick.
+
+**Automation → reflex promotion**: After an automation fires predictably enough times, the agent can promote it to a reflex for instant execution. Reflexes can reference their parent automation via `automationId`, so the reflex engine checks for linked reflexes before waking the coordinator.
+
 ### Reflexes
 
-For time-critical automations where LLM latency is unacceptable (e.g. turning on a light when motion is detected), the agent can create **reflexes** — local rules that execute in sub-second time without AI reasoning. The agent creates and manages these rules through its tools; they run in the reflex engine independently.
+For time-critical automations where LLM latency is unacceptable (e.g. turning on a light when motion is detected), the agent can create **reflexes** — local rules that execute in sub-second time without AI reasoning. The agent creates and manages these rules through its tools; they run in the reflex engine independently. Reflexes can also be linked to automations — when a linked reflex exists, it executes instantly instead of waking the coordinator.
 
 ### Deep reasoning
 
@@ -102,10 +126,6 @@ The agent self-manages how it gets woken up. It assigns each event source a **tr
 
 During reflection cycles, the agent reviews its triage rules — silencing noisy sources it never acts on, and escalating ones it missed.
 
-### Schedules
-
-The agent can create **scheduled tasks** — cron-like recurring actions (e.g. "turn off porch lights at 23:00"). These fire as proactive wakeups. The agent handles them directly rather than creating reflexes, and only promotes a schedule to a reflex after confirming the action never varies.
-
 ### Proactive behavior
 
 The agent doesn't just react to events. A scheduler periodically wakes it up for:
@@ -116,6 +136,19 @@ The agent doesn't just react to events. A scheduler periodically wakes it up for
 - **Daily summary** (at 22:00) — end-of-day recap and planning
 
 Each proactive cycle produces a one-sentence summary shown on the Overview dashboard, with full details available on expand.
+
+### Channels
+
+Holms supports multiple messaging channels so you can talk to the agent from wherever you are. Each channel provider handles its own transport and message format while routing conversations to the same coordinator.
+
+| Channel | Status | Capabilities |
+|---------|--------|--------------|
+| **Web** | Built-in | Single conversation, approval buttons, rich formatting |
+| **Slack** | Provider | Multi-conversation (channels/DMs), approval buttons, threads, reactions |
+| **Telegram** | Provider | Multi-conversation, approval buttons |
+| **WhatsApp** | Provider | Multi-conversation, QR pairing |
+
+Conversations follow the format `providerId:conversationId` (e.g. `slack:#general`, `telegram:12345`, `web:default`). Each conversation gets its own ChatCoordinator with full session history. Channel routes let you direct specific event types (approvals, device events, broadcasts) to specific channels.
 
 ### Plugins
 
@@ -134,21 +167,21 @@ packages/
 
 - **CoordinatorHub** — multi-track architecture that routes work to the right executor:
   - **ChatCoordinator** (per-channel, stateful) — one instance per conversation channel (e.g. `web:default`, `slack:#general`). Maintains SDK session continuity via `resume` so the agent has full conversation history. Serializes turns within a channel via an async queue. Different channels run independently.
-  - **EphemeralRunner** (stateless, parallel) — handles device events, proactive wakeups, outcome feedback, and schedules. Fresh SDK session per turn, no `resume`. Multiple runs execute concurrently — a proactive cycle never blocks user chat.
-  - **McpServerPool** — shared pool of 7 in-process MCP tool servers (device-query, device-command, memory, reflex, approval, schedule, triage) used by both tracks.
+  - **EphemeralRunner** (stateless, parallel) — handles device events, proactive wakeups, outcome feedback, and automations. Fresh SDK session per turn, no `resume`. Multiple runs execute concurrently — a proactive cycle never blocks user chat.
+  - **McpServerPool** — shared pool of in-process MCP tool servers (device-query, device-command, memory, reflex, approval, automation, triage, channels) used by both tracks.
 - **Deep Reason** — spawns a focused sub-agent for complex multi-device trade-offs, competing constraints, and novel situations; has read-only tool access (no device commands)
-- **DeviceManager** — provider-based device abstraction (ships with a dummy provider for 6 simulated devices)
+- **DeviceManager** — provider-based device abstraction with a standard capabilities catalog across domains (light, climate, cover, lock, fan, media_player, etc.)
+- **ChannelManager** — routes inbound messages from channel providers (web, Slack, Telegram, WhatsApp) to the correct ChatCoordinator. Manages channel routes for directing events to specific destinations.
+- **AutomationStore** / **AutomationMatcher** — persistence and event matching for automations. Matcher debounces at 60s per automation and claims events before triage.
 - **MemoryStore** — SQLite-backed persistence with local embedding vectors (all-MiniLM-L6-v2 via `@huggingface/transformers`) for semantic search
-- **ReflexStore** / **ScheduleStore** / **TriageStore** — SQLite-backed persistence via better-sqlite3
-- **ReflexEngine** — evaluates local automation rules on device events
+- **ReflexEngine** — evaluates local automation rules on device events; supports automation-linked reflexes
 - **ApprovalQueue** — routes agent actions by confidence/category, auto-executes safe ones
 - **OutcomeObserver** — detects user reversals within a 5-minute observation window
-- **ProactiveScheduler** — periodic wakeups for reflection, goal review, etc.; agent-created schedules for recurring tasks
+- **ProactiveScheduler** — periodic wakeups for reflection, goal review, etc.; fires time-triggered automations on a 30s tick
 - **PluginManager** — discovers and manages local Claude Code extensions in `~/.holms/plugins/`
-- **ChannelManager** — routes inbound messages from channel providers (web, future: Slack, etc.) to the correct ChatCoordinator
 - **EventBus** — typed pub/sub connecting all subsystems
 
-**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview (proactive cycle summaries), Chat, Devices, Memory (with Entity Notes tab), Reflexes, Schedules, Activity, Plugins.
+**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview, Chat, Devices, Integrations, Memory (with Entity Notes tab), Automations, Reflexes, Activity, Plugins.
 
 ## Getting started
 
@@ -190,9 +223,17 @@ All config is via environment variables in `packages/daemon/.env`:
 
 Agent behavior (batch delay, max turns, budget, proactive intervals) is configured in `packages/daemon/src/config.ts`.
 
-### Simulated devices
+### Device providers
 
-The dummy provider creates 6 devices for development:
+#### Home Assistant
+
+Connect to a Home Assistant instance via WebSocket. Configure the URL and long-lived access token from the Integrations panel, then use the entity picker to select which entities to expose to the agent. Only selected entities appear in device queries and generate events — unselected entities are ignored entirely.
+
+The provider maps HA services to a standard capabilities catalog so the agent uses a consistent command vocabulary across providers (e.g. `turn_on`, `set_brightness`, `set_temperature` regardless of the underlying platform).
+
+#### Simulated devices (development)
+
+The built-in dummy provider creates 6 devices for development:
 
 - 3 lights (living room, bedroom, kitchen) — brightness control
 - 1 thermostat — target temperature, mode, gradual temperature drift
@@ -218,17 +259,19 @@ npm run typecheck -w @holms/shared
 
 ## Adding a device provider
 
-Implement the `DeviceProvider` interface and register it with `DeviceManager` in `packages/daemon/src/index.ts`. See `packages/daemon/src/devices/providers/dummy.ts` for a reference implementation. The provider needs to:
+Implement the `DeviceProvider` interface using `DeviceDescriptorBase` and register it with `DeviceManager`. See `packages/daemon/src/devices/providers/home-assistant.ts` for a full implementation. The provider needs to:
 
-1. Return device metadata and current state
-2. Execute commands (turn on/off, set brightness, etc.)
+1. Return device metadata, current state, and supported capabilities (from the standard catalog in `capabilities.ts`)
+2. Execute commands using the standard capability vocabulary (turn_on, set_brightness, etc.)
 3. Emit events when device state changes
+4. Support lifecycle methods: `connect()`, `disconnect()`, `getDevices()`, `getAreas()`
 
 ## Tech stack
 
 - **Agent**: [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) with in-process MCP tool servers
 - **API**: [tRPC v11](https://trpc.io/) over HTTP + WebSocket
 - **Database**: SQLite via [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
+- **Home Assistant**: [home-assistant-js-websocket](https://github.com/home-assistant/home-assistant-js-websocket) for real-time HA integration
 - **Frontend**: React 19, Vite 6, Tailwind CSS v4
 - **Validation**: Zod v4
 - **Language**: TypeScript (strict mode, ESM throughout)
