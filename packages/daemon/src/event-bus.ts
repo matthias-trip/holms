@@ -5,25 +5,28 @@ import type {
   DeviceCommand,
   ReflexRule,
   PendingApproval,
-  Schedule,
+  Automation,
   TurnTrigger,
   TriageLane,
+  ChannelStatus,
 } from "@holms/shared";
 
 export interface EventBusEvents {
   "device:event": (event: DeviceEvent) => void;
   "agent:thinking": (data: {
     prompt: string;
+    turnId?: string;
     timestamp: number;
   }) => void;
   "agent:tool_use": (data: {
     tool: string;
     input: unknown;
+    turnId?: string;
     timestamp: number;
   }) => void;
   "agent:result": (data: {
     result: string;
-    summary?: string | null;
+    summary?: string;
     model?: string;
     costUsd: number;
     inputTokens: number;
@@ -34,6 +37,7 @@ export interface EventBusEvents {
     durationApiMs: number;
     numTurns: number;
     totalCostUsd: number;
+    turnId?: string;
     timestamp: number;
   }) => void;
   "reflex:triggered": (data: {
@@ -64,6 +68,7 @@ export interface EventBusEvents {
   "deep_reason:start": (data: {
     problem: string;
     model: string;
+    turnId?: string;
     timestamp: number;
   }) => void;
   "deep_reason:result": (data: {
@@ -79,16 +84,25 @@ export interface EventBusEvents {
     durationApiMs: number;
     numTurns: number;
     totalCostUsd: number;
+    turnId?: string;
     timestamp: number;
   }) => void;
   "agent:turn_start": (data: {
     turnId: string;
     trigger: TurnTrigger;
-    summary: string;
+    proactiveType?: string;
     model?: string;
+    channel?: string;
+    channelDisplayName?: string;
+    coordinatorType?: string;
     timestamp: number;
   }) => void;
-  "schedule:fired": (data: { schedule: Schedule; timestamp: number }) => void;
+  "automation:time_fired": (data: { automation: Automation; timestamp: number }) => void;
+  "automation:event_fired": (data: {
+    automation: Automation;
+    event: DeviceEvent;
+    timestamp: number;
+  }) => void;
   "chat:token": (data: {
     token: string;
     messageId: string;
@@ -107,11 +121,28 @@ export interface EventBusEvents {
     ruleId: string | null;
     reason: string;
     deviceName?: string;
-    room?: string;
+    area?: string;
     timestamp: number;
   }) => void;
   "agent:triage_batch": (data: {
     eventCount: number;
+    timestamp: number;
+  }) => void;
+  "channel:status_changed": (data: {
+    providerId: string;
+    status: ChannelStatus;
+    message?: string;
+    timestamp: number;
+  }) => void;
+  "chat:message_feedback": (data: {
+    messageId: string;
+    sentiment: "positive" | "negative";
+    comment?: string;
+    timestamp: number;
+  }) => void;
+  "chat:message_feedback_response": (data: {
+    messageId: string;
+    response: string;
     timestamp: number;
   }) => void;
   "activity:stored": (activity: AgentActivity) => void;

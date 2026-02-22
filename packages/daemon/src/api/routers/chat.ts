@@ -8,10 +8,11 @@ import type { EventBus } from "../../event-bus.js";
 import type { ActivityStore } from "../../activity/store.js";
 import type { CoordinatorHub } from "../../coordinator/coordinator-hub.js";
 import { runTrackedQuery } from "../../coordinator/query-runner.js";
+import type { InboundMessage } from "../../channels/types.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
-let suggestionsCache: { key: number; suggestions: string[] } | null = null;
+let suggestionsCache: { key: string; suggestions: string[] } | null = null;
 
 /**
  * Register a single set of event bus listeners that persist agent activities to the DB
@@ -33,36 +34,36 @@ export function initActivityPersistence(
     eventBus.emit("activity:stored", activity);
   };
 
-  eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; summary: string; model?: string; timestamp: number }) => {
+  eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; proactiveType?: string; model?: string; channel?: string; channelDisplayName?: string; coordinatorType?: string; timestamp: number }) => {
     lastTurnId = data.turnId;
     store({
       id: uuid(), type: "turn_start",
-      data: { trigger: data.trigger, summary: data.summary, model: data.model },
+      data: { trigger: data.trigger, proactiveType: data.proactiveType, model: data.model, channel: data.channel, channelDisplayName: data.channelDisplayName },
       timestamp: data.timestamp, agentId: data.trigger === "suggestions" ? "suggestions" : "coordinator", turnId: data.turnId,
     });
   });
 
-  eventBus.on("agent:thinking", (data: { prompt: string; timestamp: number }) => {
+  eventBus.on("agent:thinking", (data: { prompt: string; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "thinking",
       data: { prompt: data.prompt },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
     });
   });
 
-  eventBus.on("agent:tool_use", (data: { tool: string; input: unknown; timestamp: number }) => {
+  eventBus.on("agent:tool_use", (data: { tool: string; input: unknown; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "tool_use",
       data: { tool: data.tool, input: data.input },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
     });
   });
 
-  eventBus.on("agent:result", (data: { result: string; model?: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; timestamp: number }) => {
+  eventBus.on("agent:result", (data: { result: string; summary?: string; model?: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "result",
-      data: { result: data.result, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
+      data: { result: data.result, summary: data.summary, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
     });
   });
 
@@ -82,19 +83,19 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("deep_reason:start", (data: { problem: string; model: string; timestamp: number }) => {
+  eventBus.on("deep_reason:start", (data: { problem: string; model: string; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "deep_reason_start",
       data: { problem: data.problem, model: data.model },
-      timestamp: data.timestamp, agentId: "deep_reason", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId ?? getTurnId(),
     });
   });
 
-  eventBus.on("deep_reason:result", (data: { problem: string; analysis: string; model: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; timestamp: number }) => {
+  eventBus.on("deep_reason:result", (data: { problem: string; analysis: string; model: string; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; durationMs: number; durationApiMs: number; numTurns: number; totalCostUsd: number; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "deep_reason_result",
       data: { problem: data.problem, analysis: data.analysis, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
-      timestamp: data.timestamp, agentId: "deep_reason", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId ?? getTurnId(),
     });
   });
 
@@ -126,10 +127,10 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("agent:triage_classify", (data: { deviceId: string; eventType: string; lane: string; ruleId: string | null; reason: string; deviceName?: string; room?: string; timestamp: number }) => {
+  eventBus.on("agent:triage_classify", (data: { deviceId: string; eventType: string; lane: string; ruleId: string | null; reason: string; deviceName?: string; area?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "triage_classify",
-      data: { deviceId: data.deviceId, eventType: data.eventType, lane: data.lane, ruleId: data.ruleId, reason: data.reason, deviceName: data.deviceName, room: data.room },
+      data: { deviceId: data.deviceId, eventType: data.eventType, lane: data.lane, ruleId: data.ruleId, reason: data.reason, deviceName: data.deviceName, area: data.area },
       timestamp: data.timestamp, agentId: "triage",
     });
   });
@@ -159,47 +160,21 @@ export const chatRouter = t.router({
   send: t.procedure
     .input(z.object({ message: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const userMsg = {
-        id: uuid(),
-        role: "user" as const,
-        content: input.message,
-        timestamp: Date.now(),
-        channel: "web:default",
-      };
-      ctx.chatStore.add(userMsg);
-
-      // Insert a thinking placeholder so it persists across remounts
-      const thinkingMsg = {
-        id: uuid(),
-        role: "assistant" as const,
-        content: "",
-        timestamp: Date.now(),
-        status: "thinking" as const,
-        channel: "web:default",
-      };
-      ctx.chatStore.add(thinkingMsg);
-
-      // Track the response for channel routing
-      ctx.channelManager.trackResponse(thinkingMsg.id, "web", "web:default");
-
-      const result = await ctx.hub.handleUserRequest(input.message, thinkingMsg.id, "web:default");
-
-      // Update the thinking row in-place with the actual response
       const now = Date.now();
-      ctx.chatStore.updateMessage(thinkingMsg.id, {
-        content: result,
-        status: null,
-        timestamp: now,
-      });
-
-      const assistantMsg = {
-        id: thinkingMsg.id,
-        role: "assistant" as const,
-        content: result,
+      const msg: InboundMessage = {
+        id: uuid(),
+        conversationId: "web:default",
+        senderId: "web-user",
+        content: input.message,
         timestamp: now,
       };
 
-      return { userMsg, assistantMsg };
+      const { userMsgId, thinkingMsgId } = await ctx.channelManager.sendMessage(msg);
+
+      return {
+        userMsg: { id: userMsgId, role: "user" as const, content: input.message, timestamp: now },
+        assistantMsg: { id: thinkingMsgId, role: "assistant" as const, content: "", timestamp: Date.now() },
+      };
     }),
 
   activityHistory: t.procedure
@@ -230,17 +205,18 @@ export const chatRouter = t.router({
   }),
 
   suggestions: t.procedure
-    .input(z.object({ limit: z.number().min(1).max(20).default(6) }).optional())
+    .input(z.object({ limit: z.number().min(1).max(20).default(6), channel: z.string().default("web:default") }).optional())
     .query(async ({ ctx, input }) => {
       const limit = input?.limit ?? 6;
+      const channel = input?.channel ?? "web:default";
       try {
-        const history = ctx.chatStore.getHistory(20);
+        const history = ctx.chatStore.getHistory(20, undefined, channel);
         const relevant = history.filter(
           (m) => (m.role === "user" || m.role === "assistant") && m.status !== "thinking" && m.status !== "approval_pending" && m.status !== "approval_resolved" && m.content,
         );
         if (relevant.length === 0) return { suggestions: [] };
 
-        const cacheKey = relevant.at(-1)!.timestamp;
+        const cacheKey = `${channel}:${relevant.at(-1)!.timestamp}`;
         if (suggestionsCache?.key === cacheKey) {
           return { suggestions: suggestionsCache.suggestions };
         }
@@ -254,9 +230,8 @@ export const chatRouter = t.router({
           eventBus: ctx.eventBus,
           model: ctx.config.models.suggestions,
           trigger: "suggestions",
-          summary: `Suggestions from: ${transcript.slice(0, 80)}`,
-          promptText: transcript,
-          systemPrompt: `You generate chat message suggestions for a home automation assistant. Given the conversation, return a JSON array of exactly ${limit} short messages the user might send next (max 6 words each). These should read naturally as things a person would type — casual commands, requests, or questions. Examples: "dim the living room lights", "what's the bedroom temperature?", "turn everything off". Return ONLY the JSON array, no other text.`,
+          promptText: `<conversation_transcript>\n${transcript}\n</conversation_transcript>\n\nBased on the transcript above, generate a JSON array of exactly ${limit} short follow-up messages the user might send next. Return ONLY the JSON array.`,
+          systemPrompt: `You generate chat message suggestions for a home automation assistant. You will be given a conversation transcript wrapped in <conversation_transcript> tags. Based on that conversation, return a JSON array of short messages (max 6 words each) the user might send next. These should read naturally as things a person would type — casual commands, requests, or questions about their home. Examples: "dim the living room lights", "what's the bedroom temperature?", "turn everything off". Return ONLY the JSON array, no other text. Do NOT respond to the conversation — only generate suggestions.`,
           maxTurns: 1,
           claudeConfigDir: ctx.config.claudeConfigDir,
         });
@@ -273,6 +248,73 @@ export const chatRouter = t.router({
         return { suggestions: [] };
       }
     }),
+
+  messageFeedback: t.procedure
+    .input(z.object({
+      messageId: z.string(),
+      sentiment: z.enum(["positive", "negative"]),
+      comment: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const msg = ctx.chatStore.getById(input.messageId);
+      if (!msg) throw new Error("Message not found");
+      if (msg.role !== "assistant") throw new Error("Can only rate assistant messages");
+      if (msg.feedback) throw new Error("Feedback already submitted for this message");
+
+      // Persist feedback immediately
+      ctx.chatStore.setFeedback(input.messageId, input.sentiment, input.comment);
+
+      // Emit so UI updates the thumbs state
+      ctx.eventBus.emit("chat:message_feedback", {
+        messageId: input.messageId,
+        sentiment: input.sentiment,
+        comment: input.comment,
+        timestamp: Date.now(),
+      });
+
+      // Find preceding user message for context
+      const history = ctx.chatStore.getHistory(50, undefined, msg.channel);
+      const msgIdx = history.findIndex((m) => m.id === input.messageId);
+      let userMessage = "";
+      if (msgIdx > 0) {
+        for (let i = msgIdx - 1; i >= 0; i--) {
+          if (history[i]!.role === "user") {
+            userMessage = history[i]!.content;
+            break;
+          }
+        }
+      }
+
+      // Fire-and-forget: agent reflects on the feedback
+      ctx.hub.handleMessageFeedback({
+        messageId: input.messageId,
+        userMessage,
+        assistantMessage: msg.content,
+        sentiment: input.sentiment,
+        comment: input.comment,
+      }).then((response) => {
+        ctx.chatStore.setFeedbackResponse(input.messageId, response);
+        ctx.eventBus.emit("chat:message_feedback_response", {
+          messageId: input.messageId,
+          response,
+          timestamp: Date.now(),
+        });
+      }).catch((err) => {
+        console.error("[API] Message feedback processing error:", err);
+      });
+
+      return { ok: true };
+    }),
+
+  onMessageFeedbackResponse: t.procedure.subscription(({ ctx }) => {
+    return observable<{ messageId: string; response: string }>((emit) => {
+      const handler = (data: { messageId: string; response: string; timestamp: number }) => {
+        emit.next({ messageId: data.messageId, response: data.response });
+      };
+      ctx.eventBus.on("chat:message_feedback_response", handler);
+      return () => ctx.eventBus.off("chat:message_feedback_response", handler);
+    });
+  }),
 
   // Subscription only forwards already-stored activities — no DB writes here
   onActivity: t.procedure.subscription(({ ctx }) => {

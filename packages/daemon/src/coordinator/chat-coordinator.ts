@@ -3,6 +3,8 @@ import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
+import type { PeopleStore } from "../people/store.js";
+import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER } from "./query-runner.js";
 
@@ -24,6 +26,8 @@ export class ChatCoordinator {
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
     private pluginManager?: PluginManager,
+    private peopleStore?: PeopleStore,
+    private goalStore?: GoalStore,
   ) {}
 
   getCurrentTurnId(): string | null {
@@ -37,11 +41,12 @@ export class ChatCoordinator {
     return task;
   }
 
-  async handleUserRequest(message: string, messageId?: string): Promise<string> {
+  async handleUserRequest(message: string, messageId?: string, channelDisplayName?: string, memoryScope?: string): Promise<string> {
     return this.enqueue(async () => {
-      const context = await buildAgentContext(this.deviceManager, this.memoryStore);
+      const scope = memoryScope ?? this.channel;
+      const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, scope, undefined, this.goalStore);
       const prompt = `${context}\n\nUser message: ${message}${BEFORE_ACTING_REMINDER}`;
-      return this.runQuery(prompt, "user_message", `User: ${message.slice(0, 80)}`, messageId);
+      return this.runQuery(prompt, "user_message", `User message: ${message}`, messageId, channelDisplayName);
     });
   }
 
@@ -53,15 +58,25 @@ export class ChatCoordinator {
     messageId?: string,
   ): Promise<string> {
     return this.enqueue(async () => {
-      const status = approved ? "approved" : "rejected";
-      const actionDesc = `${action.command} on ${action.deviceId} (${JSON.stringify(action.params)})`;
-      const context = await buildAgentContext(this.deviceManager, this.memoryStore);
-      const prompt = `${context}\n\nAPPROVAL RESULT: The user ${status} your proposed action: ${actionDesc}.${action.reason ? ` Your reason for proposing: ${action.reason}.` : ""}${userReason ? ` User's reason for rejecting: ${userReason}.` : ""}\n\n${approved ? "The action has already been executed. No further action needed — just acknowledge briefly." : "Reflect on why and store a brief lesson in memory so you avoid repeating the mistake."}`;
-      return this.runQuery(prompt, "approval_result", `Approval ${approved ? "granted" : "denied"}`, messageId);
+      const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, this.channel, undefined, this.goalStore);
+
+      // Resolve human-readable device name for the prompt
+      const device = await this.deviceManager.getDevice(action.deviceId);
+      const deviceLabel = device ? device.name : action.deviceId;
+      const actionDesc = `${action.command} on "${deviceLabel}"`;
+      const reasonClause = action.reason ? ` (${action.reason})` : "";
+
+      const userPrompt = approved
+        ? `APPROVAL RESULT: The user approved your proposed action — ${actionDesc}${reasonClause}. It has been executed successfully.`
+        : `APPROVAL RESULT: The user rejected your proposed action — ${actionDesc}${reasonClause}.${userReason ? ` User's reason: "${userReason}".` : ""}`;
+      const prompt = approved
+        ? `${context}\n\n${userPrompt} Acknowledge briefly.`
+        : `${context}\n\n${userPrompt} Reflect on why and store a brief lesson in memory so you avoid repeating the mistake.`;
+      return this.runQuery(prompt, "approval_result", userPrompt, messageId);
     });
   }
 
-  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", summary: string, externalMessageId?: string): Promise<string> {
+  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", userPrompt?: string, externalMessageId?: string, channelDisplayName?: string): Promise<string> {
     const messageId = externalMessageId ?? crypto.randomUUID();
     const turnId = crypto.randomUUID();
     this.currentTurnId = turnId;
@@ -73,10 +88,13 @@ export class ChatCoordinator {
         mcpPool: this.mcpPool,
         pluginManager: this.pluginManager,
         promptText,
+        userPrompt,
         trigger,
-        summary,
         messageId,
         sessionId: this.sessionId,
+        channel: this.channel,
+        channelDisplayName,
+        coordinatorType: "chat",
       });
       this.sessionId = sessionId;
       return result;
@@ -90,7 +108,7 @@ export class ChatCoordinator {
         costUsd: 0, inputTokens: 0, outputTokens: 0,
         cacheReadTokens: 0, cacheCreationTokens: 0,
         durationMs: 0, durationApiMs: 0, numTurns: 0,
-        totalCostUsd: 0, timestamp: Date.now(),
+        totalCostUsd: 0, turnId, timestamp: Date.now(),
       });
 
       this.eventBus.emit("chat:stream_end", {

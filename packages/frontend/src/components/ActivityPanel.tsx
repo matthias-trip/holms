@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import {
   MessageCircle, Radar, Clock, Eye, CheckCircle2, XCircle, Zap,
-  ListFilter, Check, X, Brain, ChevronRight, AlertCircle, Crosshair,
+  ListFilter, Check, X, Brain, ChevronRight, ChevronDown, AlertCircle, Crosshair,
 } from "lucide-react";
-import { Card, CardBody, Chip, Button } from "@heroui/react";
+import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { AgentActivity, TurnTrigger, TriageLane } from "@holms/shared";
 import { humanizeToolUse, relativeTime } from "../utils/humanize";
@@ -58,8 +58,8 @@ const TRIGGER_CONFIG: Record<TurnTrigger, { icon: React.ReactNode; label: string
     color: "var(--warn)",
     icon: <Radar size={14} />,
   },
-  schedule: {
-    label: "Schedule",
+  automation: {
+    label: "Automation",
     color: "var(--info)",
     icon: <Clock size={14} />,
   },
@@ -82,6 +82,11 @@ const TRIGGER_CONFIG: Record<TurnTrigger, { icon: React.ReactNode; label: string
     label: "Suggestions",
     color: "#94a3b8",
     icon: <Zap size={14} />,
+  },
+  onboarding: {
+    label: "Onboarding",
+    color: "var(--accent-9)",
+    icon: <Eye size={14} />,
   },
 };
 
@@ -282,7 +287,9 @@ function TurnCard({
   const turnStart = turn.activities.find((a) => a.type === "turn_start");
   const data = (turnStart?.data ?? {}) as Record<string, unknown>;
   const trigger = (data.trigger as TurnTrigger) ?? "proactive";
-  const summary = (data.summary as string) ?? "Agent processing";
+  const channel = data.channel as string | undefined;
+  const channelDisplayName = data.channelDisplayName as string | undefined;
+  const channelLabel = channelDisplayName ?? (channel && channel !== "web:default" ? channel : undefined);
   const config = TRIGGER_CONFIG[trigger] ?? TRIGGER_CONFIG.proactive;
   const firstTs = turn.activities[0]?.timestamp ?? Date.now();
   const resultActivity = turn.activities.find((a) => a.type === "result");
@@ -335,7 +342,12 @@ function TurnCard({
         </span>
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm truncate" style={{ color: "var(--gray-12)" }}>{summary}</p>
+          <p className="text-sm truncate" style={{ color: "var(--gray-12)" }}>
+            {channelLabel && (
+              <span className="text-xs font-normal mr-1.5" style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}>{channelLabel}</span>
+            )}
+            {config.label}
+          </p>
 
           {isProcessing && currentAction && (
             <div className="flex items-center gap-1 mt-1">
@@ -425,15 +437,14 @@ function TurnCard({
           </div>
 
           <div className="pl-5 mt-2 pt-2" style={{ borderTop: "1px solid var(--gray-a3)" }}>
-            <Button
-              variant="light"
-              color="default"
-              size="sm"
-              onPress={(e) => { onToggleRaw(); }}
-              style={{ fontFamily: "var(--font-mono)", fontSize: "10px" }}
+            <button
+              onClick={() => onToggleRaw()}
+              className="flex items-center gap-1 text-xs cursor-pointer"
+              style={{ color: "var(--gray-9)", background: "none", border: "none", padding: 0 }}
             >
+              {showRaw ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
               {showRaw ? "Hide raw" : "Show raw"}
-            </Button>
+            </button>
             {showRaw && (
               <pre
                 className="mt-2 p-3 rounded-lg overflow-x-auto text-[10px]"
@@ -700,6 +711,7 @@ const LANE_CONFIG: Record<TriageLane, { color: string; icon: React.ReactNode; la
 };
 
 function TriageClassifyRow({ activity }: { activity: AgentActivity }) {
+  const [expanded, setExpanded] = useState(false);
   const d = activity.data as Record<string, unknown>;
   const lane = (d.lane as TriageLane) ?? "batched";
   const deviceId = String(d.deviceId ?? "");
@@ -707,67 +719,110 @@ function TriageClassifyRow({ activity }: { activity: AgentActivity }) {
   const reason = String(d.reason ?? "");
   const ruleId = d.ruleId as string | null | undefined;
   const deviceName = d.deviceName ? String(d.deviceName) : undefined;
-  const room = d.room ? String(d.room) : undefined;
+  const room = d.area ? String(d.area) : undefined;
   const config = LANE_CONFIG[lane];
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-xl animate-fade-in"
+      className="rounded-xl animate-fade-in"
       style={{
         background: `color-mix(in srgb, ${config.color} 2%, var(--color-background))`,
         border: `1px solid color-mix(in srgb, ${config.color} 6%, var(--gray-a5))`,
       }}
     >
-      <span className="flex-shrink-0" style={{ color: config.color }}>
-        {config.icon}
-      </span>
-
-      <Chip
-        variant="flat"
-        size="sm"
-        style={{
-          background: `color-mix(in srgb, ${config.color} 12%, transparent)`,
-          color: config.color,
-          minWidth: "52px",
-          textAlign: "center",
-          justifyContent: "center",
-        }}
+      <div
+        className="flex items-center gap-3 px-4 py-2 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
       >
-        {config.label}
-      </Chip>
-
-      <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
-        {room && (
-          <>
-            <span style={{ color: "var(--gray-9)" }}>{room}</span>
-            <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
-          </>
-        )}
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
-          {deviceName ?? deviceId}
+        <span className="flex-shrink-0" style={{ color: config.color }}>
+          {config.icon}
         </span>
-        <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
-        <span style={{ color: "var(--gray-9)" }}>{eventType}</span>
-        {reason && reason !== "default" && (
-          <>
-            <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
-            <span style={{ color: "var(--gray-9)" }}>{reason}</span>
-          </>
+
+        <Chip
+          variant="flat"
+          size="sm"
+          style={{
+            background: `color-mix(in srgb, ${config.color} 12%, transparent)`,
+            color: config.color,
+            minWidth: "52px",
+            textAlign: "center",
+            justifyContent: "center",
+          }}
+        >
+          {config.label}
+        </Chip>
+
+        <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
+          {room && (
+            <>
+              <span style={{ color: "var(--gray-9)" }}>{room}</span>
+              <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+            </>
+          )}
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+            {deviceName ?? deviceId}
+          </span>
+          <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+          <span style={{ color: "var(--gray-9)" }}>{eventType}</span>
+          {reason && reason !== "default" && (
+            <>
+              <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+              <span style={{ color: "var(--gray-9)" }}>{reason}</span>
+            </>
+          )}
+        </span>
+
+        {ruleId ? (
+          <Chip variant="flat" color="primary" size="sm">rule</Chip>
+        ) : (
+          <Chip variant="flat" size="sm">default</Chip>
         )}
-      </span>
 
-      {ruleId ? (
-        <Chip variant="flat" color="primary" size="sm">rule</Chip>
-      ) : (
-        <Chip variant="flat" size="sm">default</Chip>
-      )}
+        <span
+          className="text-xs tabular-nums flex-shrink-0"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
+        >
+          {relativeTime(activity.timestamp)}
+        </span>
 
-      <span
-        className="text-xs tabular-nums flex-shrink-0"
-        style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
-      >
-        {relativeTime(activity.timestamp)}
-      </span>
+        <ChevronRight
+          size={14}
+          className="flex-shrink-0 transition-transform duration-200"
+          style={{
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            color: "var(--gray-8)",
+          }}
+        />
+      </div>
+
+      <div data-collapse={expanded ? "open" : "closed"}>
+        <div
+          className="px-4 pb-3 pt-2"
+          style={{ borderTop: "1px solid var(--gray-a3)" }}
+        >
+          <p className="text-xs leading-relaxed" style={{ color: "var(--gray-11)" }}>
+            {reason || "No reason provided"}
+          </p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {ruleId ? (
+              <Chip variant="flat" color="primary" size="sm">Matched rule</Chip>
+            ) : (
+              <Chip variant="flat" size="sm">Default</Chip>
+            )}
+            <span
+              className="text-xs"
+              style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
+            >
+              {deviceId}
+            </span>
+            {room && (
+              <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+                {room}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

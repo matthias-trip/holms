@@ -1,20 +1,65 @@
 // ── Device Types ──
 
-export type DeviceType =
-  | "light"
-  | "thermostat"
-  | "motion_sensor"
-  | "door_lock"
-  | "switch"
-  | "contact_sensor";
+// Open domain system — known domains + extensible via string
+export type DeviceDomain =
+  | "light" | "switch" | "climate" | "cover" | "lock"
+  | "sensor" | "binary_sensor" | "media_player" | "camera"
+  | "fan" | "vacuum" | "scene" | "button" | "number"
+  | "select" | "siren" | "valve" | "water_heater"
+  | "alarm_control_panel" | "humidifier" | "lawn_mower"
+  | "remote" | "calendar" | "device_tracker" | "person"
+  | "weather" | "update" | "event" | "image" | "sun"
+  | "zone" | "text" | "date" | "datetime" | "time" | "todo"
+  | (string & {}); // extensible — custom domains still work
+
+export interface ParamDescriptor {
+  name: string;
+  type: "number" | "string" | "boolean" | "enum";
+  required: boolean;
+  description?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  unit?: string;
+  options?: string[];
+  default?: unknown;
+}
+
+export interface CapabilityDescriptor {
+  name: string;
+  description: string;
+  params: ParamDescriptor[];
+}
+
+export interface DeviceArea {
+  id: string;
+  name: string;
+  floor?: string;
+}
+
+export interface DeviceAvailability {
+  online: boolean;
+  lastSeen: number;
+  source: string;
+}
+
+export interface DeviceMetadata {
+  manufacturer?: string;
+  model?: string;
+  swVersion?: string;
+  viaDevice?: string;
+}
 
 export interface Device {
   id: string;
   name: string;
-  type: DeviceType;
-  room: string;
+  domain: DeviceDomain;
+  area: DeviceArea;
   state: Record<string, unknown>;
-  capabilities: string[];
+  capabilities: CapabilityDescriptor[];
+  availability: DeviceAvailability;
+  metadata?: DeviceMetadata;
+  attributes?: Record<string, unknown>;
 }
 
 export interface DeviceEvent {
@@ -22,12 +67,21 @@ export interface DeviceEvent {
   type: string;
   data: Record<string, unknown>;
   timestamp: number;
+  domain?: DeviceDomain;
+  area?: string;
+  previousState?: Record<string, unknown>;
 }
 
 export interface DeviceCommand {
   deviceId: string;
   command: string;
   params: Record<string, unknown>;
+}
+
+export interface CommandResult {
+  success: boolean;
+  error?: string;
+  newState?: Record<string, unknown>;
 }
 
 // ── Memory Types ──
@@ -37,8 +91,10 @@ export interface Memory {
   content: string;
   retrievalCues: string;
   tags: string[];
-  type?: string;
   entityId?: string;
+  personId?: string;
+  pinned: boolean;
+  scope?: string;  // null/undefined = global (household), conversation ID = per-user
   createdAt: number;
   updatedAt: number;
 }
@@ -61,21 +117,82 @@ export interface MemoryReflectStats {
   recentGrowthRate: number;
 }
 
-// ── Schedule Types ──
+// ── Goal Types ──
 
-export type ScheduleRecurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
+export type GoalStatus = "active" | "paused" | "completed" | "abandoned";
+export type GoalEventType = "observation" | "action" | "milestone" | "status_change" | "attention" | "user_note";
 
-export interface Schedule {
+export interface Goal {
   id: string;
-  instruction: string;
-  hour: number;
-  minute: number;
-  recurrence: ScheduleRecurrence;
+  title: string;
+  description: string;
+  summary?: string;
+  nextSteps?: string;
+  status: GoalStatus;
+  needsAttention: boolean;
+  attentionReason?: string;
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+}
+
+export interface GoalEvent {
+  id: number;
+  goalId: string;
+  type: GoalEventType;
+  content: string;
+  timestamp: number;
+}
+
+export interface GoalWithEvents extends Goal {
+  events: GoalEvent[];
+}
+
+// ── Automation Types ──
+
+export type AutomationRecurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
+
+export interface TimeTrigger {
+  type: "time";
+  hour: number;           // 0-23
+  minute: number;         // 0-59
+  recurrence: AutomationRecurrence;
   dayOfWeek: number | null;
+}
+
+export interface DeviceEventTrigger {
+  type: "device_event";
+  deviceId: string;
+  eventType?: string;     // e.g. "motion_detected", "state_changed"
+  condition?: Record<string, unknown>; // optional data field matching
+}
+
+export interface StateThresholdTrigger {
+  type: "state_threshold";
+  deviceId: string;
+  stateKey: string;       // e.g. "currentTemp"
+  operator: "gt" | "lt" | "eq" | "gte" | "lte";
+  value: number;
+}
+
+export type AutomationTrigger = TimeTrigger | DeviceEventTrigger | StateThresholdTrigger;
+
+export interface AutomationDisplay {
+  conditions?: string[];  // ["Someone is home", "After sunset"]
+  actions?: string[];     // ["Dim living room to 20%", "Check weather forecast"]
+}
+
+export interface Automation {
+  id: string;
+  summary: string;
+  instruction: string;
+  trigger: AutomationTrigger;
+  display?: AutomationDisplay;
   enabled: boolean;
   createdAt: number;
   lastFiredAt: number | null;
-  nextFireAt: number;
+  nextFireAt: number | null;  // null for non-time triggers
+  channel: string | null;
 }
 
 // ── Reflex Types ──
@@ -84,7 +201,7 @@ export interface ReflexTrigger {
   deviceId?: string;
   eventType?: string;
   condition?: Record<string, unknown>;
-  scheduleId?: string;
+  automationId?: string;
 }
 
 export interface ReflexAction {
@@ -115,6 +232,9 @@ export interface PendingApproval {
   command: string;
   params: Record<string, unknown>;
   reason: string;
+  message: string;
+  approveLabel: string;
+  rejectLabel: string;
   createdAt: number;
   status: ApprovalStatus;
 }
@@ -127,6 +247,12 @@ export type ChatMessageStatus =
   | "approval_resolved"
   | null;
 
+export interface ChatMessageFeedback {
+  sentiment: "positive" | "negative";
+  comment?: string;
+  response?: string;  // agent's reflection after processing feedback
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -135,6 +261,7 @@ export interface ChatMessage {
   status?: ChatMessageStatus;
   approvalId?: string;
   channel?: string;
+  feedback?: ChatMessageFeedback;
 }
 
 /** JSON shape stored in content when status is approval_pending or approval_resolved */
@@ -144,16 +271,94 @@ export interface ApprovalMessageData {
   command: string;
   params: Record<string, unknown>;
   reason: string;
+  message?: string;
+  approveLabel?: string;
+  rejectLabel?: string;
   resolved?: { approved: boolean };
+}
+
+// ── Device Provider Types ──
+
+export type DeviceProviderStatus = "connected" | "disconnected" | "error" | "unconfigured";
+
+export interface DeviceProviderInfo {
+  id: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  status: DeviceProviderStatus;
+  statusMessage?: string;
+  configSchema: ChannelConfigField[];   // reuse same config field shape
+  config: Record<string, unknown>;      // masked passwords
+  deviceCount: number;
+  origin: "builtin" | "plugin";
 }
 
 // ── Channel Types ──
 
+export type ChannelStatus = "connected" | "disconnected" | "error" | "unconfigured" | "pairing";
+
+export interface ChannelCapabilities {
+  multiConversation: boolean;
+  approvalButtons: boolean;
+  richFormatting: boolean;
+  threads: boolean;
+  reactions: boolean;
+  fileUpload: boolean;
+}
+
+export interface ChannelConfigField {
+  key: string;
+  label: string;
+  type: "string" | "password" | "boolean" | "number";
+  required: boolean;
+  placeholder?: string;
+  description?: string;
+}
+
+export interface ChannelProviderInfo {
+  id: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  status: ChannelStatus;
+  statusMessage?: string;
+  capabilities: ChannelCapabilities;
+  configSchema: ChannelConfigField[];
+  config: Record<string, unknown>;
+  origin: "builtin" | "plugin";
+}
+
+export interface ChannelRoute {
+  id: string;
+  eventType: "approval" | "device_event" | "broadcast";
+  channelId: string;
+  enabled: boolean;
+  createdAt: number;
+}
+
 export interface ChannelConversationInfo {
   id: string;
   providerId: string;
+  providerName: string;
   displayName: string;
   topic?: string;
+}
+
+// ── People Types ──
+
+export interface PersonChannel {
+  channelId: string;
+  senderId?: string;
+}
+
+export interface Person {
+  id: string;
+  name: string;
+  primaryChannel?: string;
+  channels: PersonChannel[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 // ── Agent Activity Types ──
@@ -165,7 +370,10 @@ export type AgentActivityType =
   | "approval_pending" | "approval_resolved"
   | "reflex_fired"
   | "triage"
-  | "triage_classify";
+  | "triage_classify"
+  | "automation_event_fired"
+  | "cycle_feedback"
+  | "cycle_feedback_response";
 
 export interface AgentActivity {
   id: string;
@@ -178,7 +386,7 @@ export interface AgentActivity {
 
 // ── Turn / Agent Status Types ──
 
-export type TurnTrigger = "user_message" | "device_events" | "schedule" | "proactive" | "approval_result" | "outcome_feedback" | "suggestions";
+export type TurnTrigger = "user_message" | "device_events" | "automation" | "proactive" | "approval_result" | "outcome_feedback" | "suggestions" | "onboarding";
 
 export interface AgentStatus {
   agentId: string;
@@ -194,9 +402,9 @@ export type TriageLane = "immediate" | "batched" | "silent";
 
 export interface TriageCondition {
   deviceId?: string;
-  deviceType?: DeviceType;
+  deviceDomain?: DeviceDomain;
   eventType?: string;
-  room?: string;
+  area?: string;
   stateKey?: string;
   deltaThreshold?: number;
 }

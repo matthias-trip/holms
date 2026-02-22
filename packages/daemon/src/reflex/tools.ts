@@ -15,10 +15,10 @@ export function createReflexToolsServer(store: ReflexStore) {
             .record(z.string(), z.unknown())
             .optional()
             .describe("Additional conditions on event data"),
-          scheduleId: z
+          automationId: z
             .string()
             .optional()
-            .describe("Schedule ID to match — use for time-based reflexes that fire when a schedule triggers"),
+            .describe("Automation ID to match — use for reflexes that fire when an automation triggers"),
         })
         .describe("When to trigger this reflex"),
       action: z

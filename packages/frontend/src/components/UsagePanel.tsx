@@ -96,7 +96,7 @@ const TRIGGER_COLORS: Record<string, string> = {
   user_message: "var(--accent-9)",
   device_events: "var(--warm)",
   proactive: "#a78bfa",
-  schedule: "#34d399",
+  automation: "#34d399",
   approval_result: "#f472b6",
   outcome_feedback: "#fb923c",
   suggestions: "#94a3b8",
@@ -188,9 +188,9 @@ function fmtDuration(ms: number): string {
 
 // ── Summary Card ──
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({ label, value, sub, index }: { label: string; value: string; sub?: string; index?: number }) {
   return (
-    <Card className="flex-1 min-w-[140px]" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+    <Card className="flex-1 min-w-[140px] animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: `${(index ?? 0) * 50}ms` }}>
       <CardBody>
         <p className="text-xs mb-1" style={{ color: "var(--gray-9)" }}>{label}</p>
         <p className="text-xl font-bold" style={{ color: "var(--gray-12)" }}>{value}</p>
@@ -545,26 +545,30 @@ export default function UsagePanel() {
               <StatCard
                 label="Total Cost"
                 value={fmtCost(totals.cost)}
+                index={0}
               />
               <StatCard
                 label="Tokens"
                 value={fmt(totals.totalTokens)}
                 sub={`${fmt(totals.inputTokens)} in / ${fmt(totals.outputTokens)} out`}
+                index={1}
               />
               <StatCard
                 label="Cache Hit"
                 value={`${(totals.cacheHitRatio * 100).toFixed(1)}%`}
                 sub={`${fmt(totals.cacheReadTokens)} read / ${fmt(totals.cacheCreationTokens)} created`}
+                index={2}
               />
               <StatCard
                 label="Avg Duration"
                 value={fmtDuration(totals.avgDurationMs)}
                 sub={totals.avgDurationApiMs > 0 ? `API: ${fmtDuration(totals.avgDurationApiMs)}` : undefined}
+                index={3}
               />
             </div>
 
             {/* Token Breakdown */}
-            <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+            <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "200ms" }}>
               <CardBody>
                 <TokenBreakdownBar totals={totals} />
               </CardBody>
@@ -572,7 +576,7 @@ export default function UsagePanel() {
 
             {/* Model Cost Breakdown */}
             {modelStats.length > 0 && (
-              <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+              <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "250ms" }}>
                 <CardBody>
                   <ModelBreakdownBar stats={modelStats} />
                 </CardBody>
@@ -584,22 +588,22 @@ export default function UsagePanel() {
 
             {/* Charts Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+              <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "300ms" }}>
                 <CardBody>
                   <CostPerTurnChart metrics={filteredMetrics} />
                 </CardBody>
               </Card>
-              <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+              <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "350ms" }}>
                 <CardBody>
                   <CacheDonut ratio={totals.cacheHitRatio} />
                 </CardBody>
               </Card>
-              <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+              <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "400ms" }}>
                 <CardBody>
                   <TokensPerTurnChart metrics={filteredMetrics} />
                 </CardBody>
               </Card>
-              <Card style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)" }}>
+              <Card className="animate-fade-in" style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", animationDelay: "450ms" }}>
                 <CardBody>
                   <DurationChart metrics={filteredMetrics} />
                 </CardBody>

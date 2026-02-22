@@ -6,10 +6,14 @@ import { memoryRouter } from "./routers/memory.js";
 import { reflexRouter } from "./routers/reflex.js";
 import { chatRouter } from "./routers/chat.js";
 import { approvalRouter } from "./routers/approval.js";
-import { scheduleRouter } from "./routers/schedule.js";
+import { automationRouter } from "./routers/automation.js";
 import { agentsRouter } from "./routers/agents.js";
 import { pluginsRouter } from "./routers/plugins.js";
 import { channelsRouter } from "./routers/channels.js";
+import { deviceProvidersRouter } from "./routers/device-providers.js";
+import { peopleRouter } from "./routers/people.js";
+import { triageRouter } from "./routers/triage.js";
+import { goalsRouter } from "./routers/goals.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -20,10 +24,14 @@ export const appRouter = t.router({
   reflex: reflexRouter,
   chat: chatRouter,
   approval: approvalRouter,
-  schedule: scheduleRouter,
+  automation: automationRouter,
   agents: agentsRouter,
   plugins: pluginsRouter,
   channels: channelsRouter,
+  deviceProviders: deviceProvidersRouter,
+  people: peopleRouter,
+  triage: triageRouter,
+  goals: goalsRouter,
 });
 
 export type AppRouter = typeof appRouter;

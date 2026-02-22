@@ -113,15 +113,13 @@ export class TriageEngine {
     if (condition.deviceId && condition.deviceId !== event.deviceId) return false;
     if (condition.eventType && condition.eventType !== event.type) return false;
 
-    // For deviceType and room matching, we need device info
-    if (condition.deviceType || condition.room) {
-      // Use sync approach — get device info from the event data if available
-      // The device manager is async, so for fast classification we check event data
-      const deviceType = event.data.deviceType as string | undefined;
-      const room = event.data.room as string | undefined;
+    // For deviceDomain and area matching, use event fields or fall back to event data
+    if (condition.deviceDomain || condition.area) {
+      const domain = event.domain ?? (event.data.domain as string | undefined);
+      const area = event.area ?? (event.data.area as string | undefined);
 
-      if (condition.deviceType && deviceType !== condition.deviceType) return false;
-      if (condition.room && room !== condition.room) return false;
+      if (condition.deviceDomain && domain !== condition.deviceDomain) return false;
+      if (condition.area && area !== condition.area) return false;
     }
 
     // Delta threshold matching
@@ -191,8 +189,8 @@ export class TriageEngine {
     let score = 0;
     if (condition.deviceId) score += 8;
     if (condition.eventType) score += 4;
-    if (condition.deviceType) score += 2;
-    if (condition.room) score += 1;
+    if (condition.deviceDomain) score += 2;
+    if (condition.area) score += 1;
     if (condition.stateKey) score += 1;
     return score;
   }
@@ -211,7 +209,7 @@ export class TriageEngine {
       ruleId,
       reason,
       deviceName: device?.name,
-      room: device?.room,
+      area: device?.area.name,
       timestamp: Date.now(),
     });
   }

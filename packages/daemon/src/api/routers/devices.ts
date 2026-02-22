@@ -17,6 +17,15 @@ export const devicesRouter = t.router({
       return ctx.deviceManager.getDevice(input.id);
     }),
 
+  areas: t.procedure.query(async ({ ctx }) => {
+    const areas = await ctx.deviceManager.getAreas();
+    const devices = await ctx.deviceManager.getAllDevices();
+    return areas.map((area) => ({
+      ...area,
+      deviceCount: devices.filter((d) => d.area.id === area.id).length,
+    }));
+  }),
+
   command: t.procedure
     .input(
       z.object({

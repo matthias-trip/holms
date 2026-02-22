@@ -1,4 +1,4 @@
-import type { ChannelProvider, ChannelConversation, InboundMessage } from "./types.js";
+import type { ChannelProvider, ChannelConversation, InboundMessage } from "../types.js";
 
 /**
  * Built-in web provider. The actual message delivery is handled by tRPC

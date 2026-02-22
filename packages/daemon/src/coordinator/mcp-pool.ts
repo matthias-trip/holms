@@ -1,42 +1,32 @@
-import { createDeviceQueryServer, createDeviceCommandServer } from "../tools/device-tools.js";
-import { createMemoryToolsServer } from "../memory/tools.js";
-import { createReflexToolsServer } from "../reflex/tools.js";
-import { createApprovalToolsServer } from "./approval-queue.js";
-import { createScheduleToolsServer } from "../schedule/tools.js";
-import { createTriageToolsServer } from "../triage/tools.js";
-import type { DeviceManager } from "../devices/manager.js";
-import type { MemoryStore } from "../memory/store.js";
-import type { ReflexStore } from "../reflex/store.js";
-import type { ApprovalQueue } from "./approval-queue.js";
-import type { ScheduleStore } from "../schedule/store.js";
-import type { TriageStore } from "../triage/store.js";
+import type { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 
-type McpServer = ReturnType<typeof createDeviceQueryServer>;
+type McpServer = ReturnType<typeof createSdkMcpServer>;
+type McpServerFactory = () => McpServer;
 
-export interface McpServerPool {
-  servers: Record<string, McpServer>;
-  allowedTools: string[];
-}
+/**
+ * Pool of MCP server factories. Each `query()` call must get fresh server
+ * instances because the SDK's McpServer holds a single transport — concurrent
+ * queries sharing the same instance will hijack each other's transport and hang.
+ */
+export class McpServerPool {
+  private _factories: Record<string, McpServerFactory> = {};
+  private _allowedTools: string[] = [];
 
-export function createMcpServerPool(
-  deviceManager: DeviceManager,
-  memoryStore: MemoryStore,
-  reflexStore: ReflexStore,
-  approvalQueue: ApprovalQueue,
-  scheduleStore: ScheduleStore,
-  triageStore: TriageStore,
-): McpServerPool {
-  const servers: Record<string, McpServer> = {
-    "device-query": createDeviceQueryServer(deviceManager, memoryStore),
-    "device-command": createDeviceCommandServer(deviceManager),
-    memory: createMemoryToolsServer(memoryStore),
-    reflex: createReflexToolsServer(reflexStore),
-    approval: createApprovalToolsServer(approvalQueue),
-    schedule: createScheduleToolsServer(scheduleStore),
-    triage: createTriageToolsServer(triageStore),
-  };
+  register(name: string, factory: McpServerFactory): void {
+    this._factories[name] = factory;
+    this._allowedTools.push(`mcp__${name}__*`);
+  }
 
-  const allowedTools = Object.keys(servers).map((name) => `mcp__${name}__*`);
+  /** Create a fresh set of MCP server instances (one per registered name). */
+  get servers(): Record<string, McpServer> {
+    const instances: Record<string, McpServer> = {};
+    for (const [name, factory] of Object.entries(this._factories)) {
+      instances[name] = factory();
+    }
+    return instances;
+  }
 
-  return { servers, allowedTools };
+  get allowedTools(): string[] {
+    return [...this._allowedTools];
+  }
 }

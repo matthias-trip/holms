@@ -1,4 +1,4 @@
-import { Lock } from "lucide-react";
+import { Lock, Puzzle } from "lucide-react";
 import { Switch, Chip, Card, CardBody, Button } from "@heroui/react";
 import { trpc } from "../trpc";
 
@@ -21,8 +21,8 @@ export default function PluginsPanel() {
   });
 
   return (
-    <div className="h-full flex flex-col p-6" style={{ background: "var(--gray-2)" }}>
-      <div className="flex justify-between items-start mb-5">
+    <div className="h-full flex flex-col">
+      <div className="flex-shrink-0 px-6 pt-6 pb-4 flex justify-between items-start">
         <div>
           <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Plugins</h3>
           <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
@@ -40,7 +40,7 @@ export default function PluginsPanel() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto space-y-2">
+      <div className="flex-1 overflow-auto px-6 pb-6 space-y-2">
         {!plugins || plugins.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
@@ -65,9 +65,25 @@ export default function PluginsPanel() {
             >
               <CardBody>
                 <div className="flex justify-between gap-3">
+                  {/* Icon anchor */}
+                  <div
+                    className="flex-shrink-0 flex items-center justify-center rounded-lg"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      background: "var(--gray-a3)",
+                      color: plugin.enabled ? "var(--accent-9)" : "var(--gray-8)",
+                      marginTop: 2,
+                    }}
+                  >
+                    <Puzzle size={16} />
+                  </div>
+
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-base font-medium" style={{ color: "var(--gray-12)" }}>{plugin.name}</span>
+                    <span className="text-base font-medium" style={{ color: "var(--gray-12)" }}>{plugin.name}</span>
+
+                    {/* Metadata row */}
+                    <div className="flex items-center gap-2 mt-1 mb-2">
                       <Chip variant="flat" color="primary" size="sm">
                         v{plugin.version}
                       </Chip>
@@ -81,12 +97,16 @@ export default function PluginsPanel() {
                     </div>
 
                     {plugin.description && (
-                      <p className="text-sm mb-2" style={{ lineHeight: "1.6", color: "var(--gray-12)" }}>
+                      <p className="text-sm mb-2" style={{ lineHeight: "1.6", color: "var(--gray-10)" }}>
                         {plugin.description}
                       </p>
                     )}
 
-                    <div className="flex items-center gap-1 flex-wrap">
+                    {/* Capability chips with divider */}
+                    <div
+                      className="flex items-center gap-1 flex-wrap mt-2 pt-2"
+                      style={{ borderTop: "1px solid var(--gray-a3)" }}
+                    >
                       {plugin.capabilities.map((cap) => (
                         <Chip key={cap} variant="bordered" size="sm">
                           {cap}

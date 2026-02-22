@@ -6,20 +6,33 @@ import type { MemoryStore } from "../memory/store.js";
 export function createDeviceQueryServer(manager: DeviceManager, memoryStore: MemoryStore) {
   const listDevices = tool(
     "list_devices",
-    "List all devices in the home with their current state and any entity notes",
+    "List all devices in the home. Returns a compact summary per device: id, name, domain, area, state, availability, and capability names (no param schemas). Pinned memories for each device are shown inline. Devices with hasAttributes=true carry additional provider data (e.g. hourly price arrays, forecast lists) — call get_device_state to see them. Use get_device_state for full capability details before commanding a specific device.",
     {},
     async () => {
       const devices = await manager.getAllDevices();
-      const notes = memoryStore.getEntityNotes();
-      const devicesWithNotes = devices.map((d) => {
-        const note = notes.get(d.id);
-        return note ? { ...d, note: note.content } : d;
+      const pinnedByEntity = memoryStore.getPinnedByEntity();
+      const compact = devices.map((d) => {
+        const entry: Record<string, unknown> = {
+          id: d.id,
+          name: d.name,
+          domain: d.domain,
+          area: d.area.name,
+          state: d.state,
+          online: d.availability.online,
+          capabilities: d.capabilities.map((c) => c.name),
+        };
+        if (d.attributes) entry.hasAttributes = true;
+        const pinned = pinnedByEntity.get(d.id);
+        if (pinned && pinned.length > 0) {
+          entry.notes = pinned.map((m) => m.content);
+        }
+        return entry;
       });
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(devicesWithNotes, null, 2),
+            text: JSON.stringify(compact, null, 2),
           },
         ],
       };
@@ -28,7 +41,7 @@ export function createDeviceQueryServer(manager: DeviceManager, memoryStore: Mem
 
   const getDeviceState = tool(
     "get_device_state",
-    "Get the current state of a specific device by ID, including any entity note",
+    "Get full detail for a specific device including capability param schemas (types, ranges, units), metadata, extra provider attributes (e.g. hourly price arrays, forecast data), and any pinned memories. Call this before commanding a device to know valid params, and whenever list_devices shows hasAttributes=true.",
     {
       deviceId: z.string().describe("The device ID to query"),
     },
@@ -42,8 +55,10 @@ export function createDeviceQueryServer(manager: DeviceManager, memoryStore: Mem
           isError: true,
         };
       }
-      const note = memoryStore.findByEntityId(args.deviceId);
-      const result = note ? { ...device, note: note.content } : device;
+      const pinned = memoryStore.getPinnedMemories({ entityId: args.deviceId });
+      const result = pinned.length > 0
+        ? { ...device, notes: pinned.map((m) => m.content) }
+        : device;
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(result, null, 2) },
@@ -52,103 +67,92 @@ export function createDeviceQueryServer(manager: DeviceManager, memoryStore: Mem
     },
   );
 
-  const annotateEntity = tool(
-    "annotate_entity",
-    "Set a short factual annotation (max 300 chars) on a device — what it is, what it controls, known quirks. Overwrites any previous note. Empty string clears.",
+  const getDeviceStates = tool(
+    "get_device_states",
+    "Get full detail for multiple devices at once. Use instead of calling get_device_state repeatedly. Returns an array of device objects with capability param schemas, metadata, and pinned memories.",
     {
-      entity_id: z.string().describe("The device ID to annotate"),
-      notes: z.string().max(300).describe("The annotation text (max 300 chars). Empty string clears the note."),
+      deviceIds: z.array(z.string()).describe("List of device IDs to query"),
     },
     async (args) => {
-      const device = await manager.getDevice(args.entity_id);
-      if (!device) {
-        return {
-          content: [
-            { type: "text" as const, text: `Device ${args.entity_id} not found` },
-          ],
-          isError: true,
-        };
-      }
-
-      const existing = memoryStore.findByEntityId(args.entity_id);
-
-      // Empty notes = clear
-      if (args.notes === "") {
-        if (existing) {
-          memoryStore.forget(existing.id);
-          return {
-            content: [
-              { type: "text" as const, text: `Cleared entity note for ${device.name} (${args.entity_id})` },
-            ],
-          };
-        }
-        return {
-          content: [
-            { type: "text" as const, text: `No entity note exists for ${device.name} (${args.entity_id})` },
-          ],
-        };
-      }
-
-      // Build retrieval cues from device info + note keywords
-      const noteKeywords = args.notes.split(/\s+/).slice(0, 8).join(" ");
-      const retrievalCues = `${device.name} ${device.room} ${device.type} entity note identity ${noteKeywords}`;
-
-      if (existing) {
-        // Upsert — rewrite existing note
-        await memoryStore.rewrite(existing.id, {
-          content: args.notes,
-          retrievalCues,
-          tags: ["entity_note"],
-        });
-        return {
-          content: [
-            { type: "text" as const, text: `Updated entity note for ${device.name} (${args.entity_id}): "${args.notes}"` },
-          ],
-        };
-      } else {
-        // Create new note
-        await memoryStore.write(args.notes, retrievalCues, ["entity_note"], args.entity_id, "entity_note");
-        return {
-          content: [
-            { type: "text" as const, text: `Created entity note for ${device.name} (${args.entity_id}): "${args.notes}"` },
-          ],
-        };
-      }
+      const results = await Promise.all(
+        args.deviceIds.map(async (id) => {
+          const device = await manager.getDevice(id);
+          if (!device) return { deviceId: id, error: "not found" };
+          const pinned = memoryStore.getPinnedMemories({ entityId: id });
+          return pinned.length > 0
+            ? { ...device, notes: pinned.map((m) => m.content) }
+            : device;
+        }),
+      );
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(results, null, 2) },
+        ],
+      };
     },
   );
 
-  const queryEntityNotes = tool(
-    "query_entity_notes",
-    "Search entity annotations by semantic similarity. Use to find devices related to a concept (e.g., 'heating', 'security', 'entrance area'). Returns matching device annotations ranked by relevance.",
-    {
-      query: z.string().describe("Semantic search query"),
-      limit: z.number().optional().default(10).describe("Max results to return"),
-    },
-    async (args) => {
-      const results = await memoryStore.queryEntityNotes(args.query, args.limit);
+  const listAreas = tool(
+    "list_areas",
+    "List all areas (rooms/zones) in the home with device counts per area. Useful for spatial reasoning (e.g., 'turn off everything downstairs').",
+    {},
+    async () => {
+      const areas = await manager.getAreas();
+      const devices = await manager.getAllDevices();
+      const result = areas.map((area) => ({
+        ...area,
+        deviceCount: devices.filter((d) => d.area.id === area.id).length,
+      }));
       return {
         content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              results.map((r) => ({
-                entityId: r.entityId,
-                note: r.content,
-                similarity: r.similarity,
-              })),
-              null,
-              2,
-            ),
-          },
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
         ],
+      };
+    },
+  );
+
+  const listAvailableEntities = tool(
+    "list_available_entities",
+    "List ALL entities from Home Assistant (unfiltered). Returns entity_id, friendly_name, domain, area_name, and state for every entity. Used during onboarding to discover the full home inventory before selecting which entities to track.",
+    {},
+    async () => {
+      const entities = manager.getAvailableEntities("home_assistant");
+      if (!entities) {
+        return {
+          content: [{ type: "text" as const, text: "No Home Assistant provider connected" }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(entities, null, 2) }],
+      };
+    },
+  );
+
+  const setEntityFilter = tool(
+    "set_entity_filter",
+    "Set the entity filter for Home Assistant — determines which entities Holms tracks and receives events from. Pass the full list of entity_ids to track. Used during onboarding after analyzing available entities.",
+    {
+      entityIds: z.array(z.string()).describe("List of HA entity_ids to track (e.g. ['light.living_room', 'sensor.temperature'])"),
+    },
+    async (args) => {
+      const ok = manager.setEntityFilter("home_assistant", args.entityIds);
+      if (!ok) {
+        return {
+          content: [{ type: "text" as const, text: "No Home Assistant provider connected" }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: `Entity filter set: ${args.entityIds.length} entities tracked` }],
       };
     },
   );
 
   return createSdkMcpServer({
     name: "device-query",
-    version: "1.0.0",
-    tools: [listDevices, getDeviceState, annotateEntity, queryEntityNotes],
+    version: "2.0.0",
+    tools: [listDevices, getDeviceState, getDeviceStates, listAreas, listAvailableEntities, setEntityFilter],
   });
 }
 

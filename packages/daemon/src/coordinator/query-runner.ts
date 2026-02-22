@@ -5,8 +5,11 @@ import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
+import type { PeopleStore } from "../people/store.js";
+import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { buildSystemPrompt } from "./system-prompt.js";
+import { runWithChannel } from "./query-context.js";
 
 // ── Shared constants ──
 
@@ -15,7 +18,7 @@ export const DISALLOWED_TOOLS = [
   "WebSearch", "WebFetch", "NotebookEdit",
 ];
 
-export const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command, you MUST follow the Before Acting protocol — use memory_query to search for relevant memories (by device name, room, device ID), check for preference constraints, and obey them. Use propose_action if any memory requires approval, if the action is novel, security-sensitive, or uncertain.`;
+export const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command → memory_query first (device name, room, ID). Obey preference constraints. Use propose_action if required by memory, novel, security-sensitive, or uncertain.`;
 
 // ── Prompt helper ──
 
@@ -77,21 +80,72 @@ export function extractResultMetrics(event: Record<string, unknown>): QueryMetri
 export async function buildAgentContext(
   deviceManager: DeviceManager,
   memoryStore: MemoryStore,
+  peopleStore?: PeopleStore,
+  memoryScope?: string,
+  opts?: { onboarding?: boolean },
+  goalStore?: GoalStore,
 ): Promise<string> {
   const devices = await deviceManager.getAllDevices();
-  const entityNotes = memoryStore.getEntityNotes();
+  const pinnedByEntity = memoryStore.getPinnedByEntity();
   const deviceSummary = devices
     .map((d) => {
-      const line = `${d.name} (${d.id}): ${JSON.stringify(d.state)}`;
-      const note = entityNotes.get(d.id);
-      return note ? `${line}\n  note: "${note.content}"` : line;
+      const areaStr = d.area.floor ? `${d.area.name}, ${d.area.floor}` : d.area.name;
+      const availStr = d.availability.online ? "online" : "OFFLINE";
+      const caps = d.capabilities.map((c) => c.name).join(", ");
+      const stateStr = Object.keys(d.state).length > 0
+        ? ` | ${JSON.stringify(d.state)}`
+        : "";
+      let line = `${d.name} (${d.id}) [${d.domain}, ${areaStr}, ${availStr}] | ${caps}${stateStr}`;
+      const pinned = pinnedByEntity.get(d.id);
+      if (pinned && pinned.length > 0) {
+        for (const m of pinned) {
+          line += `\n  note: "${m.content}"`;
+        }
+      }
+      return line;
     })
     .join("\n");
+
+  let peopleSummary: string | undefined;
+  if (peopleStore) {
+    const people = peopleStore.getAll();
+    if (people.length > 0) {
+      const pinnedByPerson = memoryStore.getPinnedByPerson();
+      peopleSummary = people
+        .map((p) => {
+          const notify = p.primaryChannel ? `notify via: ${p.primaryChannel}` : "no notification channel";
+          const parts = [`${p.name} [${p.id}]`, notify];
+          const pinned = pinnedByPerson.get(p.id);
+          if (pinned && pinned.length > 0) {
+            const facts = pinned.map((m) => m.content).join("; ");
+            parts.push(facts);
+          }
+          return parts.join(" | ");
+        })
+        .join("\n");
+    }
+  }
+
+  let goalsSummary: string | undefined;
+  if (goalStore) {
+    const activeGoals = goalStore.list("active");
+    if (activeGoals.length > 0) {
+      goalsSummary = activeGoals
+        .map((g) => {
+          const attn = g.needsAttention ? ` [NEEDS ATTENTION: ${g.attentionReason ?? "flagged"}]` : "";
+          return `${g.title} (${g.id})${attn}`;
+        })
+        .join("\n");
+    }
+  }
 
   return buildSystemPrompt({
     currentTime: new Date().toLocaleString(),
     deviceSummary,
-    recentEvents: "See device events below",
+    peopleSummary,
+    goalsSummary,
+    memoryScope,
+    onboarding: opts?.onboarding,
   });
 }
 
@@ -103,11 +157,16 @@ export interface ToolQueryOptions {
   mcpPool: McpServerPool;
   pluginManager?: PluginManager;
   promptText: string;
+  /** Short user-facing prompt (shown in activity view). Falls back to promptText if omitted. */
+  userPrompt?: string;
   trigger: TurnTrigger;
-  summary: string;
+  proactiveType?: string;
   messageId: string;
   /** Pass null for ephemeral (fresh session), or a string to resume a stateful session */
   sessionId: string | null;
+  channel?: string;
+  channelDisplayName?: string;
+  coordinatorType?: string;
 }
 
 export interface ToolQueryResult {
@@ -118,18 +177,26 @@ export interface ToolQueryResult {
 }
 
 export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryResult> {
+  return runWithChannel(opts.channel, () => runToolQueryInner(opts));
+}
+
+async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResult> {
   const turnId = crypto.randomUUID();
 
   opts.eventBus.emit("agent:turn_start", {
     turnId,
     trigger: opts.trigger,
-    summary: opts.summary,
+    proactiveType: opts.proactiveType,
     model: opts.config.models.coordinator,
+    channel: opts.channel,
+    channelDisplayName: opts.channelDisplayName,
+    coordinatorType: opts.coordinatorType,
     timestamp: Date.now(),
   });
 
   opts.eventBus.emit("agent:thinking", {
-    prompt: opts.promptText.slice(0, 200) + "...",
+    prompt: opts.userPrompt ?? opts.promptText,
+    turnId,
     timestamp: Date.now(),
   });
 
@@ -192,6 +259,7 @@ export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryRes
             opts.eventBus.emit("agent:tool_use", {
               tool: toolName,
               input: b.input,
+              turnId,
               timestamp: Date.now(),
             });
 
@@ -202,6 +270,7 @@ export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryRes
               opts.eventBus.emit("deep_reason:start", {
                 problem: input?.problem ?? "",
                 model: opts.config.models.deepReason,
+                turnId,
                 timestamp: Date.now(),
               });
             }
@@ -228,6 +297,7 @@ export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryRes
         durationApiMs: 0,
         numTurns: 0,
         totalCostUsd: 0,
+        turnId,
         timestamp: Date.now(),
       });
       deepReasonToolUseId = null;
@@ -240,20 +310,22 @@ export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryRes
         result = `Error: ${(msg.error as string) ?? "Unknown error"}`;
       }
 
-      const summaryMatch = result.match(/<!--\s*summary:\s*(.+?)\s*-->/);
-      const cycleSummary = summaryMatch?.[1] ?? null;
+      // Extract **Summary:** line if present
+      let summary: string | undefined;
+      const summaryMatch = result.match(/^\*\*Summary:\*\*\s*(.+)/m);
       if (summaryMatch) {
-        result = result.replace(summaryMatch[0], "").trimEnd();
+        summary = summaryMatch[1].trim();
       }
 
       const metrics = extractResultMetrics(msg);
 
       opts.eventBus.emit("agent:result", {
         result,
-        summary: cycleSummary,
+        summary,
         model: opts.config.models.coordinator,
         ...metrics,
         totalCostUsd: metrics.costUsd,
+        turnId,
         timestamp: Date.now(),
       });
     }
@@ -292,7 +364,6 @@ export interface TrackedQueryOptions {
   eventBus: EventBus;
   model: string;
   trigger: TurnTrigger;
-  summary: string;
   promptText: string;
   systemPrompt: string;
   maxTurns?: number;
@@ -306,9 +377,14 @@ export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ resu
   opts.eventBus.emit("agent:turn_start", {
     turnId,
     trigger: opts.trigger,
-    summary: opts.summary,
     model: opts.model,
     timestamp: startTime,
+  });
+
+  opts.eventBus.emit("agent:thinking", {
+    prompt: opts.promptText,
+    turnId,
+    timestamp: Date.now(),
   });
 
   let resultText = "";

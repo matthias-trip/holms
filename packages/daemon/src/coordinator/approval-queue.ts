@@ -89,6 +89,15 @@ export function createApprovalToolsServer(queue: ApprovalQueue) {
       reason: z
         .string()
         .describe("Why you want to take this action"),
+      message: z
+        .string()
+        .describe("A user-facing message describing what you want to do and why. Write in the same language as the conversation."),
+      approveLabel: z
+        .string()
+        .describe("Short label for the approve button, written in the conversation language. Be contextual, e.g. 'Yes, open gate' instead of generic 'Approve'."),
+      rejectLabel: z
+        .string()
+        .describe("Short label for the reject button, written in the conversation language. Be contextual, e.g. 'No, keep closed' instead of generic 'Reject'."),
     },
     async (args) => {
       const result = queue.propose({
@@ -96,6 +105,9 @@ export function createApprovalToolsServer(queue: ApprovalQueue) {
         command: args.command,
         params: args.params,
         reason: args.reason,
+        message: args.message,
+        approveLabel: args.approveLabel,
+        rejectLabel: args.rejectLabel,
       });
 
       return {
@@ -109,9 +121,42 @@ export function createApprovalToolsServer(queue: ApprovalQueue) {
     },
   );
 
+  const resolveApproval = tool(
+    "resolve_approval",
+    "Resolve a pending approval based on the user's conversational response. Use this when a user replies to an approval request with text like 'yes', 'do it', 'no thanks', etc. You know the approval ID from the propose_action result.",
+    {
+      approvalId: z.string().describe("The approval ID returned by propose_action"),
+      approved: z.boolean().describe("Whether the user approved (true) or rejected (false) the action"),
+      reason: z.string().optional().describe("Optional reason for rejection"),
+    },
+    async (args) => {
+      if (args.approved) {
+        const result = await queue.approve(args.approvalId);
+        if (!result) {
+          return {
+            content: [{ type: "text" as const, text: `Approval ${args.approvalId} not found or already resolved.` }],
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: `Approved and executed: ${result.command} on ${result.deviceId}.` }],
+        };
+      } else {
+        const result = queue.reject(args.approvalId, args.reason);
+        if (!result) {
+          return {
+            content: [{ type: "text" as const, text: `Approval ${args.approvalId} not found or already resolved.` }],
+          };
+        }
+        return {
+          content: [{ type: "text" as const, text: `Rejected: ${result.command} on ${result.deviceId}.${args.reason ? ` Reason: ${args.reason}` : ""}` }],
+        };
+      }
+    },
+  );
+
   return createSdkMcpServer({
     name: "approval",
     version: "1.0.0",
-    tools: [proposeAction],
+    tools: [proposeAction, resolveApproval],
   });
 }

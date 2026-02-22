@@ -9,6 +9,9 @@ interface MemoryRow {
   tags: string;
   type: string;
   entity_id: string | null;
+  person_id: string | null;
+  pinned: number;
+  scope: string | null;
   embedding: Buffer | null;
   created_at: number;
   updated_at: number;
@@ -41,6 +44,9 @@ export class MemoryStore {
           tags TEXT NOT NULL DEFAULT '[]',
           type TEXT NOT NULL DEFAULT 'memory',
           entity_id TEXT,
+          person_id TEXT,
+          pinned INTEGER NOT NULL DEFAULT 0,
+          scope TEXT,
           embedding BLOB,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
@@ -63,27 +69,50 @@ export class MemoryStore {
     if (!colNames.has("entity_id")) {
       db.exec(`ALTER TABLE memories ADD COLUMN entity_id TEXT`);
     }
+    if (!colNames.has("scope")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN scope TEXT`);
+    }
+    if (!colNames.has("person_id")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN person_id TEXT`);
+    }
+    if (!colNames.has("pinned")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+    }
+
+    // Migrate existing entity_note rows → pinned memories
+    db.exec(`UPDATE memories SET pinned = 1 WHERE type = 'entity_note' AND pinned = 0`);
 
     // Create indexes
     db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_entity_id ON memories(entity_id) WHERE entity_id IS NOT NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_person_id ON memories(person_id) WHERE person_id IS NOT NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_pinned ON memories(pinned) WHERE pinned = 1`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_scope ON memories(scope) WHERE scope IS NOT NULL`);
 
     const embedder = await createEmbeddingPipeline(hfCacheDir);
     return new MemoryStore(db, embedder);
   }
 
-  async write(content: string, retrievalCues: string, tags: string[], entityId?: string, type?: string): Promise<Memory> {
-    const memType = type ?? "memory";
-    console.log(`[Memory] Writing: "${content.slice(0, 80)}${content.length > 80 ? "..." : ""}" tags=[${tags.join(", ")}] type=${memType}${entityId ? ` entity=${entityId}` : ""}`);
+  async write(
+    content: string,
+    retrievalCues: string,
+    tags: string[],
+    opts?: { entityId?: string; personId?: string; pinned?: boolean; scope?: string },
+  ): Promise<Memory> {
+    const entityId = opts?.entityId;
+    const personId = opts?.personId;
+    const pinned = opts?.pinned ? 1 : 0;
+    const scope = opts?.scope;
+    console.log(`[Memory] Writing: "${content.slice(0, 80)}${content.length > 80 ? "..." : ""}" tags=[${tags.join(", ")}]${entityId ? ` entity=${entityId}` : ""}${personId ? ` person=${personId}` : ""}${pinned ? " pinned" : ""}${scope ? ` scope=${scope}` : ""}`);
     const now = Date.now();
     const embedding = await this.embedder.embed(retrievalCues);
     const embeddingBuf = Buffer.from(embedding.buffer);
 
     const result = this.db
       .prepare(
-        `INSERT INTO memories (content, retrieval_cues, tags, type, entity_id, embedding, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO memories (content, retrieval_cues, tags, type, entity_id, person_id, pinned, scope, embedding, created_at, updated_at) VALUES (?, ?, ?, 'memory', ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(content, retrievalCues, JSON.stringify(tags), memType, entityId ?? null, embeddingBuf, now, now);
+      .run(content, retrievalCues, JSON.stringify(tags), entityId ?? null, personId ?? null, pinned, scope ?? null, embeddingBuf, now, now);
 
     const id = Number(result.lastInsertRowid);
     console.log(`[Memory] Stored memory #${id}`);
@@ -95,12 +124,15 @@ export class MemoryStore {
     tags?: string[];
     timeRange?: { start?: number; end?: number };
     limit?: number;
+    scope?: string;
+    entityId?: string;
+    personId?: string;
   }): Promise<{ memories: ScoredMemory[]; meta: MemoryQueryMeta }> {
-    console.log(`[Memory] Query: ${opts.query ? `"${opts.query}"` : "(no text)"} tags=${opts.tags?.join(",") || "any"} limit=${opts.limit ?? 20}`);
+    console.log(`[Memory] Query: ${opts.query ? `"${opts.query}"` : "(no text)"} tags=${opts.tags?.join(",") || "any"} scope=${opts.scope ?? "global"} entity=${opts.entityId ?? "any"} person=${opts.personId ?? "any"} limit=${opts.limit ?? 20}`);
     const limit = opts.limit ?? 20;
 
-    // Build SQL filter — only standard memories, not entity notes
-    const conditions: string[] = [`type = 'memory'`];
+    // Build SQL filter
+    const conditions: string[] = [];
     const params: unknown[] = [];
 
     if (opts.tags && opts.tags.length > 0) {
@@ -112,6 +144,21 @@ export class MemoryStore {
       }
     }
 
+    if (opts.scope) {
+      conditions.push(`(scope IS NULL OR scope = ?)`);
+      params.push(opts.scope);
+    }
+
+    if (opts.entityId) {
+      conditions.push(`entity_id = ?`);
+      params.push(opts.entityId);
+    }
+
+    if (opts.personId) {
+      conditions.push(`person_id = ?`);
+      params.push(opts.personId);
+    }
+
     if (opts.timeRange?.start) {
       conditions.push(`created_at >= ?`);
       params.push(opts.timeRange.start);
@@ -121,7 +168,7 @@ export class MemoryStore {
       params.push(opts.timeRange.end);
     }
 
-    const where = `WHERE ${conditions.join(" AND ")}`;
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const rows = this.db
       .prepare(`SELECT * FROM memories ${where} ORDER BY updated_at DESC`)
       .all(...params) as MemoryRow[];
@@ -179,7 +226,7 @@ export class MemoryStore {
 
   async rewrite(
     id: number,
-    updates: { content?: string; retrievalCues?: string; tags?: string[] },
+    updates: { content?: string; retrievalCues?: string; tags?: string[]; scope?: string | null; pinned?: boolean },
   ): Promise<Memory | null> {
     console.log(`[Memory] Rewriting #${id}: ${Object.keys(updates).filter((k) => updates[k as keyof typeof updates] !== undefined).join(", ")}`);
     const existing = this.getById(id);
@@ -192,6 +239,8 @@ export class MemoryStore {
     const newContent = updates.content ?? existing.content;
     const newCues = updates.retrievalCues ?? existing.retrievalCues;
     const newTags = updates.tags ?? existing.tags;
+    const newScope = updates.scope !== undefined ? updates.scope : (existing.scope ?? null);
+    const newPinned = updates.pinned !== undefined ? (updates.pinned ? 1 : 0) : (existing.pinned ? 1 : 0);
 
     let embeddingBuf: Buffer | undefined;
     if (updates.retrievalCues) {
@@ -202,15 +251,15 @@ export class MemoryStore {
     if (embeddingBuf) {
       this.db
         .prepare(
-          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, embedding = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, scope = ?, pinned = ?, embedding = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(newContent, newCues, JSON.stringify(newTags), embeddingBuf, now, id);
+        .run(newContent, newCues, JSON.stringify(newTags), newScope, newPinned, embeddingBuf, now, id);
     } else {
       this.db
         .prepare(
-          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, updated_at = ? WHERE id = ?`,
+          `UPDATE memories SET content = ?, retrieval_cues = ?, tags = ?, scope = ?, pinned = ?, updated_at = ? WHERE id = ?`,
         )
-        .run(newContent, newCues, JSON.stringify(newTags), now, id);
+        .run(newContent, newCues, JSON.stringify(newTags), newScope, newPinned, now, id);
     }
 
     return this.getById(id)!;
@@ -312,7 +361,7 @@ export class MemoryStore {
 
   getAll(): Memory[] {
     const rows = this.db
-      .prepare(`SELECT * FROM memories WHERE type = 'memory' ORDER BY updated_at DESC`)
+      .prepare(`SELECT * FROM memories ORDER BY updated_at DESC`)
       .all() as MemoryRow[];
     return rows.map((r) => this.rowToMemory(r));
   }
@@ -324,49 +373,56 @@ export class MemoryStore {
     return row ? this.rowToMemory(row) : null;
   }
 
-  getEntityNotes(): Map<string, Memory> {
+  /** Get all pinned memories, optionally filtered by entity or person. */
+  getPinnedMemories(opts?: { entityId?: string; personId?: string }): Memory[] {
+    if (opts?.entityId) {
+      const rows = this.db
+        .prepare(`SELECT * FROM memories WHERE pinned = 1 AND entity_id = ?`)
+        .all(opts.entityId) as MemoryRow[];
+      return rows.map((r) => this.rowToMemory(r));
+    }
+    if (opts?.personId) {
+      const rows = this.db
+        .prepare(`SELECT * FROM memories WHERE pinned = 1 AND person_id = ?`)
+        .all(opts.personId) as MemoryRow[];
+      return rows.map((r) => this.rowToMemory(r));
+    }
     const rows = this.db
-      .prepare(`SELECT * FROM memories WHERE type = 'entity_note'`)
+      .prepare(`SELECT * FROM memories WHERE pinned = 1`)
       .all() as MemoryRow[];
-    const map = new Map<string, Memory>();
+    return rows.map((r) => this.rowToMemory(r));
+  }
+
+  /** Get all pinned memories grouped by entity_id. */
+  getPinnedByEntity(): Map<string, Memory[]> {
+    const rows = this.db
+      .prepare(`SELECT * FROM memories WHERE pinned = 1 AND entity_id IS NOT NULL`)
+      .all() as MemoryRow[];
+    const map = new Map<string, Memory[]>();
     for (const row of rows) {
       if (row.entity_id) {
-        map.set(row.entity_id, this.rowToMemory(row));
+        const list = map.get(row.entity_id) ?? [];
+        list.push(this.rowToMemory(row));
+        map.set(row.entity_id, list);
       }
     }
     return map;
   }
 
-  findByEntityId(entityId: string): Memory | null {
-    const row = this.db
-      .prepare(`SELECT * FROM memories WHERE type = 'entity_note' AND entity_id = ?`)
-      .get(entityId) as MemoryRow | undefined;
-    return row ? this.rowToMemory(row) : null;
-  }
-
-  async queryEntityNotes(queryText: string, limit: number = 10): Promise<ScoredMemory[]> {
+  /** Get all pinned memories grouped by person_id. */
+  getPinnedByPerson(): Map<string, Memory[]> {
     const rows = this.db
-      .prepare(`SELECT * FROM memories WHERE type = 'entity_note'`)
+      .prepare(`SELECT * FROM memories WHERE pinned = 1 AND person_id IS NOT NULL`)
       .all() as MemoryRow[];
-
-    const queryEmbedding = await this.embedder.embed(queryText);
-    const ranked = rows
-      .filter((r) => r.embedding !== null)
-      .map((r) => {
-        const emb = new Float32Array(
-          (r.embedding as Buffer).buffer,
-          (r.embedding as Buffer).byteOffset,
-          EMBEDDING_DIM,
-        );
-        return {
-          memory: this.rowToMemory(r),
-          similarity: cosineSimilarity(queryEmbedding, emb),
-        };
-      })
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
-
-    return ranked.map((r) => ({ ...r.memory, similarity: r.similarity }));
+    const map = new Map<string, Memory[]>();
+    for (const row of rows) {
+      if (row.person_id) {
+        const list = map.get(row.person_id) ?? [];
+        list.push(this.rowToMemory(row));
+        map.set(row.person_id, list);
+      }
+    }
+    return map;
   }
 
   close(): void {
@@ -385,8 +441,10 @@ export class MemoryStore {
       content: row.content,
       retrievalCues: row.retrieval_cues,
       tags: JSON.parse(row.tags),
-      type: row.type,
       entityId: row.entity_id ?? undefined,
+      personId: row.person_id ?? undefined,
+      pinned: row.pinned === 1,
+      scope: row.scope ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

@@ -1,4 +1,4 @@
-import type { DeviceEvent, DeviceCommand, Schedule } from "@holms/shared";
+import type { DeviceEvent, DeviceCommand, Automation } from "@holms/shared";
 import type { ReflexStore } from "./store.js";
 import type { DeviceManager } from "../devices/manager.js";
 import type { EventBus } from "../event-bus.js";
@@ -45,13 +45,13 @@ export class ReflexEngine {
     }
   }
 
-  async processScheduleEvent(schedule: Schedule): Promise<boolean> {
+  async processAutomationEvent(automation: Automation): Promise<boolean> {
     const rules = this.store.getEnabled();
     let matched = false;
 
     for (const rule of rules) {
-      if (!rule.trigger.scheduleId) continue;
-      if (rule.trigger.scheduleId !== schedule.id) continue;
+      if (!rule.trigger.automationId) continue;
+      if (rule.trigger.automationId !== automation.id) continue;
 
       const command: DeviceCommand = {
         deviceId: rule.action.deviceId,
@@ -69,20 +69,20 @@ export class ReflexEngine {
         this.eventBus.emit("reflex:triggered", {
           rule,
           event: {
-            deviceId: "schedule",
-            type: "schedule:fired",
-            data: { scheduleId: schedule.id, instruction: schedule.instruction },
+            deviceId: "automation",
+            type: "automation:fired",
+            data: { automationId: automation.id, instruction: automation.instruction },
             timestamp: Date.now(),
           },
           action: command,
         });
         console.log(
-          `[ReflexEngine] Schedule-triggered rule "${rule.reason}" → ${command.command} on ${command.deviceId}`,
+          `[ReflexEngine] Automation-triggered rule "${rule.reason}" → ${command.command} on ${command.deviceId}`,
         );
         matched = true;
       } else {
         console.warn(
-          `[ReflexEngine] Schedule-triggered rule "${rule.reason}" failed: ${result.error}`,
+          `[ReflexEngine] Automation-triggered rule "${rule.reason}" failed: ${result.error}`,
         );
       }
     }

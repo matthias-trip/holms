@@ -22,7 +22,7 @@ export function humanizeToolUse(tool: string, input: unknown): string {
   if (tool === "mcp__triage__list_triage_rules") return "Listed triage rules";
   if (tool === "mcp__triage__remove_triage_rule") return "Removed triage rule";
   if (tool === "mcp__triage__toggle_triage_rule") return `${inp.enabled ? "Enabled" : "Disabled"} triage rule`;
-  if (tool.startsWith("mcp__schedule__")) return "Managed schedule";
+  if (tool.startsWith("mcp__automation__")) return "Managed automation";
   if (tool.startsWith("deep_reason:")) {
     const inner = tool.slice("deep_reason:".length);
     return `Deep reason: ${inner.replace(/^mcp__[^_]+(?:-[^_]+)*__/, "").replace(/_/g, " ")}`;

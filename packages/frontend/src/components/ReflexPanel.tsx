@@ -18,9 +18,9 @@ export default function ReflexPanel() {
   return (
     <div className="h-full flex flex-col p-6" style={{ background: "var(--gray-2)" }}>
       <div className="mb-5">
-        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Automation Rules</h3>
+        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Reflex Rules</h3>
         <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-          Quick rules that react to events in your home, without waiting for the assistant.
+          Instant rules that react to events without AI reasoning. Proven patterns promoted from automations.
         </p>
       </div>
 
@@ -31,7 +31,7 @@ export default function ReflexPanel() {
               <Zap size={18} />
             </div>
             <div className="empty-state-text">
-              No automation rules yet. Ask the assistant to create rules like "turn on lights when motion is detected."
+              No reflex rules yet. Reflexes are created by the assistant after automations have been handled consistently.
             </div>
           </div>
         ) : (

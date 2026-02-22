@@ -9,6 +9,9 @@ interface ChatMessageRow {
   status: string | null;
   approval_id: string | null;
   channel: string | null;
+  feedback_sentiment: string | null;
+  feedback_comment: string | null;
+  feedback_response: string | null;
 }
 
 function rowToMessage(row: ChatMessageRow): ChatMessage {
@@ -21,6 +24,13 @@ function rowToMessage(row: ChatMessageRow): ChatMessage {
   if (row.status) msg.status = row.status as ChatMessage["status"];
   if (row.approval_id) msg.approvalId = row.approval_id;
   if (row.channel) msg.channel = row.channel;
+  if (row.feedback_sentiment) {
+    msg.feedback = {
+      sentiment: row.feedback_sentiment as "positive" | "negative",
+      comment: row.feedback_comment ?? undefined,
+      response: row.feedback_response ?? undefined,
+    };
+  }
   return msg;
 }
 
@@ -58,6 +68,14 @@ export class ChatStore {
     if (!columns.some((c) => c.name === "channel")) {
       this.db.exec(`ALTER TABLE chat_messages ADD COLUMN channel TEXT DEFAULT 'web:default'`);
     }
+
+    // Migrate: add feedback columns if missing
+    const cols2 = this.db.pragma("table_info(chat_messages)") as { name: string }[];
+    if (!cols2.some((c) => c.name === "feedback_sentiment")) {
+      this.db.exec(`ALTER TABLE chat_messages ADD COLUMN feedback_sentiment TEXT`);
+      this.db.exec(`ALTER TABLE chat_messages ADD COLUMN feedback_comment TEXT`);
+      this.db.exec(`ALTER TABLE chat_messages ADD COLUMN feedback_response TEXT`);
+    }
   }
 
   add(msg: ChatMessage): void {
@@ -86,14 +104,14 @@ export class ChatStore {
     if (before !== undefined) {
       return (this.db
         .prepare(
-          `SELECT id, role, content, timestamp, status, approval_id, channel FROM chat_messages WHERE timestamp < ?${channelFilter} ORDER BY timestamp ASC LIMIT ?`,
+          `SELECT id, role, content, timestamp, status, approval_id, channel, feedback_sentiment, feedback_comment, feedback_response FROM chat_messages WHERE timestamp < ?${channelFilter} ORDER BY timestamp ASC LIMIT ?`,
         )
         .all(before, ...channelArgs, limit) as ChatMessageRow[]).map(rowToMessage);
     }
 
     return (this.db
       .prepare(
-        `SELECT id, role, content, timestamp, status, approval_id, channel FROM (SELECT * FROM chat_messages WHERE 1=1${channelFilter} ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
+        `SELECT id, role, content, timestamp, status, approval_id, channel, feedback_sentiment, feedback_comment, feedback_response FROM (SELECT * FROM chat_messages WHERE 1=1${channelFilter} ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
       )
       .all(...channelArgs, limit) as ChatMessageRow[]).map(rowToMessage);
   }
@@ -102,10 +120,31 @@ export class ChatStore {
   findByApprovalId(approvalId: string): ChatMessage | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, role, content, timestamp, status, approval_id, channel FROM chat_messages WHERE approval_id = ?`,
+        `SELECT id, role, content, timestamp, status, approval_id, channel, feedback_sentiment, feedback_comment, feedback_response FROM chat_messages WHERE approval_id = ?`,
       )
       .get(approvalId) as ChatMessageRow | undefined;
     return row ? rowToMessage(row) : undefined;
+  }
+
+  getById(id: string): ChatMessage | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT id, role, content, timestamp, status, approval_id, channel, feedback_sentiment, feedback_comment, feedback_response FROM chat_messages WHERE id = ?`,
+      )
+      .get(id) as ChatMessageRow | undefined;
+    return row ? rowToMessage(row) : undefined;
+  }
+
+  setFeedback(id: string, sentiment: "positive" | "negative", comment?: string): void {
+    this.db
+      .prepare(`UPDATE chat_messages SET feedback_sentiment = ?, feedback_comment = ? WHERE id = ?`)
+      .run(sentiment, comment ?? null, id);
+  }
+
+  setFeedbackResponse(id: string, response: string): void {
+    this.db
+      .prepare(`UPDATE chat_messages SET feedback_response = ? WHERE id = ?`)
+      .run(response, id);
   }
 
   clear(): void {

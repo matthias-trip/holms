@@ -28,32 +28,23 @@ export const memoryRouter = t.router({
       return { memories, meta };
     }),
 
-  entityNotes: t.procedure.query(({ ctx }) => {
-    const notes = ctx.memoryStore.getEntityNotes();
-    return Array.from(notes.entries()).map(([entityId, mem]) => ({
-      id: mem.id,
-      entityId,
-      content: mem.content,
-      retrievalCues: mem.retrievalCues,
-      tags: mem.tags,
-      updatedAt: mem.updatedAt,
-    }));
+  pinnedByEntity: t.procedure.query(({ ctx }) => {
+    const map = ctx.memoryStore.getPinnedByEntity();
+    const result: { entityId: string; memories: ReturnType<typeof ctx.memoryStore.getAll> }[] = [];
+    for (const [entityId, memories] of map) {
+      result.push({ entityId, memories });
+    }
+    return result;
   }),
 
-  searchEntityNotes: t.procedure
-    .input(z.object({ query: z.string() }))
-    .query(async ({ ctx, input }) => {
-      const results = await ctx.memoryStore.queryEntityNotes(input.query, 50);
-      return results.map((mem) => ({
-        id: mem.id,
-        entityId: mem.entityId,
-        content: mem.content,
-        retrievalCues: mem.retrievalCues,
-        tags: mem.tags,
-        updatedAt: mem.updatedAt,
-        similarity: mem.similarity,
-      }));
-    }),
+  pinnedByPerson: t.procedure.query(({ ctx }) => {
+    const map = ctx.memoryStore.getPinnedByPerson();
+    const result: { personId: string; memories: ReturnType<typeof ctx.memoryStore.getAll> }[] = [];
+    for (const [personId, memories] of map) {
+      result.push({ personId, memories });
+    }
+    return result;
+  }),
 
   delete: t.procedure
     .input(z.object({ id: z.number() }))

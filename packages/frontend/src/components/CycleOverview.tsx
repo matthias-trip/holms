@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Brain, Eye, Target, FileText, Sparkles, ChevronRight, Zap } from "lucide-react";
+import { Brain, Eye, Target, FileText, Sparkles, ChevronRight, Zap, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Tabs, Tab, Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import { humanizeToolUse, isWriteAction, relativeTime } from "../utils/humanize";
@@ -55,12 +55,12 @@ interface Turn {
 function parseCycleType(turn: Turn): CycleType {
   const turnStart = turn.activities.find((a) => a.type === "turn_start");
   if (!turnStart) return "unknown";
-  const summary = String((turnStart.data as Record<string, unknown>).summary ?? "");
-  const suffix = summary.replace(/^Proactive:\s*/i, "").trim().toLowerCase();
-  if (suffix.includes("reflection")) return "reflection";
-  if (suffix.includes("situational")) return "situational";
-  if (suffix.includes("goal")) return "goal_review";
-  if (suffix.includes("daily") || suffix.includes("summary")) return "daily_summary";
+  const data = turnStart.data as Record<string, unknown>;
+  const proactiveType = String(data.proactiveType ?? "").toLowerCase();
+  if (proactiveType === "reflection") return "reflection";
+  if (proactiveType === "situational") return "situational";
+  if (proactiveType === "goal_review") return "goal_review";
+  if (proactiveType === "daily_summary") return "daily_summary";
   return "unknown";
 }
 
@@ -70,7 +70,7 @@ function getResultData(turn: Turn) {
   const d = resultActivity.data as Record<string, unknown>;
   return {
     text: String(d.result ?? ""),
-    summary: (d.summary as string | null) ?? null,
+    summary: d.summary as string | undefined,
     costUsd: d.costUsd as number | undefined,
     inputTokens: d.inputTokens as number | undefined,
     outputTokens: d.outputTokens as number | undefined,
@@ -78,6 +78,19 @@ function getResultData(turn: Turn) {
     durationMs: d.durationMs as number | undefined,
     timestamp: resultActivity.timestamp,
   };
+}
+
+function getFeedback(turn: Turn): { sentiment: "positive" | "negative"; comment?: string } | null {
+  const fb = turn.activities.find((a) => a.type === "cycle_feedback");
+  if (!fb) return null;
+  const d = fb.data as Record<string, unknown>;
+  return { sentiment: d.sentiment as "positive" | "negative", comment: d.comment as string | undefined };
+}
+
+function getFeedbackResponse(turn: Turn): string | null {
+  const resp = turn.activities.find((a) => a.type === "cycle_feedback_response");
+  if (!resp) return null;
+  return (resp.data as Record<string, unknown>).response as string;
 }
 
 function getWriteActions(turn: Turn): { tool: string; label: string }[] {
@@ -269,12 +282,30 @@ function CycleCard({
   const config = CYCLE_CONFIG[cycleType];
   const result = getResultData(turn);
   const actions = getWriteActions(turn);
+  const feedback = getFeedback(turn);
+  const feedbackResponse = getFeedbackResponse(turn);
   const firstTs = turn.activities[0]?.timestamp ?? Date.now();
   const isProcessing = !result;
 
   const durationSec = result
     ? (result.timestamp - firstTs) / 1000
     : undefined;
+
+  // Feedback interaction state
+  const [feedbackMode, setFeedbackMode] = useState<"positive" | "negative" | null>(null);
+  const [comment, setComment] = useState("");
+  const feedbackMutation = trpc.agents.cycleFeedback.useMutation({
+    onSuccess: () => setFeedbackMode(null),
+  });
+
+  const submitFeedback = () => {
+    if (!feedbackMode) return;
+    feedbackMutation.mutate({
+      turnId: turn.turnId,
+      sentiment: feedbackMode,
+      comment: comment.trim() || undefined,
+    });
+  };
 
   return (
     <Card
@@ -304,16 +335,25 @@ function CycleCard({
         </span>
 
         <div className="flex-1 min-w-0">
-          <Chip
-            variant="flat"
-            size="sm"
-            style={{
-              color: config.color,
-              background: `color-mix(in srgb, ${config.color} 10%, transparent)`,
-            }}
-          >
-            {config.label}
-          </Chip>
+          <div className="flex items-center gap-2">
+            <Chip
+              variant="flat"
+              size="sm"
+              style={{
+                color: config.color,
+                background: `color-mix(in srgb, ${config.color} 10%, transparent)`,
+              }}
+            >
+              {config.label}
+            </Chip>
+
+            {/* Collapsed feedback indicator */}
+            {!expanded && feedback && (
+              feedback.sentiment === "positive"
+                ? <ThumbsUp size={11} style={{ color: "var(--ok)" }} />
+                : <ThumbsDown size={11} style={{ color: "var(--warm)" }} />
+            )}
+          </div>
 
           {isProcessing && (
             <div className="flex items-center gap-1.5 mt-1.5">
@@ -411,6 +451,118 @@ function CycleCard({
                     : `${Math.floor(durationSec / 60)}m ${Math.round(durationSec % 60)}s`}
                 </span>
               </>
+            )}
+          </div>
+
+          {/* Feedback section */}
+          <div className="pl-5 mt-3 pt-3" style={{ borderTop: "1px solid var(--gray-a3)" }}>
+            {feedback ? (
+              // Already rated
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  {feedback.sentiment === "positive"
+                    ? <ThumbsUp size={13} style={{ color: "var(--ok)" }} />
+                    : <ThumbsDown size={13} style={{ color: "var(--warm)" }} />}
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+                    {feedback.sentiment === "positive" ? "Helpful" : "Not helpful"}
+                  </span>
+                  {feedback.comment && (
+                    <span className="text-xs" style={{ color: "var(--gray-8)" }}>
+                      &mdash; {feedback.comment}
+                    </span>
+                  )}
+                </div>
+                {feedbackResponse ? (
+                  <details className="pl-0.5 group/reflection">
+                    <summary className="flex items-start gap-1.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                      <Sparkles size={11} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-9)" }} />
+                      <span className="text-xs group-open/reflection:hidden" style={{ color: "var(--gray-10)", lineHeight: "1.5", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {feedbackResponse}
+                      </span>
+                      <ChevronRight size={10} className="chevron-rotate flex-shrink-0 mt-0.5 transition-transform duration-150 group-open/reflection:hidden" style={{ color: "var(--gray-8)" }} />
+                    </summary>
+                    <div className="text-xs -mt-[1px]" style={{ color: "var(--gray-10)", lineHeight: "1.5" }}>
+                      <MarkdownMessage content={feedbackResponse} />
+                    </div>
+                  </details>
+                ) : (
+                  <div className="flex items-center gap-1.5 pl-0.5">
+                    <span
+                      className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+                      style={{ background: "var(--gray-8)", animation: "pulse-dot 1.5s ease-in-out infinite" }}
+                    />
+                    <span className="text-xs" style={{ color: "var(--gray-8)" }}>Processing feedback...</span>
+                  </div>
+                )}
+              </div>
+            ) : feedbackMode ? (
+              // Comment input mode
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  {feedbackMode === "positive"
+                    ? <ThumbsUp size={13} style={{ color: "var(--ok)" }} />
+                    : <ThumbsDown size={13} style={{ color: "var(--warm)" }} />}
+                  <span className="text-xs" style={{ color: "var(--gray-10)" }}>
+                    {feedbackMode === "positive" ? "Helpful" : "Not helpful"}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  placeholder="Add a comment (optional)"
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") submitFeedback(); }}
+                  className="w-full text-xs px-2.5 py-1.5 rounded-lg outline-none"
+                  style={{
+                    background: "var(--gray-2)",
+                    border: "1px solid var(--gray-a4)",
+                    color: "var(--gray-12)",
+                  }}
+                  autoFocus
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={submitFeedback}
+                    disabled={feedbackMutation.isPending}
+                    className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
+                    style={{
+                      background: "var(--accent-9)",
+                      color: "white",
+                      opacity: feedbackMutation.isPending ? 0.5 : 1,
+                    }}
+                  >
+                    {feedbackMutation.isPending ? "Sending..." : "Submit"}
+                  </button>
+                  <button
+                    onClick={() => { setFeedbackMode(null); setComment(""); }}
+                    className="text-xs px-2.5 py-1 rounded-lg transition-colors"
+                    style={{ color: "var(--gray-9)" }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // Not rated — show thumbs buttons
+              <div className="flex items-center gap-3">
+                <span className="text-xs" style={{ color: "var(--gray-9)" }}>Was this helpful?</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setFeedbackMode("positive"); }}
+                  className="p-1.5 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
+                  style={{ color: "var(--gray-8)" }}
+                  title="Helpful"
+                >
+                  <ThumbsUp size={13} />
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setFeedbackMode("negative"); }}
+                  className="p-1.5 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
+                  style={{ color: "var(--gray-8)" }}
+                  title="Not helpful"
+                >
+                  <ThumbsDown size={13} />
+                </button>
+              </div>
             )}
           </div>
         </div>

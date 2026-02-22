@@ -204,6 +204,26 @@ body {
   to { transform: rotate(360deg); }
 }
 
+[data-collapse] {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.2s ease-out, opacity 0.15s ease-out;
+}
+[data-collapse="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+[data-collapse] > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@keyframes flow-node-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 
 .animate-slide-down { animation: slide-down 0.25s ease-out both; }
 .animate-breathe { animation: breathe 3s ease-in-out infinite; }
@@ -213,6 +233,8 @@ body {
 .animate-slide-in { animation: slide-in 0.25s ease-out both; }
 .content-reveal { animation: content-reveal 0.25s ease-out both; }
 .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+.animate-flow-node-in { animation: flow-node-in 0.25s ease-out both; }
+.animate-skeleton-shimmer { animation: shimmer 1.5s ease-in-out infinite; }
 
 .shimmer {
   background: linear-gradient(
@@ -229,6 +251,13 @@ body {
 
 input::placeholder {
   color: var(--gray-8);
+}
+
+/* ── Device card hover ── */
+
+.device-card:hover {
+  border-color: var(--gray-6) !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.06) !important;
 }
 
 /* ── Section header ── */
@@ -310,4 +339,23 @@ input::placeholder {
 
 .dark [data-slot="base"][style*="border"] {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), 0 0 0 0.5px var(--gray-a3);
+}
+
+/* ── Details chevron rotation ── */
+
+details[open] > summary .chevron-rotate {
+  transform: rotate(90deg);
+}
+
+/* ── Chat message feedback buttons (show on hover) ── */
+
+.feedback-buttons {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Show when parent bubble is hovered or when feedback has content */
+*:hover > .feedback-buttons,
+.feedback-buttons:focus-within {
+  opacity: 1;
 }

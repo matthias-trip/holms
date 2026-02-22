@@ -1,7 +1,7 @@
 import type { CoordinatorHub } from "../coordinator/coordinator-hub.js";
 import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
-import type { ScheduleStore } from "../schedule/store.js";
+import type { AutomationStore } from "../automation/store.js";
 import type { EventBus } from "../event-bus.js";
 import type { HolmsConfig } from "../config.js";
 
@@ -20,7 +20,7 @@ export class ProactiveScheduler {
     private deviceManager: DeviceManager,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
-    private scheduleStore?: ScheduleStore,
+    private automationStore?: AutomationStore,
     private eventBus?: EventBus,
   ) {
     // Initialize lastRun to now so wakeups don't fire immediately on boot
@@ -55,7 +55,7 @@ export class ProactiveScheduler {
     console.log("[ProactiveScheduler] Started");
   }
 
-  async triggerWakeup(type: string): Promise<void> {
+  async triggerWakeup(type: string, channel?: string): Promise<void> {
     let extraContext = "";
     if (type === "reflection") {
       const recentMemories = this.memoryStore
@@ -66,8 +66,8 @@ export class ProactiveScheduler {
       extraContext = `Recent memories:\n${recentMemories}`;
     }
 
-    console.log(`[ProactiveScheduler] Manual trigger: ${type}`);
-    await this.hub.handleProactiveWakeup(type, extraContext);
+    console.log(`[ProactiveScheduler] Manual trigger: ${type}${channel ? ` (channel: ${channel})` : ""}`);
+    await this.hub.handleProactiveWakeup(type, extraContext, channel);
   }
 
   stop(): void {
@@ -79,13 +79,13 @@ export class ProactiveScheduler {
   }
 
   private async tick(): Promise<void> {
-    // Check due schedules first — these are user commitments and fire regardless of processing state
-    if (this.scheduleStore && this.eventBus) {
-      const dueSchedules = this.scheduleStore.getDue(Date.now());
-      for (const schedule of dueSchedules) {
-        console.log(`[ProactiveScheduler] Schedule fired: "${schedule.instruction}" (${schedule.id})`);
-        this.eventBus.emit("schedule:fired", { schedule, timestamp: Date.now() });
-        this.scheduleStore.markFired(schedule.id);
+    // Check due time-triggered automations first — these are user commitments
+    if (this.automationStore && this.eventBus) {
+      const dueAutomations = this.automationStore.getDueTimeTriggers(Date.now());
+      for (const automation of dueAutomations) {
+        console.log(`[ProactiveScheduler] Automation fired: "${automation.summary}" (${automation.id})`);
+        this.eventBus.emit("automation:time_fired", { automation, timestamp: Date.now() });
+        this.automationStore.markFired(automation.id);
       }
     }
 

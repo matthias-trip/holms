@@ -1,0 +1,5 @@
+{
+  "name": "energy",
+  "version": "1.0.0",
+  "description": "Energy optimization skill — tariff-aware load shifting, solar self-consumption, heat pump and EV charging strategies"
+}

@@ -3,8 +3,8 @@ import type { TRPCContext } from "../context.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
-export const scheduleRouter = t.router({
+export const automationRouter = t.router({
   list: t.procedure.query(({ ctx }) => {
-    return ctx.scheduleStore.getAll();
+    return ctx.automationStore.getAll();
   }),
 });

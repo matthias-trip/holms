@@ -6,6 +6,10 @@
 
 AI-driven home automation coordinator powered by Claude. Instead of rigid if-then rules, Holms uses an LLM agent that observes your home, learns your preferences over time, and acts autonomously — while deferring to you on anything it's unsure about.
 
+## Why "Holms"?
+
+The name plays on *holm* — a small, self-contained island — reflecting a system that runs locally, independently, within its own borders. The echo of *Holmes* nods to its core behavior: observe the world, reason about what it sees, and act with purpose. Holms doesn't follow rules — it thinks. And like any good butler, it does so quietly, running your household without needing to be told.
+
 ## How it works
 
 A daemon process connects to your smart home devices and feeds events to a Claude agent via the [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk). The agent has access to tools for querying device state, executing commands, storing memories, creating automations and fast local rules (reflexes), and spawning deep reasoning sub-agents for complex multi-device decisions. Multiple channel providers (web, Slack, Telegram, WhatsApp) let you chat with the agent from anywhere. A plugin system lets you extend the agent with local Claude Code extensions. A React frontend gives you a dashboard to monitor everything, chat with the agent, and approve or reject proposed actions.
@@ -126,6 +130,14 @@ The agent self-manages how it gets woken up. It assigns each event source a **tr
 
 During reflection cycles, the agent reviews its triage rules — silencing noisy sources it never acts on, and escalating ones it missed.
 
+### Goals
+
+The agent can track long-term objectives using the **goals** system. Goals have a title, description, status (active / completed / abandoned), and a timeline of events. The agent logs observations, progress updates, and milestones against goals, and reviews them during daily goal review cycles. Goals that need attention are flagged and surfaced prominently.
+
+### People
+
+Holms maintains a **people** registry for household members. Each person can be linked to one or more messaging channels (with sender IDs for identity resolution), have a primary notification channel, and carry arbitrary properties (schedule, presence, preferences). The agent considers person context when reasoning about events — e.g., checking who's home before adjusting heating.
+
 ### Proactive behavior
 
 The agent doesn't just react to events. A scheduler periodically wakes it up for:
@@ -173,6 +185,8 @@ packages/
 - **DeviceManager** — provider-based device abstraction with a standard capabilities catalog across domains (light, climate, cover, lock, fan, media_player, etc.)
 - **ChannelManager** — routes inbound messages from channel providers (web, Slack, Telegram, WhatsApp) to the correct ChatCoordinator. Manages channel routes for directing events to specific destinations.
 - **AutomationStore** / **AutomationMatcher** — persistence and event matching for automations. Matcher debounces at 60s per automation and claims events before triage.
+- **GoalStore** — tracks long-term objectives with timelines, status, and attention flags
+- **PeopleStore** — household member registry with channel links, sender ID resolution, and properties
 - **MemoryStore** — SQLite-backed persistence with local embedding vectors (all-MiniLM-L6-v2 via `@huggingface/transformers`) for semantic search
 - **ReflexEngine** — evaluates local automation rules on device events; supports automation-linked reflexes
 - **ApprovalQueue** — routes agent actions by confidence/category, auto-executes safe ones
@@ -181,7 +195,7 @@ packages/
 - **PluginManager** — discovers and manages local Claude Code extensions in `~/.holms/plugins/`
 - **EventBus** — typed pub/sub connecting all subsystems
 
-**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview, Chat, Devices, Integrations, Memory (with Entity Notes tab), Automations, Reflexes, Activity, Plugins.
+**Frontend** runs on port 5173 (Vite dev server, proxied to daemon). Panels: Overview, Chat, Devices, Integrations, Memory (with Entity Notes tab), Automations, Reflexes, Goals, People, Triage, Channels, Activity, Plugins.
 
 ## Getting started
 
@@ -230,6 +244,8 @@ Agent behavior (batch delay, max turns, budget, proactive intervals) is configur
 Connect to a Home Assistant instance via WebSocket. Configure the URL and long-lived access token from the Integrations panel, then use the entity picker to select which entities to expose to the agent. Only selected entities appear in device queries and generate events — unselected entities are ignored entirely.
 
 The provider maps HA services to a standard capabilities catalog so the agent uses a consistent command vocabulary across providers (e.g. `turn_on`, `set_brightness`, `set_temperature` regardless of the underlying platform).
+
+Entity state is split into two layers: **state** (normalized, well-known keys like `power`, `brightness`, `value`) and **attributes** (all remaining provider data not already in state). The `list_devices` tool returns only the compact state for efficiency; `get_device_state` includes the full attributes — useful for entities that carry rich extra data like hourly energy price arrays, forecast lists, or configuration metadata.
 
 #### Simulated devices (development)
 
