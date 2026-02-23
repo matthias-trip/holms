@@ -10,6 +10,7 @@ import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { ChatCoordinator } from "./chat-coordinator.js";
 import { EphemeralRunner } from "./ephemeral-runner.js";
+import { ContextCache } from "./query-runner.js";
 
 /**
  * Facade that owns the shared MCP pool, manages per-channel ChatCoordinators
@@ -18,6 +19,7 @@ import { EphemeralRunner } from "./ephemeral-runner.js";
 export class CoordinatorHub {
   private chatCoordinators = new Map<string, ChatCoordinator>();
   private ephemeralRunner: EphemeralRunner;
+  private contextCache: ContextCache;
   private approvalChannels = new Map<string, string>(); // approvalId → channel
   private ephemeralChannel: string | null = null;
   private channelManager?: ChannelManager;
@@ -32,9 +34,10 @@ export class CoordinatorHub {
     private peopleStore?: PeopleStore,
     private goalStore?: GoalStore,
   ) {
+    this.contextCache = new ContextCache(eventBus);
     this.ephemeralRunner = new EphemeralRunner(
       eventBus, deviceManager, memoryStore,
-      config, this.mcpPool, pluginManager, peopleStore, goalStore,
+      config, this.mcpPool, this.contextCache, pluginManager, peopleStore, goalStore,
     );
 
     // Track which channel was active when an approval was proposed
@@ -69,7 +72,7 @@ export class CoordinatorHub {
       coordinator = new ChatCoordinator(
         channel, this.eventBus, this.deviceManager,
         this.memoryStore, this.config, this.mcpPool,
-        this.pluginManager, this.peopleStore, this.goalStore,
+        this.contextCache, this.pluginManager, this.peopleStore, this.goalStore,
       );
       this.chatCoordinators.set(channel, coordinator);
     }
@@ -149,7 +152,7 @@ export class CoordinatorHub {
     return this.approvalChannels.get(approvalId) ?? "web:default";
   }
 
-  /** Get the current turn ID across all chat coordinators (for activity persistence) */
+  /** Get the current turn ID across all chat coordinators (for approval channel tracking) */
   getCurrentTurnId(): string | null {
     for (const coordinator of this.chatCoordinators.values()) {
       const turnId = coordinator.getCurrentTurnId();

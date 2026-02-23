@@ -1,6 +1,7 @@
 import { createTRPCReact } from "@trpc/react-query";
 import {
   httpBatchLink,
+  httpLink,
   splitLink,
   wsLink,
   createWSClient,
@@ -22,7 +23,12 @@ export const trpcClient = trpc.createClient({
     splitLink({
       condition: (op) => op.type === "subscription",
       true: wsLink({ client: wsClient }),
-      false: httpBatchLink({ url: httpUrl }),
+      false: splitLink({
+        // Route slow AI-generated queries to non-batching link
+        condition: (op) => op.path === "chat.suggestions",
+        true: httpLink({ url: httpUrl }),
+        false: httpBatchLink({ url: httpUrl }),
+      }),
     }),
   ],
 });

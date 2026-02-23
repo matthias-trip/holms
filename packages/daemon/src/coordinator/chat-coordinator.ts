@@ -6,7 +6,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache } from "./query-runner.js";
 
 /**
  * Per-channel stateful coordinator with SDK session resume.
@@ -25,6 +25,7 @@ export class ChatCoordinator {
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
+    private contextCache: ContextCache,
     private pluginManager?: PluginManager,
     private peopleStore?: PeopleStore,
     private goalStore?: GoalStore,
@@ -44,7 +45,7 @@ export class ChatCoordinator {
   async handleUserRequest(message: string, messageId?: string, channelDisplayName?: string, memoryScope?: string): Promise<string> {
     return this.enqueue(async () => {
       const scope = memoryScope ?? this.channel;
-      const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, scope, undefined, this.goalStore);
+      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, scope, undefined, this.goalStore));
       const prompt = `${context}\n\nUser message: ${message}${BEFORE_ACTING_REMINDER}`;
       return this.runQuery(prompt, "user_message", `User message: ${message}`, messageId, channelDisplayName);
     });
@@ -58,7 +59,7 @@ export class ChatCoordinator {
     messageId?: string,
   ): Promise<string> {
     return this.enqueue(async () => {
-      const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, this.channel, undefined, this.goalStore);
+      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, this.channel, undefined, this.goalStore));
 
       // Resolve human-readable device name for the prompt
       const device = await this.deviceManager.getDevice(action.deviceId);

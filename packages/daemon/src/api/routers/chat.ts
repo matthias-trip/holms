@@ -6,7 +6,6 @@ import type { AgentActivity } from "@holms/shared";
 import { v4 as uuid } from "uuid";
 import type { EventBus } from "../../event-bus.js";
 import type { ActivityStore } from "../../activity/store.js";
-import type { CoordinatorHub } from "../../coordinator/coordinator-hub.js";
 import { runTrackedQuery } from "../../coordinator/query-runner.js";
 import type { InboundMessage } from "../../channels/types.js";
 
@@ -22,10 +21,7 @@ let suggestionsCache: { key: string; suggestions: string[] } | null = null;
 export function initActivityPersistence(
   eventBus: EventBus,
   activityStore: ActivityStore,
-  hub: CoordinatorHub,
 ): void {
-  let lastTurnId: string | undefined;
-  const getTurnId = () => hub.getCurrentTurnId() ?? lastTurnId;
   const approvalTurnMap = new Map<string, string>(); // approvalId → turnId
 
   const store = (activity: AgentActivity) => {
@@ -35,7 +31,6 @@ export function initActivityPersistence(
   };
 
   eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; proactiveType?: string; model?: string; channel?: string; channelDisplayName?: string; coordinatorType?: string; timestamp: number }) => {
-    lastTurnId = data.turnId;
     store({
       id: uuid(), type: "turn_start",
       data: { trigger: data.trigger, proactiveType: data.proactiveType, model: data.model, channel: data.channel, channelDisplayName: data.channelDisplayName },
@@ -47,7 +42,7 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "thinking",
       data: { prompt: data.prompt },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
     });
   });
 
@@ -55,7 +50,7 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "tool_use",
       data: { tool: data.tool, input: data.input },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
     });
   });
 
@@ -63,23 +58,23 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "result",
       data: { result: data.result, summary: data.summary, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
     });
   });
 
-  eventBus.on("agent:reflection", (data: { insight: string; timestamp: number }) => {
+  eventBus.on("agent:reflection", (data: { insight: string; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "reflection",
       data: { insight: data.insight },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
     });
   });
 
-  eventBus.on("agent:outcome", (data: { action: string; feedback: string; timestamp: number }) => {
+  eventBus.on("agent:outcome", (data: { action: string; feedback: string; turnId?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "outcome",
       data: { action: data.action, feedback: data.feedback },
-      timestamp: data.timestamp, agentId: "coordinator", turnId: getTurnId(),
+      timestamp: data.timestamp, agentId: "coordinator", turnId: data.turnId,
     });
   });
 
@@ -87,7 +82,7 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "deep_reason_start",
       data: { problem: data.problem, model: data.model },
-      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId,
     });
   });
 
@@ -95,12 +90,12 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "deep_reason_result",
       data: { problem: data.problem, analysis: data.analysis, model: data.model, costUsd: data.costUsd, inputTokens: data.inputTokens, outputTokens: data.outputTokens, cacheReadTokens: data.cacheReadTokens, cacheCreationTokens: data.cacheCreationTokens, durationMs: data.durationMs, durationApiMs: data.durationApiMs, numTurns: data.numTurns, totalCostUsd: data.totalCostUsd },
-      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "deep_reason", turnId: data.turnId,
     });
   });
 
-  eventBus.on("approval:pending", (data: { id: string; deviceId: string; command: string; reason: string; createdAt: number; status: string; params: Record<string, unknown> }) => {
-    const turnId = getTurnId();
+  eventBus.on("approval:pending", (data: { id: string; deviceId: string; command: string; reason: string; createdAt: number; status: string; params: Record<string, unknown>; turnId?: string }) => {
+    const turnId = data.turnId;
     if (turnId) approvalTurnMap.set(data.id, turnId);
     store({
       id: uuid(), type: "approval_pending",
@@ -165,7 +160,7 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "analyze_history_start",
       data: { question: data.question, model: data.model },
-      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId,
     });
   });
 
@@ -173,7 +168,7 @@ export function initActivityPersistence(
     store({
       id: uuid(), type: "analyze_history_result",
       data: { question: data.question, analysis: data.analysis, model: data.model, durationMs: data.durationMs },
-      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId ?? getTurnId(),
+      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId,
     });
   });
 

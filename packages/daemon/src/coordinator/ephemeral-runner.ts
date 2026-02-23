@@ -7,7 +7,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache } from "./query-runner.js";
 
 function relativeTimeShort(ts: number): string {
   const diff = Math.max(0, Date.now() - ts);
@@ -34,6 +34,7 @@ export class EphemeralRunner {
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
+    private contextCache: ContextCache,
     private pluginManager?: PluginManager,
     private peopleStore?: PeopleStore,
     private goalStore?: GoalStore,
@@ -50,7 +51,7 @@ export class EphemeralRunner {
   }
 
   async handleProactiveWakeup(wakeupType: string, extraContext: string = "", channel?: string): Promise<string> {
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore);
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const userPrompts: Record<string, string> = {
       situational: "PROACTIVE CHECK: Assess the current home state.",
@@ -114,7 +115,7 @@ export class EphemeralRunner {
 
   async runOnboarding(): Promise<string> {
     console.log("[EphemeralRunner] Starting onboarding — discovering home...");
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, { onboarding: true }, this.goalStore);
+    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, { onboarding: true }, this.goalStore) /* skip cache — onboarding is one-time */;
 
     const prompt = `${context}\n\nONBOARDING: You are setting up a new home for the first time. The entity filter is empty — no devices are visible yet. Follow the Onboarding instructions in your system prompt to discover and configure this home. Start by calling list_available_entities.`;
 
@@ -128,7 +129,7 @@ export class EphemeralRunner {
     sentiment: "positive" | "negative";
     comment?: string;
   }): Promise<string> {
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore);
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const sentimentLabel = opts.sentiment === "positive" ? "POSITIVE (thumbs up)" : "NEGATIVE (thumbs down)";
     const commentSection = opts.comment ? `\nUser comment: "${opts.comment}"` : "";
@@ -145,7 +146,7 @@ export class EphemeralRunner {
     sentiment: "positive" | "negative";
     comment?: string;
   }): Promise<string> {
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore);
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const sentimentLabel = opts.sentiment === "positive" ? "POSITIVE (thumbs up)" : "NEGATIVE (thumbs down)";
     const commentSection = opts.comment ? `\nUser comment: "${opts.comment}"` : "";
@@ -156,7 +157,7 @@ export class EphemeralRunner {
   }
 
   async handleOutcomeFeedback(feedback: string): Promise<string> {
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore);
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
     const prompt = `${context}\n\nOUTCOME FEEDBACK: ${feedback}\n\nReflect on this feedback. What does it tell you about the user's preferences? Store relevant insights as memories and adjust your future behavior accordingly.`;
     return this.runEphemeral(prompt, "outcome_feedback", `OUTCOME FEEDBACK: ${feedback}`);
   }
@@ -165,7 +166,7 @@ export class EphemeralRunner {
     if (this.eventQueue.length === 0) return;
 
     const events = this.eventQueue.splice(0);
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore);
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const eventSummary = events
       .map(

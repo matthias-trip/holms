@@ -6,7 +6,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const skillPath = resolve(__dirname, "coordinator.md");
 
-export function buildSystemPrompt(context: {
+/** Static system prompt — loaded once, cacheable by Anthropic */
+export function getStaticSystemPrompt(): string {
+  return loadPromptFile(skillPath);
+}
+
+/** Dynamic context — changes per turn, sent as user message prefix */
+export function buildDynamicContext(context: {
   currentTime: string;
   deviceSummary: string;
   peopleSummary?: string;
@@ -14,30 +20,24 @@ export function buildSystemPrompt(context: {
   memoryScope?: string;
   onboarding?: boolean;
 }): string {
-  const skill = loadPromptFile(skillPath);
-
-  let prompt = `${skill}
-
----
-
-## Current Context
+  let ctx = `## Current Context
 - Time: ${context.currentTime}
 - Devices: ${context.deviceSummary}`;
 
   if (context.onboarding) {
-    prompt += `\n- Mode: ONBOARDING — follow the Onboarding section above`;
+    ctx += `\n- Mode: ONBOARDING — follow the Onboarding section above`;
   }
 
   if (context.peopleSummary) {
-    prompt += `\n- Household: ${context.peopleSummary}`;
+    ctx += `\n- Household: ${context.peopleSummary}`;
   }
 
   if (context.goalsSummary) {
-    prompt += `\n- Active Goals:\n${context.goalsSummary}`;
+    ctx += `\n- Active Goals:\n${context.goalsSummary}`;
   }
 
   if (context.memoryScope) {
-    prompt += `
+    ctx += `
 
 ## Memory Scope
 You are in conversation scope: "${context.memoryScope}"
@@ -46,5 +46,5 @@ When querying memories, pass this as the \`scope\` parameter to memory_query to 
 Household-level knowledge (device locations, general routines, etc.) should be stored WITHOUT a scope so all users can see it.`;
   }
 
-  return prompt;
+  return ctx;
 }

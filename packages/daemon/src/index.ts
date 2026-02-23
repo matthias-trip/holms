@@ -263,7 +263,7 @@ async function main() {
   historyIngestion.start();
 
   // 12c. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
-  initActivityPersistence(eventBus, activityStore, hub);
+  initActivityPersistence(eventBus, activityStore);
 
   // 13. Start tRPC API server
   const apiServer = startApiServer(

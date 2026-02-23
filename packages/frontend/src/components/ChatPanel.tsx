@@ -630,7 +630,7 @@ export default function ChatPanel() {
   // Dynamic suggestions via Haiku
   const suggestionsQuery = trpc.chat.suggestions.useQuery(
     { limit: 3 },
-    { enabled: messages.length > 0 && !isProcessing, staleTime: Infinity },
+    { enabled: historyQuery.isSuccess && messages.length > 0 && !isProcessing, staleTime: Infinity },
   );
   const suggestions = suggestionsQuery.data?.suggestions ?? [];
 

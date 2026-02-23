@@ -8,7 +8,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import { getStaticSystemPrompt, buildDynamicContext } from "./system-prompt.js";
 import { runWithChannel } from "./query-context.js";
 
 // ── SDK process options helper ──
@@ -91,6 +91,28 @@ export function extractResultMetrics(event: Record<string, unknown>): QueryMetri
   };
 }
 
+// ── Context cache ──
+
+export class ContextCache {
+  private cached: { context: string; time: number } | null = null;
+  private readonly maxAgeMs = 30_000;
+
+  constructor(eventBus: EventBus) {
+    eventBus.on("device:event", () => this.invalidate());
+  }
+
+  invalidate(): void { this.cached = null; }
+
+  async getOrBuild(builder: () => Promise<string>): Promise<string> {
+    if (this.cached && Date.now() - this.cached.time < this.maxAgeMs) {
+      return this.cached.context;
+    }
+    const context = await builder();
+    this.cached = { context, time: Date.now() };
+    return context;
+  }
+}
+
 // ── Context builder ──
 
 export async function buildAgentContext(
@@ -155,7 +177,7 @@ export async function buildAgentContext(
     }
   }
 
-  return buildSystemPrompt({
+  return buildDynamicContext({
     currentTime: new Date().toLocaleString(),
     deviceSummary,
     peopleSummary,
@@ -269,6 +291,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
   const conversation = query({
     prompt: createSDKPrompt(opts.promptText)(),
     options: {
+      systemPrompt: getStaticSystemPrompt(),
       model: opts.config.models.coordinator,
       maxTurns: opts.config.coordinator.maxTurns,
       mcpServers: opts.mcpPool.servers,
@@ -536,6 +559,7 @@ export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ resu
     model: opts.model,
     ...metrics,
     totalCostUsd: metrics.costUsd,
+    turnId,
     timestamp: Date.now(),
   });
 
