@@ -53,6 +53,9 @@ export interface HolmsConfig {
     ingestionEpsilon: number;    // skip storing if numeric value changed by less than this
     minStorageIntervalMs: number; // max one row per entity per this many ms (default 60s)
   };
+  activity: {
+    maxAgeMs: number;            // auto-purge activities older than this (default 12h)
+  };
 }
 
 const holmsHome = resolve(homedir(), ".holms");
@@ -102,6 +105,9 @@ const defaults: HolmsConfig = {
     catalogRefreshMs: 3600000,
     ingestionEpsilon: 0.01,
     minStorageIntervalMs: 60_000,
+  },
+  activity: {
+    maxAgeMs: 12 * 3600_000,
   },
 };
 

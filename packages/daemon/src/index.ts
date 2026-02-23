@@ -266,6 +266,20 @@ async function main() {
   // 12c. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
   initActivityPersistence(eventBus, activityStore);
 
+  // 12d. Purge old activities at startup + hourly
+  {
+    const { activities, events } = activityStore.purge(config.activity.maxAgeMs);
+    if (activities > 0 || events > 0) {
+      console.log(`[ActivityStore] Purged ${activities} activity rows and ${events} event rows older than ${config.activity.maxAgeMs / 3600_000}h`);
+    }
+  }
+  const purgeInterval = setInterval(() => {
+    const { activities, events } = activityStore.purge(config.activity.maxAgeMs);
+    if (activities > 0 || events > 0) {
+      console.log(`[ActivityStore] Purged ${activities} activity rows and ${events} event rows older than ${config.activity.maxAgeMs / 3600_000}h`);
+    }
+  }, 3600_000);
+
   // 13. Start tRPC API server
   const apiServer = startApiServer(
     {
@@ -315,6 +329,7 @@ async function main() {
   // 15. Graceful shutdown
   const shutdown = async () => {
     console.log("\n\nShutting down...");
+    clearInterval(purgeInterval);
     await channelManager.stopAll();
     scheduler.stop();
     historyIngestion.stop();

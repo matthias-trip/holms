@@ -178,7 +178,16 @@ export default function ActivityPanel() {
     } else {
       setLiveOrphans((prev) => {
         if (prev.some((a) => a.id === activity.id)) return prev;
-        return [...prev.slice(-99), activity];
+        const next = [...prev, activity];
+        // Cap triage_classify events to avoid flooding
+        const classifyEvents = next.filter((a) => a.type === "triage_classify");
+        if (classifyEvents.length > 20) {
+          const toRemove = new Set(
+            classifyEvents.slice(0, classifyEvents.length - 20).map((a) => a.id),
+          );
+          return next.filter((a) => !toRemove.has(a.id));
+        }
+        return next.slice(-100);
       });
     }
   }, []);

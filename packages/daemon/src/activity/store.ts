@@ -104,9 +104,15 @@ export class ActivityStore {
   getOrphanActivities(limit = 100): AgentActivity[] {
     const rows = this.db
       .prepare(
-        `SELECT * FROM (SELECT * FROM agent_activities WHERE turn_id IS NULL ORDER BY timestamp DESC LIMIT ?) ORDER BY timestamp ASC`,
+        `SELECT * FROM (
+          SELECT * FROM agent_activities WHERE turn_id IS NULL AND type != 'triage_classify' ORDER BY timestamp DESC LIMIT ?
+          UNION ALL
+          SELECT * FROM agent_activities WHERE turn_id IS NULL AND type = 'triage_classify' ORDER BY timestamp DESC LIMIT 20
+        ) ORDER BY timestamp DESC LIMIT ?`,
       )
-      .all(limit) as ActivityRow[];
+      .all(limit, limit) as ActivityRow[];
+    // Return in ascending order
+    rows.reverse();
     return rows.map(mapRow);
   }
 
@@ -158,6 +164,17 @@ export class ActivityStore {
       data: JSON.parse(r.data),
       timestamp: r.timestamp,
     }));
+  }
+
+  purge(maxAgeMs: number): { activities: number; events: number } {
+    const cutoff = Date.now() - maxAgeMs;
+    const activities = this.db.prepare(
+      `DELETE FROM agent_activities WHERE timestamp < ?`,
+    ).run(cutoff).changes;
+    const events = this.db.prepare(
+      `DELETE FROM bus_events WHERE timestamp < ?`,
+    ).run(cutoff).changes;
+    return { activities, events };
   }
 
   close(): void {

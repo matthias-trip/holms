@@ -47,9 +47,9 @@ export type ToolScope =
 const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
   full:          ["device-query", "device-command", "memory", "reflex", "approval",
                   "automation", "triage", "people", "goals", "history", "channel", "scheduler"],
-  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage"],
-  reflection:    ["memory", "triage", "reflex"],
-  goal_review:   ["goals", "memory"],
+  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage", "channel", "people"],
+  reflection:    ["memory", "triage", "reflex", "history"],
+  goal_review:   ["goals", "memory", "history"],
   memory_only:   ["memory"],
   onboarding:    ["device-query", "memory", "people"],
 };
