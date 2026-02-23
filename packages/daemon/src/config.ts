@@ -18,6 +18,7 @@ export interface HolmsConfig {
   models: {
     coordinator: string;
     deepReason: string;
+    lightweight: string;
     suggestions: string;
     analyzeHistory: string;
   };
@@ -66,7 +67,8 @@ const defaults: HolmsConfig = {
   pluginsStatePath: resolve(holmsHome, "plugins.json"),
   models: {
     coordinator: "claude-sonnet-4-6",
-    deepReason: "claude-sonnet-4-6",
+    deepReason: "claude-opus-4-6",
+    lightweight: "claude-haiku-4-5-20251001",
     suggestions: "claude-haiku-4-5-20251001",
     analyzeHistory: "claude-sonnet-4-6",
   },
@@ -117,6 +119,7 @@ export function loadConfig(): HolmsConfig {
     models: {
       coordinator: process.env.HOLMS_MODEL_COORDINATOR ?? defaults.models.coordinator,
       deepReason: process.env.HOLMS_MODEL_DEEP_REASON ?? defaults.models.deepReason,
+      lightweight: process.env.HOLMS_MODEL_LIGHTWEIGHT ?? defaults.models.lightweight,
       suggestions: process.env.HOLMS_MODEL_SUGGESTIONS ?? defaults.models.suggestions,
       analyzeHistory: process.env.HOLMS_MODEL_ANALYZE_HISTORY ?? defaults.models.analyzeHistory,
     },

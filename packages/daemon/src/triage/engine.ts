@@ -202,6 +202,7 @@ export class TriageEngine {
     reason: string,
   ): void {
     const device = this.deviceManager.getCachedDevice(event.deviceId);
+    const delta = typeof event.data.delta === "number" ? event.data.delta : undefined;
     this.eventBus.emit("agent:triage_classify", {
       deviceId: event.deviceId,
       eventType: event.type,
@@ -210,6 +211,7 @@ export class TriageEngine {
       reason,
       deviceName: device?.name,
       area: device?.area.name,
+      delta,
       timestamp: Date.now(),
     });
   }

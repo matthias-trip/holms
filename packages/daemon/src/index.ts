@@ -100,7 +100,7 @@ async function main() {
   mcpPool.register("reflex", () => createReflexToolsServer(reflexStore));
   mcpPool.register("approval", () => createApprovalToolsServer(approvalQueue));
   mcpPool.register("automation", () => createAutomationToolsServer(automationStore));
-  mcpPool.register("triage", () => createTriageToolsServer(triageStore));
+  mcpPool.register("triage", () => createTriageToolsServer(triageStore, activityStore));
   mcpPool.register("people", () => createPeopleToolsServer(peopleStore));
   mcpPool.register("goals", () => createGoalToolsServer(goalStore));
   mcpPool.register("history", () => createHistoryToolsServer(historyStore));
@@ -114,6 +114,7 @@ async function main() {
     pluginManager,
     peopleStore,
     goalStore,
+    activityStore,
   );
 
   // 9. Init ChannelStore + ChannelManager

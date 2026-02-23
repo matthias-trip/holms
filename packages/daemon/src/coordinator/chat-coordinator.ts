@@ -73,11 +73,11 @@ export class ChatCoordinator {
       const prompt = approved
         ? `${context}\n\n${userPrompt} Acknowledge briefly.`
         : `${context}\n\n${userPrompt} Reflect on why and store a brief lesson in memory so you avoid repeating the mistake.`;
-      return this.runQuery(prompt, "approval_result", userPrompt, messageId, undefined, "memory_only");
+      return this.runQuery(prompt, "approval_result", userPrompt, messageId, undefined, "memory_only", this.config.models.lightweight);
     });
   }
 
-  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", userPrompt?: string, externalMessageId?: string, channelDisplayName?: string, toolScope?: ToolScope): Promise<string> {
+  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", userPrompt?: string, externalMessageId?: string, channelDisplayName?: string, toolScope?: ToolScope, model?: string): Promise<string> {
     const messageId = externalMessageId ?? crypto.randomUUID();
     const turnId = crypto.randomUUID();
     this.currentTurnId = turnId;
@@ -97,6 +97,7 @@ export class ChatCoordinator {
         channelDisplayName,
         coordinatorType: "chat",
         toolScope,
+        model,
       });
       this.sessionId = sessionId;
       return result;

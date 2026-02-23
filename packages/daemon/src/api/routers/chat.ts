@@ -122,10 +122,10 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("agent:triage_classify", (data: { deviceId: string; eventType: string; lane: string; ruleId: string | null; reason: string; deviceName?: string; area?: string; timestamp: number }) => {
+  eventBus.on("agent:triage_classify", (data: { deviceId: string; eventType: string; lane: string; ruleId: string | null; reason: string; deviceName?: string; area?: string; delta?: number; timestamp: number }) => {
     store({
       id: uuid(), type: "triage_classify",
-      data: { deviceId: data.deviceId, eventType: data.eventType, lane: data.lane, ruleId: data.ruleId, reason: data.reason, deviceName: data.deviceName, area: data.area },
+      data: { deviceId: data.deviceId, eventType: data.eventType, lane: data.lane, ruleId: data.ruleId, reason: data.reason, deviceName: data.deviceName, area: data.area, delta: data.delta },
       timestamp: data.timestamp, agentId: "triage",
     });
   });

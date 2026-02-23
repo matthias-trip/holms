@@ -47,7 +47,7 @@ export type ToolScope =
 const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
   full:          ["device-query", "device-command", "memory", "reflex", "approval",
                   "automation", "triage", "people", "goals", "history", "channel", "scheduler"],
-  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history"],
+  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage"],
   reflection:    ["memory", "triage", "reflex"],
   goal_review:   ["goals", "memory"],
   memory_only:   ["memory"],
@@ -226,6 +226,8 @@ export interface ToolQueryOptions {
   channelDisplayName?: string;
   coordinatorType?: string;
   toolScope?: ToolScope;
+  /** Override the model for this query (defaults to config.models.coordinator). */
+  model?: string;
 }
 
 export interface ToolQueryResult {
@@ -278,14 +280,39 @@ Structure your response with: **Analysis** (what you found), **Key Findings** (b
   };
 }
 
+function buildDeepReasonAgent(config: HolmsConfig): AgentDefinition {
+  return {
+    description:
+      "Spawn a focused deep-reasoning analysis for complex problems that need multi-constraint trade-off analysis, anomaly investigation, or nuanced decision-making. Pass the full problem description including all relevant context (device states, memories, constraints) — the sub-agent cannot look things up on its own.",
+    prompt: `You are a deep-reasoning analyst for a home automation system called Holms.
+
+Your job is to think carefully through complex problems that require weighing multiple constraints, analyzing anomalies, or making nuanced trade-off decisions.
+
+## Approach
+
+1. Break down the problem into its component parts
+2. Identify all relevant constraints and trade-offs
+3. Consider edge cases and potential failure modes
+4. Reason step by step through the options
+5. Provide a clear recommendation with justification
+
+## Output Format
+Structure your response with: **Analysis** (systematic breakdown), **Key Considerations** (constraints and trade-offs), **Recommendation** (what to do and why).`,
+    tools: [],
+    model: config.models.deepReason as AgentDefinition["model"],
+    maxTurns: config.deepReason.maxTurns,
+  };
+}
+
 async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResult> {
   const turnId = crypto.randomUUID();
+  const effectiveModel = opts.model ?? opts.config.models.coordinator;
 
   opts.eventBus.emit("agent:turn_start", {
     turnId,
     trigger: opts.trigger,
     proactiveType: opts.proactiveType,
-    model: opts.config.models.coordinator,
+    model: effectiveModel,
     channel: opts.channel,
     channelDisplayName: opts.channelDisplayName,
     coordinatorType: opts.coordinatorType,
@@ -316,7 +343,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
     prompt: createSDKPrompt(opts.promptText)(),
     options: {
       systemPrompt: getStaticSystemPrompt(),
-      model: opts.config.models.coordinator,
+      model: effectiveModel,
       maxTurns: opts.config.coordinator.maxTurns,
       mcpServers: opts.mcpPool.serversFor(scopeServers),
       disallowedTools: DISALLOWED_TOOLS,
@@ -326,6 +353,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
         "Task",
       ],
       agents: {
+        deep_reason: buildDeepReasonAgent(opts.config),
         analyze_history: buildAnalyzeHistoryAgent(opts.config),
       },
       ...(plugins.length > 0 ? { plugins } : {}),
@@ -488,7 +516,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       opts.eventBus.emit("agent:result", {
         result,
         summary,
-        model: opts.config.models.coordinator,
+        model: effectiveModel,
         ...metrics,
         totalCostUsd: metrics.costUsd,
         turnId,

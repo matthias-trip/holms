@@ -128,7 +128,8 @@ Environment variables in `packages/daemon/.env` (loaded via `--env-file`):
 | `HOLMS_CLAUDE_EXECUTABLE_PATH` | *(auto)* | Path to native `claude` binary for Agent SDK |
 | `HOLMS_PLUGINS_DIR` | `~/.holms/plugins` | Plugin discovery directory |
 | `HOLMS_MODEL_COORDINATOR` | `claude-sonnet-4-6` | Model for main coordinator agent |
-| `HOLMS_MODEL_DEEP_REASON` | `claude-sonnet-4-6` | Model for deep reasoning sub-agent |
+| `HOLMS_MODEL_DEEP_REASON` | `claude-opus-4-6` | Model for deep reasoning sub-agent |
+| `HOLMS_MODEL_LIGHTWEIGHT` | `claude-haiku-4-5-20251001` | Model for lightweight tasks (feedback, reflection, goal review, daily summary, approval ack) |
 | `HOLMS_DEEP_REASON_MAX_TURNS` | `10` | Max tool-use turns for deep reasoning |
 
 Agent behavior (batch delay, max turns, budget, proactive intervals) is configured in `packages/daemon/src/config.ts`.

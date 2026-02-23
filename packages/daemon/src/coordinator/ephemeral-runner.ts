@@ -6,6 +6,7 @@ import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
+import type { ActivityStore } from "../activity/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache, type ToolScope } from "./query-runner.js";
 
@@ -38,6 +39,7 @@ export class EphemeralRunner {
     private pluginManager?: PluginManager,
     private peopleStore?: PeopleStore,
     private goalStore?: GoalStore,
+    private activityStore?: ActivityStore,
   ) {}
 
   enqueueEvent(event: DeviceEvent): void {
@@ -70,7 +72,7 @@ export class EphemeralRunner {
 
     const prompts: Record<string, string> = {
       situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, and constraints in the problem description. Check person properties for presence and schedule context.${BEFORE_ACTING_REMINDER}${summaryInstruction}`,
-      reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Use memory_query with recent time range and tags like ["action", "outcome"] to recall your recent actions. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Also review your event triage configuration. Were you woken up for events you never acted on? Use list_triage_rules to see your current rules, then silence or batch noisy event sources. Were there events you missed because they were batched or silent? Escalate those to immediate.${summaryInstruction}`,
+      reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Use memory_query with recent time range and tags like ["action", "outcome"] to recall your recent actions. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Call get_triage_stats to see event counts since your last reflection. Devices with high batched counts you never act on → silence via set_triage_rule. Devices with high silent counts you might be missing → escalate. Review existing rules with list_triage_rules and prune stale ones.${summaryInstruction}`,
       goal_review: `${context}\n\n${goalReviewPrompt}\n\nGOAL REVIEW: All active goals with their recent timelines are shown above.\n\nFor each goal, review its timeline, assess progress, and log an observation via goal_log. If a goal is blocked, uncertain, or has reached a milestone, flag it for attention via goal_update. If a goal is achieved, mark it completed. If no longer relevant, mark it abandoned.\n\nAfter reviewing all goals, consider whether new goals should be created based on recent patterns observed across the home.${summaryInstruction}`,
       daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity. What patterns did you notice? What did you learn? What will you do differently tomorrow? Use memory_query to recall today's events and actions, then store a single concise summary as a reflection memory.\n\nFocus on writing the summary. Save maintenance and cleanup for reflection cycles.${summaryInstruction}`,
       automation: `${context}\n\n${extraContext}\n\nAUTOMATION FIRED: An automation has triggered. Follow the Before Acting protocol, then handle the instruction above. Do NOT create a reflex right now — just handle it. Only promote to a reflex after you've successfully handled this same automation multiple times and are confident the action never varies.${BEFORE_ACTING_REMINDER}`,
@@ -89,7 +91,11 @@ export class EphemeralRunner {
     const trigger: TurnTrigger = wakeupType === "automation" ? "automation" : "proactive";
     const proactiveType = wakeupType !== "automation" ? wakeupType : undefined;
     const toolScope = proactiveScopes[wakeupType] ?? "device_action";
-    return this.runEphemeral(prompt, trigger, userPrompt, proactiveType, channel, toolScope);
+
+    const lightweightTypes = new Set(["reflection", "goal_review", "daily_summary"]);
+    const model = lightweightTypes.has(wakeupType) ? this.config.models.lightweight : undefined;
+
+    return this.runEphemeral(prompt, trigger, userPrompt, proactiveType, channel, toolScope, model);
   }
 
   private async buildGoalReviewContext(): Promise<string> {
@@ -145,7 +151,7 @@ export class EphemeralRunner {
 
     const prompt = `${context}\n\nCYCLE FEEDBACK: The user rated a ${opts.cycleType} cycle as ${sentimentLabel}.${commentSection}\n\nOriginal cycle output:\n${opts.cycleResult}\n\nReflect on this feedback. What does it tell you about what the user finds helpful or unhelpful? Store relevant insights as memories so you can adjust future ${opts.cycleType} cycles accordingly. For negative feedback, consider what to do differently next time — perhaps be more concise, skip certain checks, or focus on different aspects.`;
 
-    return this.runEphemeral(prompt, "outcome_feedback", `CYCLE FEEDBACK: ${opts.cycleType} rated ${opts.sentiment}`, undefined, undefined, "memory_only");
+    return this.runEphemeral(prompt, "outcome_feedback", `CYCLE FEEDBACK: ${opts.cycleType} rated ${opts.sentiment}`, undefined, undefined, "memory_only", this.config.models.lightweight);
   }
 
   async handleMessageFeedback(opts: {
@@ -162,13 +168,13 @@ export class EphemeralRunner {
 
     const prompt = `${context}\n\nMESSAGE FEEDBACK: The user rated your response as ${sentimentLabel}.${commentSection}\n\nExchange:\nUser: ${opts.userMessage}\nYou: ${opts.assistantMessage}\n\nReflect briefly on this feedback. What should you do differently? Store relevant insights as memories so you can adjust future responses accordingly.`;
 
-    return this.runEphemeral(prompt, "outcome_feedback", `MESSAGE FEEDBACK: rated ${opts.sentiment}`, undefined, undefined, "memory_only");
+    return this.runEphemeral(prompt, "outcome_feedback", `MESSAGE FEEDBACK: rated ${opts.sentiment}`, undefined, undefined, "memory_only", this.config.models.lightweight);
   }
 
   async handleOutcomeFeedback(feedback: string): Promise<string> {
     const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
     const prompt = `${context}\n\nOUTCOME FEEDBACK: ${feedback}\n\nReflect on this feedback. What does it tell you about the user's preferences? Store relevant insights as memories and adjust your future behavior accordingly.`;
-    return this.runEphemeral(prompt, "outcome_feedback", `OUTCOME FEEDBACK: ${feedback}`, undefined, undefined, "memory_only");
+    return this.runEphemeral(prompt, "outcome_feedback", `OUTCOME FEEDBACK: ${feedback}`, undefined, undefined, "memory_only", this.config.models.lightweight);
   }
 
   private async processBatch(): Promise<void> {
@@ -184,7 +190,10 @@ export class EphemeralRunner {
       )
       .join("\n");
 
-    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nProcess these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, automations, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}\n\nConsider person properties (presence, schedule) in your context when deciding how to respond.`;
+    // Build triage stats hint for devices in this batch
+    const triageHint = this.getTriageStatsForDevices(events.map((e) => e.deviceId));
+
+    const prompt = `${context}\n\nNew device events:\n${eventSummary}${triageHint}\n\nProcess these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, automations, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}\n\nConsider person properties (presence, schedule) in your context when deciding how to respond.\n\nIf you keep seeing events from a device without acting, use set_triage_rule to silence or adjust its routing.`;
 
     const userPrompt = `Device events:\n${eventSummary}`;
 
@@ -194,7 +203,51 @@ export class EphemeralRunner {
     });
   }
 
-  private async runEphemeral(promptText: string, trigger: TurnTrigger, userPrompt?: string, proactiveType?: string, channel?: string, toolScope?: ToolScope): Promise<string> {
+  private getTriageStatsForDevices(deviceIds: string[]): string {
+    if (!this.activityStore) return "";
+
+    const sinceTs = Date.now() - 4 * 3600_000;
+    const uniqueIds = new Set(deviceIds);
+
+    try {
+      const activities = this.activityStore.getActivities(10000);
+      const relevant = activities.filter(
+        (a) =>
+          a.type === "triage_classify" &&
+          a.timestamp >= sinceTs &&
+          uniqueIds.has((a.data as { deviceId: string }).deviceId),
+      );
+
+      if (relevant.length === 0) return "";
+
+      const byDevice = new Map<string, { batched: number; immediate: number; silent: number }>();
+      for (const ev of relevant) {
+        const data = ev.data as { deviceId: string; lane: string };
+        let entry = byDevice.get(data.deviceId);
+        if (!entry) {
+          entry = { batched: 0, immediate: 0, silent: 0 };
+          byDevice.set(data.deviceId, entry);
+        }
+        if (data.lane === "batched") entry.batched++;
+        else if (data.lane === "immediate") entry.immediate++;
+        else if (data.lane === "silent") entry.silent++;
+      }
+
+      const lines: string[] = ["\n\nTriage stats for these devices (last 4h):"];
+      for (const [deviceId, stats] of byDevice) {
+        const parts: string[] = [];
+        if (stats.batched > 0) parts.push(`${stats.batched} batched`);
+        if (stats.immediate > 0) parts.push(`${stats.immediate} immediate`);
+        if (stats.silent > 0) parts.push(`${stats.silent} silent`);
+        lines.push(`- ${deviceId}: ${parts.join(", ")}`);
+      }
+      return lines.join("\n");
+    } catch {
+      return "";
+    }
+  }
+
+  private async runEphemeral(promptText: string, trigger: TurnTrigger, userPrompt?: string, proactiveType?: string, channel?: string, toolScope?: ToolScope, model?: string): Promise<string> {
     const messageId = crypto.randomUUID();
 
     try {
@@ -212,6 +265,7 @@ export class EphemeralRunner {
         channel,
         coordinatorType: "ephemeral",
         toolScope,
+        model,
       });
       return result;
     } catch (error) {

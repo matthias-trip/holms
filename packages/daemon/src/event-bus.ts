@@ -122,6 +122,7 @@ export interface EventBusEvents {
     reason: string;
     deviceName?: string;
     area?: string;
+    delta?: number;
     timestamp: number;
   }) => void;
   "agent:triage_batch": (data: {

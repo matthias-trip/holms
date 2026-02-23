@@ -7,6 +7,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { ChannelManager } from "../channels/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
+import type { ActivityStore } from "../activity/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { ChatCoordinator } from "./chat-coordinator.js";
 import { EphemeralRunner } from "./ephemeral-runner.js";
@@ -33,11 +34,12 @@ export class CoordinatorHub {
     private pluginManager?: PluginManager,
     private peopleStore?: PeopleStore,
     private goalStore?: GoalStore,
+    private activityStore?: ActivityStore,
   ) {
     this.contextCache = new ContextCache(eventBus);
     this.ephemeralRunner = new EphemeralRunner(
       eventBus, deviceManager, memoryStore,
-      config, this.mcpPool, this.contextCache, pluginManager, peopleStore, goalStore,
+      config, this.mcpPool, this.contextCache, pluginManager, peopleStore, goalStore, activityStore,
     );
 
     // Track which channel was active when an approval was proposed
