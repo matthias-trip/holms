@@ -27,9 +27,6 @@ RUN find packages/daemon/src -name '*.md' | while read f; do \
       cp "$f" "packages/daemon/dist/${f#packages/daemon/src/}"; \
     done
 
-# Ensure .claude/debug dir exists for SDK debug logs
-RUN mkdir -p /root/.claude/debug
-
 # Stage 2 — Runtime
 FROM node:20-slim
 
@@ -37,10 +34,8 @@ LABEL org.opencontainers.image.source="https://github.com/matthias-trip/holms"
 LABEL org.opencontainers.image.description="Holms — AI-driven home automation"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Install Claude CLI (required by Claude Agent SDK at runtime)
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/root/.local/bin:${PATH}"
+# Git is needed by the Claude Agent SDK's bundled CLI at runtime
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -58,8 +53,11 @@ COPY --from=builder /app/packages/frontend/dist/ packages/frontend/dist/
 # Copy node_modules (hoisted by npm workspaces to root)
 COPY --from=builder /app/node_modules/ node_modules/
 
-# Mark Claude CLI onboarding as complete (skips interactive prompts)
-RUN mkdir -p /root/.claude && echo '{"hasCompletedOnboarding":true}' > /root/.claude.json
+# Pre-configure Claude CLI for headless operation:
+# - hasCompletedOnboarding: skip interactive setup prompts
+# - installMethod: prevent auto-updater from trying to install native binary
+RUN mkdir -p /root/.claude/debug
+RUN echo '{"hasCompletedOnboarding":true,"installMethod":"sdk","autoUpdaterStatus":"disabled"}' > /root/.claude.json
 
 # Environment defaults
 ENV HOLMS_PORT=3100

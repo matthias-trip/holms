@@ -268,6 +268,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       ...(opts.config.claudeConfigDir
         ? { env: { ...process.env, CLAUDE_CONFIG_DIR: opts.config.claudeConfigDir } }
         : {}),
+      onStderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
     },
   });
 
@@ -501,6 +502,7 @@ export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ resu
       ...(opts.claudeConfigDir
         ? { env: { ...process.env, CLAUDE_CONFIG_DIR: opts.claudeConfigDir } }
         : {}),
+      onStderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
     },
   })) {
     const msg = event as Record<string, unknown>;
