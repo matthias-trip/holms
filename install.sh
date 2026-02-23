@@ -85,31 +85,25 @@ else
   echo ""
 
   if check_command claude; then
-    info "Generating a long-lived OAuth token via Claude CLI..."
-    echo "  This will open your browser for authentication."
+    info "Run the following command to generate a long-lived OAuth token:"
     echo ""
-
-    TOKEN=$(claude setup-token 2>/dev/null) || true
+    echo "    claude setup-token"
+    echo ""
+    echo "  This opens your browser. After authenticating, copy the token."
+    echo ""
+    printf "  Paste your token here: "
+    read -r TOKEN
 
     if [ -n "$TOKEN" ]; then
       echo "CLAUDE_CODE_OAUTH_TOKEN=${TOKEN}" > "$ENV_FILE"
       ok "OAuth token saved"
     else
-      warn "Could not generate token automatically."
-      echo ""
-      echo "  Please set your credentials in: $ENV_FILE"
-      echo ""
-      echo "  Option A — Claude subscription (run 'claude setup-token' and paste the result):"
+      warn "No token provided. You can add it later to: $ENV_FILE"
       echo "    CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-..."
-      echo ""
-      echo "  Option B — API key (from console.anthropic.com):"
-      echo "    ANTHROPIC_API_KEY=sk-ant-api03-..."
-      echo ""
-      # Create empty .env so compose doesn't complain
       touch "$ENV_FILE"
     fi
   else
-    warn "Claude CLI not found. Please set your credentials in: $ENV_FILE"
+    warn "Claude CLI not found."
     echo ""
     echo "  Option A — Install Claude CLI and generate an OAuth token:"
     echo "    curl -fsSL https://claude.ai/install.sh | bash"
@@ -121,7 +115,6 @@ else
     echo "    Add to $ENV_FILE:"
     echo "      ANTHROPIC_API_KEY=sk-ant-api03-..."
     echo ""
-    # Create empty .env so compose doesn't complain
     touch "$ENV_FILE"
   fi
 fi
