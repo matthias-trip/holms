@@ -30,10 +30,10 @@ export function initActivityPersistence(
     eventBus.emit("activity:stored", activity);
   };
 
-  eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; proactiveType?: string; model?: string; channel?: string; channelDisplayName?: string; coordinatorType?: string; timestamp: number }) => {
+  eventBus.on("agent:turn_start", (data: { turnId: string; trigger: string; proactiveType?: string; model?: string; channel?: string; channelDisplayName?: string; coordinatorType?: string; automationId?: string; automationSummary?: string; timestamp: number }) => {
     store({
       id: uuid(), type: "turn_start",
-      data: { trigger: data.trigger, proactiveType: data.proactiveType, model: data.model, channel: data.channel, channelDisplayName: data.channelDisplayName },
+      data: { trigger: data.trigger, proactiveType: data.proactiveType, model: data.model, channel: data.channel, channelDisplayName: data.channelDisplayName, automationId: data.automationId, automationSummary: data.automationSummary },
       timestamp: data.timestamp, agentId: data.trigger === "suggestions" ? "suggestions" : "coordinator", turnId: data.turnId,
     });
   });

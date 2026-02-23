@@ -103,10 +103,10 @@ export class CoordinatorHub {
     this.ephemeralRunner.enqueueEvent(event);
   }
 
-  async handleProactiveWakeup(wakeupType: string, extraContext?: string, channel?: string): Promise<string> {
+  async handleProactiveWakeup(wakeupType: string, extraContext?: string, channel?: string, automationId?: string, automationSummary?: string): Promise<string> {
     this.ephemeralChannel = channel ?? null;
     try {
-      const result = await this.ephemeralRunner.handleProactiveWakeup(wakeupType, extraContext, channel);
+      const result = await this.ephemeralRunner.handleProactiveWakeup(wakeupType, extraContext, channel, automationId, automationSummary);
       // Post the result back to the originating channel if available
       if (channel && result && this.channelManager) {
         this.channelManager.sendDirectMessage(channel, result);

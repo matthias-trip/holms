@@ -191,7 +191,7 @@ async function main() {
       for (const automation of matchedAutomations) {
         eventBus.emit("automation:event_fired", { automation, event, timestamp: Date.now() });
         const context = `Automation "${automation.id}" fired (${automation.trigger.type}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}\nTriggering event: ${event.type} from ${event.deviceId}\nEvent data: ${JSON.stringify(event.data)}`;
-        hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined).catch(console.error);
+        hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined, automation.id, automation.summary).catch(console.error);
       }
       return; // Event claimed by automation — skip triage
     }
@@ -218,7 +218,7 @@ async function main() {
     // If no reflex matched, coordinator reasons about it
     if (!handled) {
       const context = `Automation "${automation.id}" fired (time trigger).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}\nRecurrence: ${automation.trigger.type === "time" ? automation.trigger.recurrence : "n/a"}`;
-      hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined).catch(console.error);
+      hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined, automation.id, automation.summary).catch(console.error);
     }
   });
 

@@ -95,6 +95,8 @@ export interface EventBusEvents {
     channel?: string;
     channelDisplayName?: string;
     coordinatorType?: string;
+    automationId?: string;
+    automationSummary?: string;
     timestamp: number;
   }) => void;
   "automation:time_fired": (data: { automation: Automation; timestamp: number }) => void;

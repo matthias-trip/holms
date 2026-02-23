@@ -52,7 +52,7 @@ export class EphemeralRunner {
     );
   }
 
-  async handleProactiveWakeup(wakeupType: string, extraContext: string = "", channel?: string): Promise<string> {
+  async handleProactiveWakeup(wakeupType: string, extraContext: string = "", channel?: string, automationId?: string, automationSummary?: string): Promise<string> {
     const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const userPrompts: Record<string, string> = {
@@ -95,7 +95,7 @@ export class EphemeralRunner {
     const lightweightTypes = new Set(["reflection", "goal_review", "daily_summary"]);
     const model = lightweightTypes.has(wakeupType) ? this.config.models.lightweight : undefined;
 
-    return this.runEphemeral(prompt, trigger, userPrompt, proactiveType, channel, toolScope, model);
+    return this.runEphemeral(prompt, trigger, userPrompt, proactiveType, channel, toolScope, model, automationId, automationSummary);
   }
 
   private async buildGoalReviewContext(): Promise<string> {
@@ -247,7 +247,7 @@ export class EphemeralRunner {
     }
   }
 
-  private async runEphemeral(promptText: string, trigger: TurnTrigger, userPrompt?: string, proactiveType?: string, channel?: string, toolScope?: ToolScope, model?: string): Promise<string> {
+  private async runEphemeral(promptText: string, trigger: TurnTrigger, userPrompt?: string, proactiveType?: string, channel?: string, toolScope?: ToolScope, model?: string, automationId?: string, automationSummary?: string): Promise<string> {
     const messageId = crypto.randomUUID();
 
     try {
@@ -260,6 +260,8 @@ export class EphemeralRunner {
         userPrompt,
         trigger,
         proactiveType,
+        automationId,
+        automationSummary,
         messageId,
         sessionId: null, // always fresh
         channel,

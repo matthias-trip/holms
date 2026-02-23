@@ -125,6 +125,30 @@ export class ActivityStore {
     return rows.map(mapRow);
   }
 
+  getAutomationRuns(automationId?: string, limit = 50): { turnId: string; activities: AgentActivity[] }[] {
+    const turnStarts = automationId
+      ? this.db
+          .prepare(
+            `SELECT * FROM agent_activities
+             WHERE type = 'turn_start' AND json_extract(data, '$.trigger') = 'automation'
+             AND json_extract(data, '$.automationId') = ?
+             ORDER BY timestamp DESC LIMIT ?`,
+          )
+          .all(automationId, limit) as ActivityRow[]
+      : this.db
+          .prepare(
+            `SELECT * FROM agent_activities
+             WHERE type = 'turn_start' AND json_extract(data, '$.trigger') = 'automation'
+             ORDER BY timestamp DESC LIMIT ?`,
+          )
+          .all(limit) as ActivityRow[];
+
+    return turnStarts.map((row) => ({
+      turnId: row.turn_id!,
+      activities: this.getActivitiesByTurn(row.turn_id!),
+    }));
+  }
+
   getRecentTurns(limit = 50): { turnId: string; activities: AgentActivity[] }[] {
     const turnStarts = this.db
       .prepare(

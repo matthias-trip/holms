@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { Clock, Radio, Gauge, ChevronDown, ChevronRight, Zap, Filter, Play } from "lucide-react";
+import { Clock, Radio, Gauge, ChevronDown, ChevronRight, Zap, Filter, Play, History } from "lucide-react";
 import { Card, CardBody, Chip } from "@heroui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { trpc } from "../trpc";
+import { relativeTime } from "../utils/humanize";
 import type { Automation, AutomationDisplay, AutomationTrigger } from "@holms/shared";
+
+type View = "definitions" | "history";
 
 const RECURRENCE_LABELS: Record<string, string> = {
   once: "Once",
@@ -47,6 +50,17 @@ function formatNextFire(ts: number): string {
   }
   const d = new Date(ts);
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return "$0";
+  if (usd < 0.001) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(3)}`;
 }
 
 function TriggerBadge({ trigger }: { trigger: AutomationTrigger }) {
@@ -265,8 +279,79 @@ function AutomationFlow({
   );
 }
 
+// ── Status dot ──
+
+function StatusDot({ status }: { status: "completed" | "running" }) {
+  if (status === "running") {
+    return (
+      <span
+        className="flex-shrink-0 rounded-full animate-pulse"
+        style={{ width: 7, height: 7, background: "var(--accent-9)" }}
+      />
+    );
+  }
+  return (
+    <span
+      className="flex-shrink-0 rounded-full"
+      style={{ width: 7, height: 7, background: "var(--ok)" }}
+    />
+  );
+}
+
+// ── Inline run history for per-automation card ──
+
+function InlineRunHistory({ automationId }: { automationId: string }) {
+  const { data: runs } = trpc.automation.runHistory.useQuery(
+    { automationId, limit: 10 },
+    { refetchInterval: 5000 },
+  );
+
+  if (!runs || runs.length === 0) {
+    return (
+      <div className="text-xs py-1" style={{ color: "var(--gray-8)" }}>
+        No runs recorded
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 py-1">
+      {runs.map((run) => (
+        <div key={run.turnId} className="flex items-center gap-2 min-w-0">
+          <StatusDot status={run.status} />
+          <span
+            className="flex-shrink-0 text-[11px] tabular-nums"
+            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+          >
+            {relativeTime(run.timestamp)}
+          </span>
+          <span
+            className="text-xs truncate flex-1 min-w-0"
+            style={{ color: "var(--gray-12)" }}
+          >
+            {run.summary ?? (run.status === "running" ? "Running..." : "No summary")}
+          </span>
+          <span
+            className="flex-shrink-0 text-[11px] tabular-nums"
+            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+          >
+            {formatDuration(run.durationMs)}
+          </span>
+          <span
+            className="flex-shrink-0 text-[11px] tabular-nums"
+            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+          >
+            {formatCost(run.costUsd)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AutomationCard({ automation, index }: { automation: Automation; index: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   return (
     <Card
@@ -317,14 +402,25 @@ function AutomationCard({ automation, index }: { automation: Automation; index: 
               <AutomationFlow trigger={automation.trigger} display={automation.display ?? {}} />
             </div>
 
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-1 text-xs mb-1 cursor-pointer"
-              style={{ color: "var(--gray-9)", background: "none", border: "none", padding: 0 }}
-            >
-              {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-              {expanded ? "Hide raw instruction" : "Show raw instruction"}
-            </button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="flex items-center gap-1 text-xs mb-1 cursor-pointer"
+                style={{ color: "var(--gray-9)", background: "none", border: "none", padding: 0 }}
+              >
+                {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                {expanded ? "Hide raw instruction" : "Show raw instruction"}
+              </button>
+
+              <button
+                onClick={() => setHistoryExpanded(!historyExpanded)}
+                className="flex items-center gap-1 text-xs mb-1 cursor-pointer"
+                style={{ color: "var(--gray-9)", background: "none", border: "none", padding: 0 }}
+              >
+                {historyExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                Run history
+              </button>
+            </div>
 
             {expanded && (
               <div className="text-xs mt-1 p-2 rounded-lg" style={{ color: "var(--gray-11)", background: "var(--gray-a3)", lineHeight: "1.6" }}>
@@ -349,6 +445,12 @@ function AutomationCard({ automation, index }: { automation: Automation; index: 
               </div>
             )}
 
+            {historyExpanded && (
+              <div className="mt-1 p-2 rounded-lg" style={{ background: "var(--gray-a3)" }}>
+                <InlineRunHistory automationId={automation.id} />
+              </div>
+            )}
+
             {!automation.enabled && (
               <Chip variant="flat" color="danger" size="sm" className="mt-1">
                 Disabled
@@ -362,37 +464,159 @@ function AutomationCard({ automation, index }: { automation: Automation; index: 
   );
 }
 
+// ── Run History view (all runs) ──
+
+function RunHistoryView() {
+  const { data: runs } = trpc.automation.runHistory.useQuery(
+    {},
+    { refetchInterval: 5000 },
+  );
+
+  if (!runs || runs.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">
+          <Clock size={18} />
+        </div>
+        <div className="empty-state-text">
+          No automation runs yet. Runs will appear here once automations start firing.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {runs.map((run, i) => (
+        <Card
+          key={run.turnId}
+          className="animate-fade-in"
+          style={{
+            animationDelay: `${i * 30}ms`,
+            background: "var(--gray-3)",
+            border: "1px solid var(--gray-a5)",
+          }}
+        >
+          <CardBody className="py-3 px-4">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-1">
+                <StatusDot status={run.status} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+                    {relativeTime(run.timestamp)}
+                  </span>
+                  <Chip variant="flat" size="sm" style={{ fontSize: 11 }}>
+                    {run.automationSummary ?? "Unknown automation"}
+                  </Chip>
+                </div>
+
+                {run.summary && (
+                  <p className="text-xs mt-1" style={{ color: "var(--gray-12)", lineHeight: "1.5" }}>
+                    {run.summary}
+                  </p>
+                )}
+
+                {run.status === "running" && !run.summary && (
+                  <p className="text-xs mt-1" style={{ color: "var(--gray-9)", fontStyle: "italic" }}>
+                    Running...
+                  </p>
+                )}
+
+                <div
+                  className="flex items-center gap-3 mt-1.5 text-[11px] tabular-nums"
+                  style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+                >
+                  {run.status === "completed" && (
+                    <>
+                      <span>{formatDuration(run.durationMs)}</span>
+                      <span>{formatCost(run.costUsd)}</span>
+                      <span>{run.toolUseCount} tool{run.toolUseCount !== 1 ? "s" : ""}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function AutomationsPanel() {
+  const [view, setView] = useState<View>("definitions");
   const { data: automations } = trpc.automation.list.useQuery(undefined, {
     refetchInterval: 5000,
   });
 
   return (
-    <div className="h-full flex flex-col p-6" style={{ background: "var(--gray-2)" }}>
-      <div className="mb-5">
-        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Automations</h3>
-        <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-          AI-reasoned automations triggered by time, device events, or state thresholds.
-          The assistant reasons about the instruction each time an automation fires.
-        </p>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      {/* Tab bar */}
+      <div
+        className="flex gap-1 flex-shrink-0"
+        style={{
+          padding: "10px 24px",
+          borderBottom: "1px solid var(--gray-a3)",
+          background: "var(--gray-1)",
+        }}
+      >
+        {([
+          { key: "definitions" as View, label: "Automations" },
+          { key: "history" as View, label: "Run History", icon: <History size={12} /> },
+        ]).map(({ key, label, icon }) => {
+          const active = view === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 flex items-center gap-1.5 cursor-pointer"
+              style={{
+                background: active ? "var(--gray-3)" : "transparent",
+                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
+                color: active ? "var(--gray-12)" : "var(--gray-8)",
+              }}
+            >
+              {icon}
+              {label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex-1 overflow-auto space-y-2">
-        {!automations || automations.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <Clock size={18} />
+      <div className="flex-1 overflow-auto p-6">
+        {view === "definitions" && (
+          <>
+            <div className="mb-5">
+              <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Automations</h3>
+              <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
+                AI-reasoned automations triggered by time, device events, or state thresholds.
+                The assistant reasons about the instruction each time an automation fires.
+              </p>
             </div>
-            <div className="empty-state-text">
-              No automations yet. Ask the assistant to create automations like "turn off lights at
-              22:30 every day" or "when motion is detected in the hallway, check if lights should be on."
+
+            <div className="space-y-2">
+              {!automations || automations.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon">
+                    <Clock size={18} />
+                  </div>
+                  <div className="empty-state-text">
+                    No automations yet. Ask the assistant to create automations like "turn off lights at
+                    22:30 every day" or "when motion is detected in the hallway, check if lights should be on."
+                  </div>
+                </div>
+              ) : (
+                automations.map((automation, i) => (
+                  <AutomationCard key={automation.id} automation={automation} index={i} />
+                ))
+              )}
             </div>
-          </div>
-        ) : (
-          automations.map((automation, i) => (
-            <AutomationCard key={automation.id} automation={automation} index={i} />
-          ))
+          </>
         )}
+
+        {view === "history" && <RunHistoryView />}
       </div>
     </div>
   );

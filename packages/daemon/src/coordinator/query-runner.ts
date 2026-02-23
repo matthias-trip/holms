@@ -219,6 +219,8 @@ export interface ToolQueryOptions {
   userPrompt?: string;
   trigger: TurnTrigger;
   proactiveType?: string;
+  automationId?: string;
+  automationSummary?: string;
   messageId: string;
   /** Pass null for ephemeral (fresh session), or a string to resume a stateful session */
   sessionId: string | null;
@@ -312,6 +314,8 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
     turnId,
     trigger: opts.trigger,
     proactiveType: opts.proactiveType,
+    automationId: opts.automationId,
+    automationSummary: opts.automationSummary,
     model: effectiveModel,
     channel: opts.channel,
     channelDisplayName: opts.channelDisplayName,
