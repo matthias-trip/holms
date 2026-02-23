@@ -3,8 +3,7 @@ import type { ChannelCapabilities } from "@holms/shared";
 import { ChannelDescriptorBase } from "../descriptor-base.js";
 import type { ChannelProvider } from "../types.js";
 import { WhatsAppProvider } from "./whatsapp-provider.js";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 export class WhatsAppChannelDescriptor extends ChannelDescriptorBase {
   readonly id = "whatsapp";
@@ -34,7 +33,8 @@ export class WhatsAppChannelDescriptor extends ChannelDescriptorBase {
       if (nums.length > 0) allowedNumbers = new Set(nums);
     }
 
-    const authDir = join(homedir(), ".holms", "whatsapp-auth");
+    const dataDir = dirname(process.env.HOLMS_DB_PATH ?? "./holms.db");
+    const authDir = join(dataDir, "whatsapp-auth");
 
     return new WhatsAppProvider(
       allowedNumbers,
