@@ -31,9 +31,9 @@ export async function renderVegaLiteSpec(specJson: string): Promise<{ png: Buffe
   const vlSpec = JSON.parse(specJson);
 
   // Set sensible defaults for server-side rendering
-  if (!vlSpec.width) vlSpec.width = 600;
-  if (!vlSpec.height) vlSpec.height = 400;
-  if (!vlSpec.background) vlSpec.background = "#1a1a2e";
+  if (!vlSpec.width || vlSpec.width === "container") vlSpec.width = 600;
+  if (!vlSpec.height || vlSpec.height === "container") vlSpec.height = 400;
+  if (!vlSpec.background || vlSpec.background === "transparent") vlSpec.background = "#1a1a2e";
 
   // Apply dark theme config with explicit Inter font
   if (!vlSpec.config) vlSpec.config = {};
