@@ -59,32 +59,74 @@ fi
 
 ok "Docker and Docker Compose are available"
 
-# ── Claude CLI Check ─────────────────────────────────────────────────
-
-if [ ! -d "$HOME/.claude" ]; then
-  warn "Claude CLI config not found (~/.claude)"
-  info "Installing Claude CLI..."
-
-  if check_command claude; then
-    ok "Claude CLI already installed"
-  else
-    curl -fsSL https://claude.ai/install.sh | bash
-    ok "Claude CLI installed"
-  fi
-
-  echo ""
-  info "Please run 'claude' to authenticate, then re-run this installer."
-  echo "  claude"
-  echo ""
-  exit 0
-fi
-
-ok "Claude CLI config found (~/.claude)"
-
 # ── Create Install Directory ─────────────────────────────────────────
 
 info "Installing Holms to $HOLMS_DIR"
 mkdir -p "$HOLMS_DIR"/{data,models,plugins}
+
+# ── Authentication Setup ─────────────────────────────────────────────
+
+ENV_FILE="$HOLMS_DIR/.env"
+
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  # Token provided via environment variable
+  echo "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}" > "$ENV_FILE"
+  ok "Using provided OAuth token"
+elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  # API key provided via environment variable
+  echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" > "$ENV_FILE"
+  ok "Using provided API key"
+elif [ -f "$ENV_FILE" ] && grep -q "CLAUDE_CODE_OAUTH_TOKEN\|ANTHROPIC_API_KEY" "$ENV_FILE" 2>/dev/null; then
+  # Existing .env with credentials
+  ok "Using existing credentials from $ENV_FILE"
+else
+  # Need to generate a token
+  info "Holms needs authentication to use Claude."
+  echo ""
+
+  if check_command claude; then
+    info "Generating a long-lived OAuth token via Claude CLI..."
+    echo "  This will open your browser for authentication."
+    echo ""
+
+    TOKEN=$(claude setup-token 2>/dev/null) || true
+
+    if [ -n "$TOKEN" ]; then
+      echo "CLAUDE_CODE_OAUTH_TOKEN=${TOKEN}" > "$ENV_FILE"
+      ok "OAuth token saved"
+    else
+      warn "Could not generate token automatically."
+      echo ""
+      echo "  Please set your credentials in: $ENV_FILE"
+      echo ""
+      echo "  Option A — Claude subscription (run 'claude setup-token' and paste the result):"
+      echo "    CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-..."
+      echo ""
+      echo "  Option B — API key (from console.anthropic.com):"
+      echo "    ANTHROPIC_API_KEY=sk-ant-api03-..."
+      echo ""
+      # Create empty .env so compose doesn't complain
+      touch "$ENV_FILE"
+    fi
+  else
+    warn "Claude CLI not found. Please set your credentials in: $ENV_FILE"
+    echo ""
+    echo "  Option A — Install Claude CLI and generate an OAuth token:"
+    echo "    curl -fsSL https://claude.ai/install.sh | bash"
+    echo "    claude setup-token"
+    echo "    Then add to $ENV_FILE:"
+    echo "      CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-..."
+    echo ""
+    echo "  Option B — Use an API key (from console.anthropic.com):"
+    echo "    Add to $ENV_FILE:"
+    echo "      ANTHROPIC_API_KEY=sk-ant-api03-..."
+    echo ""
+    # Create empty .env so compose doesn't complain
+    touch "$ENV_FILE"
+  fi
+fi
+
+chmod 600 "$ENV_FILE"
 
 # ── Generate docker-compose.yml ──────────────────────────────────────
 
@@ -101,7 +143,9 @@ services:
       - ./data:/data
       - ./models:/models
       - ./plugins:/plugins
-      - ${HOME}/.claude:/root/.claude
+    env_file:
+      - path: .env
+        required: false
     environment:
       - HOLMS_PORT=3100
     restart: unless-stopped
@@ -145,6 +189,7 @@ ok "Holms is running!"
 echo ""
 echo "  Dashboard:  http://localhost:${HOLMS_PORT}"
 echo "  Install:    ${HOLMS_DIR}"
+echo "  Config:     ${ENV_FILE}"
 echo "  Logs:       docker compose -f ${COMPOSE_FILE} logs -f"
 echo "  Stop:       docker compose -f ${COMPOSE_FILE} down"
 echo ""

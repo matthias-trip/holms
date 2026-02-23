@@ -58,6 +58,9 @@ COPY --from=builder /app/packages/frontend/dist/ packages/frontend/dist/
 # Copy node_modules (hoisted by npm workspaces to root)
 COPY --from=builder /app/node_modules/ node_modules/
 
+# Mark Claude CLI onboarding as complete (skips interactive prompts)
+RUN mkdir -p /root/.claude && echo '{"hasCompletedOnboarding":true}' > /root/.claude.json
+
 # Environment defaults
 ENV HOLMS_PORT=3100
 ENV HOLMS_DB_PATH=/data/holms.db

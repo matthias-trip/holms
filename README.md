@@ -201,13 +201,28 @@ packages/
 
 ### Quick install (Docker)
 
-The fastest way to run Holms. Requires [Docker](https://docs.docker.com/get-docker/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) authenticated (`claude` CLI).
+The fastest way to run Holms. Requires [Docker](https://docs.docker.com/get-docker/) and a Claude authentication method (subscription or API key).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/matthias-trip/holms/main/install.sh | bash
 ```
 
 This will pull the latest image, set up a `~/.holms` directory with data persistence, and start Holms with automatic updates via [Watchtower](https://containrrr.dev/watchtower/). The dashboard will be at [http://localhost:3100](http://localhost:3100).
+
+**Authentication:** The install script will try to generate an OAuth token automatically if you have the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) installed. Otherwise, you can provide credentials upfront or configure them after install:
+
+```bash
+# Option A — Claude subscription: generate a long-lived OAuth token (1 year)
+claude setup-token
+# Then pass it to the installer:
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... curl -fsSL .../install.sh | bash
+
+# Option B — API key (from console.anthropic.com)
+ANTHROPIC_API_KEY=sk-ant-api03-... curl -fsSL .../install.sh | bash
+
+# Option C — Configure after install
+# Edit ~/.holms/.env and add CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY
+```
 
 **Options:**
 
@@ -242,6 +257,11 @@ If you prefer to manage the compose file yourself, clone the repo and use the in
 ```bash
 git clone https://github.com/matthias-trip/holms.git
 cd holms
+
+# Add your credentials
+echo "CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-..." > .env
+# or: echo "ANTHROPIC_API_KEY=sk-ant-api03-..." > .env
+
 docker compose up -d
 ```
 
