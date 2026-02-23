@@ -92,7 +92,7 @@ else
     echo "  This opens your browser. After authenticating, copy the token."
     echo ""
     printf "  Paste your token here: "
-    read -r TOKEN
+    read -r TOKEN < /dev/tty
 
     if [ -n "$TOKEN" ]; then
       echo "CLAUDE_CODE_OAUTH_TOKEN=${TOKEN}" > "$ENV_FILE"
