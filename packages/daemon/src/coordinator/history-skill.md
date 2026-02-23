@@ -37,6 +37,15 @@ The `analyze_history` sub-agent can produce visual charts alongside text. When t
 
 **Important:** When `analyze_history` returns `vega-lite` chart blocks, always include them verbatim in your reply — the frontend renders them as interactive charts. Add your summary text around the charts, but never strip or summarize away the chart blocks.
 
+### Chart Output
+
+When you produce a Vega-Lite chart directly (without `analyze_history`), follow these rules:
+- Always use `"$schema": "https://vega.github.io/schema/vega-lite/v6.json"`
+- Embed data inline via `data.values` (no external URLs)
+- Keep data small: aggregate to ≤ 200 points in SQL first
+- Use `"width": "container"` for responsive sizing
+- Set `"background": "transparent"` in config
+
 ### When to Use Query vs Analyze
 
 | Use `history_query` | Use `analyze_history` |

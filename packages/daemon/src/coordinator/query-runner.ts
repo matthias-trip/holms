@@ -34,6 +34,26 @@ export const DISALLOWED_TOOLS = [
   "WebSearch", "WebFetch", "NotebookEdit",
 ];
 
+// ── Tool scoping ──
+
+export type ToolScope =
+  | "full"           // user chat — everything
+  | "device_action"  // device events, situational checks, automations
+  | "reflection"     // reflection cycles
+  | "goal_review"    // goal review cycles
+  | "memory_only"    // approval results, feedback, daily summary
+  | "onboarding";    // first-time discovery
+
+const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
+  full:          ["device-query", "device-command", "memory", "reflex", "approval",
+                  "automation", "triage", "people", "goals", "history", "channel", "scheduler"],
+  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history"],
+  reflection:    ["memory", "triage", "reflex"],
+  goal_review:   ["goals", "memory"],
+  memory_only:   ["memory"],
+  onboarding:    ["device-query", "memory", "people"],
+};
+
 export const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command → memory_query first (device name, room, ID). Obey preference constraints. Use propose_action if required by memory, novel, security-sensitive, or uncertain.`;
 
 // ── Prompt helper ──
@@ -205,6 +225,7 @@ export interface ToolQueryOptions {
   channel?: string;
   channelDisplayName?: string;
   coordinatorType?: string;
+  toolScope?: ToolScope;
 }
 
 export interface ToolQueryResult {
@@ -288,15 +309,22 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
   const plugins = opts.pluginManager?.getEnabledSdkPlugins() ?? [];
   const pluginToolPatterns = opts.pluginManager?.getEnabledToolPatterns() ?? [];
 
+  const scope = opts.toolScope ?? "full";
+  const scopeServers = TOOL_SCOPES[scope];
+
   const conversation = query({
     prompt: createSDKPrompt(opts.promptText)(),
     options: {
       systemPrompt: getStaticSystemPrompt(),
       model: opts.config.models.coordinator,
       maxTurns: opts.config.coordinator.maxTurns,
-      mcpServers: opts.mcpPool.servers,
+      mcpServers: opts.mcpPool.serversFor(scopeServers),
       disallowedTools: DISALLOWED_TOOLS,
-      allowedTools: [...opts.mcpPool.allowedTools, ...pluginToolPatterns, "Task"],
+      allowedTools: [
+        ...scopeServers.map(n => `mcp__${n}__*`),
+        ...(scope === "full" ? pluginToolPatterns : []),
+        "Task",
+      ],
       agents: {
         analyze_history: buildAnalyzeHistoryAgent(opts.config),
       },

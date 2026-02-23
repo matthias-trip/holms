@@ -26,6 +26,16 @@ export class McpServerPool {
     return instances;
   }
 
+  /** Create fresh MCP server instances for only the named servers. */
+  serversFor(names: readonly string[]): Record<string, McpServer> {
+    const instances: Record<string, McpServer> = {};
+    for (const name of names) {
+      const factory = this._factories[name];
+      if (factory) instances[name] = factory();
+    }
+    return instances;
+  }
+
   get allowedTools(): string[] {
     return [...this._allowedTools];
   }

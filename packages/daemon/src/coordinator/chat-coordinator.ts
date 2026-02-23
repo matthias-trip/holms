@@ -6,7 +6,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache, type ToolScope } from "./query-runner.js";
 
 /**
  * Per-channel stateful coordinator with SDK session resume.
@@ -73,11 +73,11 @@ export class ChatCoordinator {
       const prompt = approved
         ? `${context}\n\n${userPrompt} Acknowledge briefly.`
         : `${context}\n\n${userPrompt} Reflect on why and store a brief lesson in memory so you avoid repeating the mistake.`;
-      return this.runQuery(prompt, "approval_result", userPrompt, messageId);
+      return this.runQuery(prompt, "approval_result", userPrompt, messageId, undefined, "memory_only");
     });
   }
 
-  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", userPrompt?: string, externalMessageId?: string, channelDisplayName?: string): Promise<string> {
+  private async runQuery(promptText: string, trigger: "user_message" | "approval_result", userPrompt?: string, externalMessageId?: string, channelDisplayName?: string, toolScope?: ToolScope): Promise<string> {
     const messageId = externalMessageId ?? crypto.randomUUID();
     const turnId = crypto.randomUUID();
     this.currentTurnId = turnId;
@@ -96,6 +96,7 @@ export class ChatCoordinator {
         channel: this.channel,
         channelDisplayName,
         coordinatorType: "chat",
+        toolScope,
       });
       this.sessionId = sessionId;
       return result;
