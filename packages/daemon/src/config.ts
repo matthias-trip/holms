@@ -110,7 +110,7 @@ export function loadConfig(): HolmsConfig {
     dbPath: process.env.HOLMS_DB_PATH ?? defaults.dbPath,
     hfCacheDir: (process.env.HOLMS_HF_CACHE_DIR ?? defaults.hfCacheDir).replace(/^~(?=$|\/)/, homedir()),
     pluginsDir: (process.env.HOLMS_PLUGINS_DIR ?? defaults.pluginsDir).replace(/^~(?=$|\/)/, homedir()),
-    pluginsStatePath: defaults.pluginsStatePath,
+    pluginsStatePath: resolve(dirname(process.env.HOLMS_DB_PATH ?? defaults.dbPath), "plugins.json"),
     claudeConfigDir: process.env.HOLMS_CLAUDE_CONFIG_DIR?.replace(/^~(?=$|\/)/, homedir()) || undefined,
     models: {
       coordinator: process.env.HOLMS_MODEL_COORDINATOR ?? defaults.models.coordinator,
