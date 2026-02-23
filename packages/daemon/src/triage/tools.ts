@@ -29,6 +29,22 @@ export function createTriageToolsServer(store: TriageStore) {
       reason: z.string().describe("Why this rule exists — for your future reference"),
     },
     async (args) => {
+      const existing = store.findByCondition(args.condition);
+      if (existing) {
+        const updated = store.update(existing.id, {
+          lane: args.lane,
+          reason: args.reason,
+          enabled: true,
+        });
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Updated existing triage rule "${existing.id}": route ${args.lane} — ${args.reason}`,
+            },
+          ],
+        };
+      }
       const rule = store.create({
         condition: args.condition,
         lane: args.lane,

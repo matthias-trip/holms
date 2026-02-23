@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { TriageRule } from "@holms/shared";
+import type { TriageRule, TriageCondition } from "@holms/shared";
 import { v4 as uuid } from "uuid";
 
 export class TriageStore {
@@ -22,6 +22,7 @@ export class TriageStore {
         enabled INTEGER NOT NULL DEFAULT 1
       )
     `);
+    this.deduplicate();
   }
 
   create(
@@ -110,8 +111,31 @@ export class TriageStore {
     return result.changes > 0;
   }
 
+  findByCondition(condition: TriageCondition): TriageRule | undefined {
+    const conditionJson = JSON.stringify(condition);
+    const row = this.db
+      .prepare(`SELECT * FROM triage_rules WHERE condition_json = ?`)
+      .get(conditionJson) as TriageRuleRow | undefined;
+    return row ? this.rowToRule(row) : undefined;
+  }
+
   close(): void {
     this.db.close();
+  }
+
+  private deduplicate(): void {
+    // Keep only the newest rule per unique condition_json, delete the rest
+    const result = this.db.prepare(`
+      DELETE FROM triage_rules WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (PARTITION BY condition_json ORDER BY created_at DESC) AS rn
+          FROM triage_rules
+        ) WHERE rn = 1
+      )
+    `).run();
+    if (result.changes > 0) {
+      console.log(`[TriageStore] Deduplicated ${result.changes} duplicate triage rule(s)`);
+    }
   }
 
   private rowToRule(row: TriageRuleRow): TriageRule {

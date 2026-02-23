@@ -174,7 +174,7 @@ export class EphemeralRunner {
       )
       .join("\n");
 
-    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nTriage these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, automations, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}\n\nConsider person properties (presence, schedule) in your context when deciding how to respond.`;
+    const prompt = `${context}\n\nNew device events:\n${eventSummary}\n\nProcess these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, automations, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}\n\nConsider person properties (presence, schedule) in your context when deciding how to respond.`;
 
     const userPrompt = `Device events:\n${eventSummary}`;
 
