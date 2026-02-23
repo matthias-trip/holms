@@ -101,7 +101,7 @@ services:
       - ./data:/data
       - ./models:/models
       - ./plugins:/plugins
-      - ${HOME}/.claude:/root/.claude:ro
+      - ${HOME}/.claude:/root/.claude
     environment:
       - HOLMS_PORT=3100
     restart: unless-stopped

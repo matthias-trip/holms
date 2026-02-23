@@ -22,6 +22,14 @@ COPY packages/frontend/ packages/frontend/
 # Build: shared → daemon → frontend
 RUN npm run build
 
+# Copy non-TS assets (prompt .md files) into daemon dist
+RUN find packages/daemon/src -name '*.md' | while read f; do \
+      cp "$f" "packages/daemon/dist/${f#packages/daemon/src/}"; \
+    done
+
+# Ensure .claude/debug dir exists for SDK debug logs
+RUN mkdir -p /root/.claude/debug
+
 # Stage 2 — Runtime
 FROM node:20-slim
 
