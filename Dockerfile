@@ -30,6 +30,9 @@ RUN find packages/daemon/src -name '*.md' | while read f; do \
 # Stage 2 — Runtime
 FROM node:20-slim
 
+ARG HOLMS_VERSION=dev
+ENV HOLMS_VERSION=${HOLMS_VERSION}
+
 LABEL org.opencontainers.image.source="https://github.com/matthias-trip/holms"
 LABEL org.opencontainers.image.description="Holms — AI-driven home automation"
 LABEL org.opencontainers.image.licenses="MIT"

@@ -12,6 +12,7 @@ services:
         required: false
     environment:
       - HOLMS_PORT=3100
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN:-holms-update-token}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3100/trpc').catch(()=>process.exit(1))"]
@@ -28,4 +29,6 @@ services:
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 0 3 * * *"
       WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_HTTP_API_TOKEN:-holms-update-token}"
     restart: unless-stopped

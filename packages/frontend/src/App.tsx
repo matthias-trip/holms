@@ -37,6 +37,7 @@ import ChannelsPanel from "./components/ChannelsPanel";
 import PluginsPanel from "./components/PluginsPanel";
 import UsagePanel from "./components/UsagePanel";
 import CycleOverview from "./components/CycleOverview";
+import SystemStatus from "./components/SystemStatus";
 import { trpc } from "./trpc";
 
 type Panel =
@@ -416,21 +417,8 @@ export default function App() {
             {resolved === "dark" ? <Sun size={16} strokeWidth={1.5} /> : <Moon size={16} strokeWidth={1.5} />}
           </Button>
 
-          {/* Status */}
-          <div
-            className="px-3 py-2.5 rounded-lg"
-            style={{ background: "var(--color-background)", border: "1px solid var(--gray-a5)" }}
-          >
-            <div className="flex items-center gap-2">
-              <div
-                className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-                style={{ background: "var(--warm)" }}
-              />
-              <span className="text-xs" style={{ color: "var(--gray-9)" }}>
-                Assistant ready
-              </span>
-            </div>
-          </div>
+          {/* Status + Version */}
+          <SystemStatus />
         </div>
       </div>
 

@@ -125,6 +125,11 @@ chmod 600 "$ENV_FILE"
 
 COMPOSE_FILE="$HOLMS_DIR/docker-compose.yml"
 
+# Generate a random Watchtower API token (used for on-demand updates from UI)
+if [ "$AUTO_UPDATE" = true ]; then
+  WATCHTOWER_TOKEN=$(openssl rand -hex 16)
+fi
+
 cat > "$COMPOSE_FILE" <<YAML
 services:
   holms:
@@ -141,6 +146,15 @@ services:
         required: false
     environment:
       - HOLMS_PORT=3100
+YAML
+
+if [ "$AUTO_UPDATE" = true ]; then
+  cat >> "$COMPOSE_FILE" <<YAML
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN}
+YAML
+fi
+
+cat >> "$COMPOSE_FILE" <<'YAML'
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3100/trpc').catch(()=>process.exit(1))"]
@@ -150,7 +164,7 @@ services:
 YAML
 
 if [ "$AUTO_UPDATE" = true ]; then
-  cat >> "$COMPOSE_FILE" <<'YAML'
+  cat >> "$COMPOSE_FILE" <<YAML
 
   watchtower:
     image: containrrr/watchtower
@@ -162,9 +176,11 @@ if [ "$AUTO_UPDATE" = true ]; then
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 0 3 * * *"
       WATCHTOWER_INCLUDE_STOPPED: "true"
+      WATCHTOWER_HTTP_API_UPDATE: "true"
+      WATCHTOWER_HTTP_API_TOKEN: "${WATCHTOWER_TOKEN}"
     restart: unless-stopped
 YAML
-  ok "Auto-updates enabled (Watchtower, daily at 3 AM)"
+  ok "Auto-updates enabled (Watchtower, daily at 3 AM + on-demand from UI)"
 else
   ok "Auto-updates disabled"
 fi
