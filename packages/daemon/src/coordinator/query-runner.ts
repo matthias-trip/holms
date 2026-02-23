@@ -11,6 +11,17 @@ import type { McpServerPool } from "./mcp-pool.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { runWithChannel } from "./query-context.js";
 
+// ── SDK environment helper ──
+
+/** Build environment for SDK-spawned Claude CLI process.
+ *  Always passes process.env explicitly so auth tokens are forwarded in containers. */
+function buildSDKEnv(config: { claudeConfigDir?: string }): Record<string, string | undefined> {
+  return {
+    ...process.env,
+    ...(config.claudeConfigDir ? { CLAUDE_CONFIG_DIR: config.claudeConfigDir } : {}),
+  };
+}
+
 // ── Shared constants ──
 
 export const DISALLOWED_TOOLS = [
@@ -265,10 +276,8 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       permissionMode: "bypassPermissions",
       includePartialMessages: true,
       ...(opts.sessionId ? { resume: opts.sessionId } : {}),
-      ...(opts.config.claudeConfigDir
-        ? { env: { ...process.env, CLAUDE_CONFIG_DIR: opts.config.claudeConfigDir } }
-        : {}),
-      onStderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
+      env: buildSDKEnv(opts.config),
+      stderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
     },
   });
 
@@ -499,10 +508,8 @@ export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ resu
       systemPrompt: opts.systemPrompt,
       permissionMode: "bypassPermissions",
       disallowedTools: DISALLOWED_TOOLS,
-      ...(opts.claudeConfigDir
-        ? { env: { ...process.env, CLAUDE_CONFIG_DIR: opts.claudeConfigDir } }
-        : {}),
-      onStderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
+      env: buildSDKEnv({ claudeConfigDir: opts.claudeConfigDir }),
+      stderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
     },
   })) {
     const msg = event as Record<string, unknown>;
