@@ -10,10 +10,11 @@ import {
   type HassEntities,
   type HassEntity,
 } from "home-assistant-js-websocket";
-import type { Device, DeviceEvent, DeviceArea, CommandResult, DeviceDomain } from "@holms/shared";
+import type { Device, DeviceEvent, DeviceArea, CommandResult, DataQueryResult, DeviceDomain } from "@holms/shared";
 import type { DeviceProvider } from "../types.js";
 import { HAEntityFilter } from "./ha-entity-filter.js";
 import { getStandardCapabilities } from "../capabilities.js";
+import { getStandardDataQueries } from "../data-queries.js";
 
 /** Attributes we strip from fallback state — UI-only, not useful for automation */
 const IGNORED_ATTRS = new Set([
@@ -69,7 +70,7 @@ function collectExtraAttrs(
 }
 
 /** Normalize HA entity state into standard DAL vocabulary. */
-function normalizeState(domain: string, entity: HassEntity): NormalizedResult {
+export function normalizeState(domain: string, entity: HassEntity): NormalizedResult {
   const s = entity.state;
   const a = entity.attributes;
 
@@ -501,10 +502,23 @@ export class HomeAssistantProvider implements DeviceProvider {
   private url: string;
   private token: string;
 
-  constructor(url: string, token: string, dbPath: string = "./holms.db") {
+  /** Per-entity timestamp of last emitted event (for throttling chatty sensors) */
+  private lastEmittedAt = new Map<string, number>();
+  /** Telemetry throttle config */
+  private telemetryMinIntervalMs: number;
+  private telemetrySignificanceDelta: number;
+
+  constructor(
+    url: string,
+    token: string,
+    dbPath: string = "./holms.db",
+    telemetryConfig?: { minIntervalMs?: number; significanceDelta?: number },
+  ) {
     this.url = url.replace(/\/+$/, ""); // strip trailing slash
     this.token = token;
     this.filter = new HAEntityFilter(dbPath);
+    this.telemetryMinIntervalMs = telemetryConfig?.minIntervalMs ?? 60_000;
+    this.telemetrySignificanceDelta = telemetryConfig?.significanceDelta ?? 0.1;
   }
 
   async connect(): Promise<void> {
@@ -645,6 +659,123 @@ export class HomeAssistantProvider implements DeviceProvider {
     return this.filter;
   }
 
+  /** Fetch historical states from HA REST API for a single entity. */
+  async fetchHistory(
+    entityId: string,
+    days: number,
+  ): Promise<Array<Array<{ state: string; attributes: Record<string, unknown>; last_changed: string }>>> {
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+    const url = `${this.url}/api/history/period/${start.toISOString()}?filter_entity_id=${entityId}&end_time=${end.toISOString()}&minimal_response&significant_changes_only`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    if (!res.ok) {
+      throw new Error(`HA history API returned ${res.status}: ${await res.text()}`);
+    }
+    return res.json();
+  }
+
+  async queryData(
+    deviceId: string,
+    query: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult> {
+    if (!this.connection) {
+      return { success: false, error: "Not connected to Home Assistant" };
+    }
+
+    const entityId = deviceId.replace(/^ha:/, "");
+    const domain = entityId.split(".")[0]!;
+
+    try {
+      switch (domain) {
+        case "calendar":
+          return await this.queryCalendarEvents(entityId, params);
+        case "weather":
+          return await this.queryWeatherForecast(entityId, params);
+        case "todo":
+          return await this.queryTodoItems(entityId, params);
+        case "camera":
+          return await this.queryCameraSnapshot(entityId);
+        default:
+          return { success: false, error: `Data queries not supported for domain: ${domain}` };
+      }
+    } catch (err: any) {
+      return { success: false, error: err.message ?? String(err) };
+    }
+  }
+
+  private async queryCalendarEvents(
+    entityId: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult> {
+    const response: any = await this.connection!.sendMessagePromise({
+      type: "call_service",
+      domain: "calendar",
+      service: "get_events",
+      target: { entity_id: entityId },
+      service_data: {
+        start_date_time: params.startTime,
+        end_date_time: params.endTime,
+      },
+      return_response: true,
+    });
+    // HA returns data keyed by entity_id
+    const data = response?.response?.[entityId]?.events ?? response?.[entityId]?.events ?? response;
+    return { success: true, data };
+  }
+
+  private async queryWeatherForecast(
+    entityId: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult> {
+    const response: any = await this.connection!.sendMessagePromise({
+      type: "call_service",
+      domain: "weather",
+      service: "get_forecasts",
+      target: { entity_id: entityId },
+      service_data: {
+        type: params.type,
+      },
+      return_response: true,
+    });
+    const data = response?.response?.[entityId]?.forecast ?? response?.[entityId]?.forecast ?? response;
+    return { success: true, data };
+  }
+
+  private async queryTodoItems(
+    entityId: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult> {
+    const serviceData: Record<string, unknown> = {};
+    if (params.status) serviceData.status = params.status;
+
+    const response: any = await this.connection!.sendMessagePromise({
+      type: "call_service",
+      domain: "todo",
+      service: "get_items",
+      target: { entity_id: entityId },
+      service_data: serviceData,
+      return_response: true,
+    });
+    const data = response?.response?.[entityId]?.items ?? response?.[entityId]?.items ?? response;
+    return { success: true, data };
+  }
+
+  private async queryCameraSnapshot(entityId: string): Promise<DataQueryResult> {
+    const res = await fetch(`${this.url}/api/camera_proxy/${entityId}`, {
+      headers: { Authorization: `Bearer ${this.token}` },
+    });
+    if (!res.ok) {
+      return { success: false, error: `Camera proxy returned ${res.status}: ${await res.text()}` };
+    }
+    const buffer = await res.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    const mimeType = res.headers.get("content-type") ?? "image/jpeg";
+    return { success: true, data: base64, mimeType };
+  }
+
   // ── Private ──
 
   private handleEntityUpdate(newEntities: HassEntities): void {
@@ -662,11 +793,49 @@ export class HomeAssistantProvider implements DeviceProvider {
 
       // Emit state_changed if the entity existed before and state differs
       if (previous && previous.state !== entity.state) {
+        const now = Date.now();
+        const data: Record<string, unknown> = { ...normalizeState(domain, entity).state };
+
+        // Compute delta for numeric state values
+        const curNum = Number(entity.state);
+        const prevNum = Number(previous.state);
+        let delta: number | undefined;
+        if (!isNaN(curNum) && !isNaN(prevNum)) {
+          delta = curNum - prevNum;
+          data.delta = delta;
+        }
+
+        // Throttle chatty sensor/binary_sensor entities
+        if (domain === "sensor" || domain === "binary_sensor") {
+          const lastEmit = this.lastEmittedAt.get(entityId) ?? 0;
+          const elapsed = now - lastEmit;
+
+          if (elapsed < this.telemetryMinIntervalMs) {
+            // Check if the change is significant enough to override the throttle.
+            // Use relative comparison: delta must exceed threshold as a *fraction* of
+            // the previous value (e.g. 0.1 = 10%). This handles all units naturally —
+            // 2W on 500W is 0.4% (insignificant), 500W jump is 100% (significant).
+            if (delta !== undefined && prevNum !== 0) {
+              const relativeDelta = Math.abs(delta) / Math.abs(prevNum);
+              if (relativeDelta < this.telemetrySignificanceDelta) {
+                continue; // suppress — internal state already updated above
+              }
+            } else if (delta !== undefined) {
+              // prevNum is 0 — any non-zero jump is significant (device turning on)
+              // so we let it through by not continuing
+            } else {
+              // Non-numeric sensor (e.g. binary_sensor on/off) — always emit state changes
+            }
+          }
+        }
+
+        this.lastEmittedAt.set(entityId, now);
+
         const event: DeviceEvent = {
           deviceId: `ha:${entityId}`,
           type: "state_changed",
-          data: normalizeState(domain, entity).state,
-          timestamp: Date.now(),
+          data,
+          timestamp: now,
           domain: domain as DeviceDomain,
           area: this.getEntityArea(entityId)?.id,
           previousState: normalizeState(domain, previous).state,
@@ -686,6 +855,7 @@ export class HomeAssistantProvider implements DeviceProvider {
     const deviceEntry = regEntry?.device_id ? this.deviceRegistry.get(regEntry.device_id) : undefined;
 
     const { state, attributes } = normalizeState(domain, entity);
+    const queries = getStandardDataQueries(domain);
 
     return {
       id: `ha:${entityId}`,
@@ -694,6 +864,7 @@ export class HomeAssistantProvider implements DeviceProvider {
       area,
       state,
       capabilities: getStandardCapabilities(domain),
+      ...(queries.length > 0 ? { dataQueries: queries } : {}),
       availability: {
         online: entity.state !== "unavailable",
         lastSeen: Date.now(),

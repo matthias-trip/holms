@@ -1,5 +1,6 @@
 {
   "name": "holms",
+  "version": "0.1.0",
   "private": true,
   "workspaces": [
     "packages/shared",
@@ -10,7 +11,8 @@
     "dev": "concurrently \"npm run dev -w @holms/daemon\" \"npm run dev -w @holms/frontend\"",
     "dev:daemon": "npm run dev -w @holms/daemon",
     "dev:frontend": "npm run dev -w @holms/frontend",
-    "build": "npm run build -w @holms/shared && npm run build -w @holms/daemon && npm run build -w @holms/frontend"
+    "build": "npm run build -w @holms/shared && npm run build -w @holms/daemon && npm run build -w @holms/frontend",
+    "start": "npm run start -w @holms/daemon"
   },
   "devDependencies": {
     "concurrently": "^9.0",

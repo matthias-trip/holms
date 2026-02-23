@@ -5,6 +5,7 @@ import { trpc } from "../trpc";
 import { humanizeToolUse, isWriteAction, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
 import CycleMenu from "./CycleMenu";
+import FeedbackModal from "./FeedbackModal";
 import type { AgentActivity } from "@holms/shared";
 
 // ── Cycle type config ──
@@ -292,20 +293,10 @@ function CycleCard({
     : undefined;
 
   // Feedback interaction state
-  const [feedbackMode, setFeedbackMode] = useState<"positive" | "negative" | null>(null);
-  const [comment, setComment] = useState("");
+  const [feedbackModal, setFeedbackModal] = useState<{ sentiment: "positive" | "negative" } | null>(null);
   const feedbackMutation = trpc.agents.cycleFeedback.useMutation({
-    onSuccess: () => setFeedbackMode(null),
+    onSuccess: () => setFeedbackModal(null),
   });
-
-  const submitFeedback = () => {
-    if (!feedbackMode) return;
-    feedbackMutation.mutate({
-      turnId: turn.turnId,
-      sentiment: feedbackMode,
-      comment: comment.trim() || undefined,
-    });
-  };
 
   return (
     <Card
@@ -495,59 +486,12 @@ function CycleCard({
                   </div>
                 )}
               </div>
-            ) : feedbackMode ? (
-              // Comment input mode
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  {feedbackMode === "positive"
-                    ? <ThumbsUp size={13} style={{ color: "var(--ok)" }} />
-                    : <ThumbsDown size={13} style={{ color: "var(--warm)" }} />}
-                  <span className="text-xs" style={{ color: "var(--gray-10)" }}>
-                    {feedbackMode === "positive" ? "Helpful" : "Not helpful"}
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Add a comment (optional)"
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") submitFeedback(); }}
-                  className="w-full text-xs px-2.5 py-1.5 rounded-lg outline-none"
-                  style={{
-                    background: "var(--gray-2)",
-                    border: "1px solid var(--gray-a4)",
-                    color: "var(--gray-12)",
-                  }}
-                  autoFocus
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={submitFeedback}
-                    disabled={feedbackMutation.isPending}
-                    className="text-xs px-2.5 py-1 rounded-lg font-medium transition-colors"
-                    style={{
-                      background: "var(--accent-9)",
-                      color: "white",
-                      opacity: feedbackMutation.isPending ? 0.5 : 1,
-                    }}
-                  >
-                    {feedbackMutation.isPending ? "Sending..." : "Submit"}
-                  </button>
-                  <button
-                    onClick={() => { setFeedbackMode(null); setComment(""); }}
-                    className="text-xs px-2.5 py-1 rounded-lg transition-colors"
-                    style={{ color: "var(--gray-9)" }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
             ) : (
               // Not rated — show thumbs buttons
               <div className="flex items-center gap-3">
                 <span className="text-xs" style={{ color: "var(--gray-9)" }}>Was this helpful?</span>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setFeedbackMode("positive"); }}
+                  onClick={(e) => { e.stopPropagation(); setFeedbackModal({ sentiment: "positive" }); }}
                   className="p-1.5 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
                   style={{ color: "var(--gray-8)" }}
                   title="Helpful"
@@ -555,7 +499,7 @@ function CycleCard({
                   <ThumbsUp size={13} />
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setFeedbackMode("negative"); }}
+                  onClick={(e) => { e.stopPropagation(); setFeedbackModal({ sentiment: "negative" }); }}
                   className="p-1.5 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
                   style={{ color: "var(--gray-8)" }}
                   title="Not helpful"
@@ -565,6 +509,22 @@ function CycleCard({
               </div>
             )}
           </div>
+
+          {feedbackModal && (
+            <FeedbackModal
+              isOpen
+              sentiment={feedbackModal.sentiment}
+              onSubmit={(comment) => {
+                feedbackMutation.mutate({
+                  turnId: turn.turnId,
+                  sentiment: feedbackModal.sentiment,
+                  comment,
+                });
+              }}
+              onClose={() => setFeedbackModal(null)}
+              isPending={feedbackMutation.isPending}
+            />
+          )}
         </div>
       )}
     </Card>

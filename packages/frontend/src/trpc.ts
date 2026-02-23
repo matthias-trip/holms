@@ -9,8 +9,12 @@ import type { AppRouter } from "../../daemon/src/api/router.js";
 
 export const trpc = createTRPCReact<AppRouter>();
 
+const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+const wsUrl = `${wsProtocol}//${window.location.host}/trpc`;
+const httpUrl = `${window.location.origin}/trpc`;
+
 const wsClient = createWSClient({
-  url: `ws://localhost:3100`,
+  url: wsUrl,
 });
 
 export const trpcClient = trpc.createClient({
@@ -18,7 +22,7 @@ export const trpcClient = trpc.createClient({
     splitLink({
       condition: (op) => op.type === "subscription",
       true: wsLink({ client: wsClient }),
-      false: httpBatchLink({ url: "http://localhost:3100" }),
+      false: httpBatchLink({ url: httpUrl }),
     }),
   ],
 });

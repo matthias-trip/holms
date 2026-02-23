@@ -57,6 +57,7 @@ export interface Device {
   area: DeviceArea;
   state: Record<string, unknown>;
   capabilities: CapabilityDescriptor[];
+  dataQueries?: DataQueryDescriptor[];
   availability: DeviceAvailability;
   metadata?: DeviceMetadata;
   attributes?: Record<string, unknown>;
@@ -70,6 +71,19 @@ export interface DeviceEvent {
   domain?: DeviceDomain;
   area?: string;
   previousState?: Record<string, unknown>;
+}
+
+export interface DataQueryDescriptor {
+  name: string;
+  description: string;
+  params: ParamDescriptor[];
+}
+
+export interface DataQueryResult {
+  success: boolean;
+  data?: unknown;
+  mimeType?: string;   // for binary data like camera images
+  error?: string;
 }
 
 export interface DeviceCommand {
@@ -373,7 +387,12 @@ export type AgentActivityType =
   | "triage_classify"
   | "automation_event_fired"
   | "cycle_feedback"
-  | "cycle_feedback_response";
+  | "cycle_feedback_response"
+  | "history_flush"
+  | "history_entity_discovered"
+  | "history_import"
+  | "analyze_history_start"
+  | "analyze_history_result";
 
 export interface AgentActivity {
   id: string;

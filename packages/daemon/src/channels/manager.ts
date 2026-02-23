@@ -7,6 +7,7 @@ import type { PeopleStore } from "../people/store.js";
 import type { ChannelStore } from "./store.js";
 import type { ChannelConversationInfo, ChannelProviderInfo, DeviceEvent } from "@holms/shared";
 import { executeApprovalDecision } from "../coordinator/approval-processor.js";
+import { extractVegaLiteBlocks, renderVegaLiteSpec } from "../history/chart-renderer.js";
 import { v4 as uuid } from "uuid";
 
 interface PendingResponse {
@@ -39,13 +40,48 @@ export class ChannelManager {
       provider?.sendToken(pending.conversationId, data.messageId, data.token);
     });
 
-    // Route stream-end to the correct provider
+    // Route stream-end to the correct provider (render charts server-side for non-web channels)
     this.eventBus.on("chat:stream_end", (data: { messageId: string; content: string; reasoning?: string; timestamp: number }) => {
       const pending = this.pendingResponses.get(data.messageId);
       if (!pending) return;
       const provider = this.providers.get(pending.providerId);
-      provider?.sendStreamEnd(pending.conversationId, data.messageId, data.content, data.reasoning);
+      if (!provider) { this.pendingResponses.delete(data.messageId); return; }
+
+      // Web provider: pass through as-is (frontend renders client-side)
+      if (pending.providerId === "web") {
+        provider.sendStreamEnd(pending.conversationId, data.messageId, data.content, data.reasoning);
+        this.pendingResponses.delete(data.messageId);
+        return;
+      }
+
+      // Non-web providers: extract vega-lite blocks, render server-side
+      const { specs, textWithout } = extractVegaLiteBlocks(data.content);
+
+      if (specs.length === 0) {
+        provider.sendStreamEnd(pending.conversationId, data.messageId, data.content, data.reasoning);
+        this.pendingResponses.delete(data.messageId);
+        return;
+      }
+
+      // Send text first, then render and send chart images
+      if (textWithout) {
+        provider.sendStreamEnd(pending.conversationId, data.messageId, textWithout, data.reasoning);
+      }
       this.pendingResponses.delete(data.messageId);
+
+      if (provider.sendImage) {
+        const sendCharts = async () => {
+          for (const specJson of specs) {
+            try {
+              const { png } = await renderVegaLiteSpec(specJson);
+              await provider.sendImage!(pending.conversationId, uuid(), png);
+            } catch (err) {
+              console.warn("[Channels] Failed to render chart:", err);
+            }
+          }
+        };
+        sendCharts().catch((err) => console.error("[Channels] Chart rendering error:", err));
+      }
     });
   }
 

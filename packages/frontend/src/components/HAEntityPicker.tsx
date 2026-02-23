@@ -90,7 +90,7 @@ export default function HAEntityPicker({ onBack }: Props) {
     (allEntities ?? []).filter((e) => e.domain === domain && selected.has(e.entity_id)).length;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-6">
+    <div className="h-full flex flex-col overflow-hidden p-6">
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
         <Button variant="light" size="sm" isIconOnly onPress={onBack}>

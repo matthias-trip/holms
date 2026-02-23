@@ -1,4 +1,4 @@
-import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { query, type SDKUserMessage, type AgentDefinition } from "@anthropic-ai/claude-agent-sdk";
 import type { TurnTrigger } from "@holms/shared";
 import type { EventBus } from "../event-bus.js";
 import type { DeviceManager } from "../devices/manager.js";
@@ -180,6 +180,45 @@ export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryRes
   return runWithChannel(opts.channel, () => runToolQueryInner(opts));
 }
 
+function buildAnalyzeHistoryAgent(config: HolmsConfig): AgentDefinition {
+  return {
+    description:
+      "Spawn a data analyst to explore historical device data. Use for trend analysis, anomaly detection, energy usage patterns, cross-domain correlation, and complex multi-step analysis. Pass a natural language question; the analyst autonomously queries the time-series database and returns findings. Do NOT use for simple lookups — use history_catalog and history_query directly for those.",
+    prompt: `You are a data analyst for a home automation system called Holms.
+
+You have access to a DuckDB time-series database that records all device state changes. Your job is to explore the data, answer questions, and find patterns.
+
+## Workflow
+
+1. Start with **history_catalog** to discover relevant entities and schema
+2. Write targeted SQL with **history_query** (DuckDB syntax, 10k row limit, 30s timeout) — aggregate aggressively
+3. If you need statistics, regression, or anomaly detection, use **history_compute** (JavaScript sandbox with \`stats\` from simple-statistics; assign result to \`result\`)
+4. Iterate if needed — follow up with more queries based on what you find
+5. Return clear, structured findings
+
+## Visualization
+
+When analysis benefits from a chart, include a Vega-Lite spec in a fenced code block:
+
+\`\`\`vega-lite
+{"$schema":"https://vega.github.io/schema/vega-lite/v5.json", "mark":"line", "data":{"values":[...]}, "encoding":{...}}
+\`\`\`
+
+Guidelines:
+- Embed data inline via \`data.values\` (no external URLs)
+- **Keep data small**: Aggregate to ≤200 data points. Use time_bucket or DATE_TRUNC in SQL first. Spec should stay under 50KB.
+- Use appropriate marks: line (trends), bar (comparisons), point (scatter), area (cumulative)
+- Include axis titles with units and a descriptive chart title
+- Always accompany charts with text analysis
+
+## Output Format
+Structure your response with: **Analysis** (what you found), **Key Findings** (bullet points), **Data Summary** (relevant numbers).`,
+    tools: ["mcp__history__*"],
+    model: config.models.analyzeHistory as AgentDefinition["model"],
+    maxTurns: 8,
+  };
+}
+
 async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResult> {
   const turnId = crypto.randomUUID();
 
@@ -204,6 +243,8 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
   let streamedText = "";
   let deepReasonToolUseId: string | null = null;
   let deepReasonStartTime = 0;
+  let analyzeHistoryToolUseId: string | null = null;
+  let analyzeHistoryStartTime = 0;
   let newSessionId: string | null = opts.sessionId;
 
   const plugins = opts.pluginManager?.getEnabledSdkPlugins() ?? [];
@@ -216,7 +257,10 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       maxTurns: opts.config.coordinator.maxTurns,
       mcpServers: opts.mcpPool.servers,
       disallowedTools: DISALLOWED_TOOLS,
-      allowedTools: [...opts.mcpPool.allowedTools, ...pluginToolPatterns],
+      allowedTools: [...opts.mcpPool.allowedTools, ...pluginToolPatterns, "Task"],
+      agents: {
+        analyze_history: buildAnalyzeHistoryAgent(opts.config),
+      },
       ...(plugins.length > 0 ? { plugins } : {}),
       permissionMode: "bypassPermissions",
       includePartialMessages: true,
@@ -234,15 +278,34 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       newSessionId = (msg.session_id as string) ?? newSessionId;
     }
 
-    if (msg.type === "stream_event" && msg.parent_tool_use_id == null) {
+    if (msg.type === "stream_event") {
+      const isParent = msg.parent_tool_use_id == null;
       const event = msg.event as Record<string, unknown> | undefined;
+
       if (event?.type === "content_block_delta") {
         const delta = event.delta as Record<string, unknown> | undefined;
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
-          streamedText += delta.text;
+          if (isParent) streamedText += delta.text;
+          // Forward both parent and sub-agent text to the chat — sub-agent
+          // text provides live feedback while it runs; chat:stream_end
+          // replaces the content with the coordinator's final response.
           opts.eventBus.emit("chat:token", {
             token: delta.text,
             messageId: opts.messageId,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Detect sub-agent tool calls from stream events (the SDK doesn't
+      // yield full assistant messages for sub-agents, only stream events).
+      if (!isParent && event?.type === "content_block_start") {
+        const block = event.content_block as Record<string, unknown> | undefined;
+        if (block?.type === "tool_use" && typeof block.name === "string") {
+          opts.eventBus.emit("agent:tool_use", {
+            tool: block.name,
+            input: block.input ?? {},
+            turnId,
             timestamp: Date.now(),
           });
         }
@@ -273,17 +336,41 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
                 turnId,
                 timestamp: Date.now(),
               });
+              opts.eventBus.emit("chat:status", {
+                messageId: opts.messageId,
+                status: "Reasoning deeply...",
+                timestamp: Date.now(),
+              });
+            }
+
+            if (toolName === "Task") {
+              const input = b.input as { subagent_type?: string; prompt?: string } | undefined;
+              if (input?.subagent_type === "analyze_history") {
+                analyzeHistoryToolUseId = b.id as string;
+                analyzeHistoryStartTime = Date.now();
+                opts.eventBus.emit("analyze_history:start", {
+                  question: input.prompt ?? "",
+                  model: opts.config.models.analyzeHistory,
+                  turnId,
+                  timestamp: Date.now(),
+                });
+                opts.eventBus.emit("chat:status", {
+                  messageId: opts.messageId,
+                  status: "Analyzing history...",
+                  timestamp: Date.now(),
+                });
+              }
             }
           }
         }
       }
     }
 
-    if (deepReasonToolUseId && msg.type === "user" && msg.parent_tool_use_id === deepReasonToolUseId) {
-      const toolResult = msg.tool_use_result as { content?: Array<{ text?: string }> } | string | undefined;
-      const analysis = typeof toolResult === "string"
-        ? toolResult
-        : (toolResult?.content?.[0]?.text ?? "");
+    // Match sub-agent completion via the "result" message type (not "user").
+    // "user" messages with parent_tool_use_id include intermediate sub-agent
+    // turns (prompts, tool results) — matching those fires tracking prematurely.
+    if (deepReasonToolUseId && msg.type === "result" && msg.parent_tool_use_id === deepReasonToolUseId) {
+      const analysis = msg.subtype === "success" ? (msg.result as string ?? "") : "";
       opts.eventBus.emit("deep_reason:result", {
         problem: "",
         analysis,
@@ -301,6 +388,19 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
         timestamp: Date.now(),
       });
       deepReasonToolUseId = null;
+    }
+
+    if (analyzeHistoryToolUseId && msg.type === "result" && msg.parent_tool_use_id === analyzeHistoryToolUseId) {
+      const analysis = msg.subtype === "success" ? (msg.result as string ?? "") : "";
+      opts.eventBus.emit("analyze_history:result", {
+        question: "",
+        analysis,
+        model: opts.config.models.analyzeHistory,
+        durationMs: Date.now() - analyzeHistoryStartTime,
+        turnId,
+        timestamp: Date.now(),
+      });
+      analyzeHistoryToolUseId = null;
     }
 
     if (msg.type === "result") {

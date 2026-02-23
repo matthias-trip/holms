@@ -21,6 +21,9 @@ export function createDeviceQueryServer(manager: DeviceManager, memoryStore: Mem
           online: d.availability.online,
           capabilities: d.capabilities.map((c) => c.name),
         };
+        if (d.dataQueries && d.dataQueries.length > 0) {
+          entry.dataQueries = d.dataQueries.map((q) => q.name);
+        }
         if (d.attributes) entry.hasAttributes = true;
         const pinned = pinnedByEntity.get(d.id);
         if (pinned && pinned.length > 0) {
@@ -149,10 +152,48 @@ export function createDeviceQueryServer(manager: DeviceManager, memoryStore: Mem
     },
   );
 
+  const queryDeviceData = tool(
+    "query_device_data",
+    "Query extended data from a device — calendar events, weather forecasts, todo items, camera snapshots. Use when the basic state snapshot isn't enough (e.g. list_devices shows dataQueries for the device). Read-only, does not go through approval.",
+    {
+      deviceId: z.string().describe("The device ID to query"),
+      query: z.string().describe("The query name (e.g. get_events, get_forecast, get_items, get_snapshot)"),
+      params: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .default({})
+        .describe("Query parameters"),
+    },
+    async (args) => {
+      const result = await manager.queryData(args.deviceId, args.query, args.params);
+      if (!result.success) {
+        return {
+          content: [{ type: "text" as const, text: result.error ?? "Query failed" }],
+          isError: true,
+        };
+      }
+      // Camera snapshots return base64 image data
+      if (result.mimeType?.startsWith("image/")) {
+        return {
+          content: [
+            {
+              type: "image" as const,
+              data: result.data as string,
+              mimeType: result.mimeType,
+            },
+          ],
+        };
+      }
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result.data, null, 2) }],
+      };
+    },
+  );
+
   return createSdkMcpServer({
     name: "device-query",
     version: "2.0.0",
-    tools: [listDevices, getDeviceState, getDeviceStates, listAreas, listAvailableEntities, setEntityFilter],
+    tools: [listDevices, getDeviceState, getDeviceStates, listAreas, listAvailableEntities, setEntityFilter, queryDeviceData],
   });
 }
 

@@ -295,6 +295,7 @@ Reflexes fire instantly without AI reasoning — they are for **proven, uncondit
 
 ## Available Tools
 - **list_devices** / **get_device_state** / **get_device_states**: Query device states (includes pinned memories inline). These return live state from the provider. Always call them when answering state questions — never rely on context or memory for current device state. Use `get_device_states` (plural) when you need details for multiple specific devices in one call.
+- **query_device_data**: Query extended data from devices that support data queries (shown as `dataQueries` in list_devices). Use for: calendar events (`get_events` with startTime/endTime), weather forecasts (`get_forecast` with type: daily/hourly/twice_daily), todo items (`get_items` with optional status filter), camera snapshots (`get_snapshot`). Read-only — does not go through approval.
 - **execute_device_command**: Control a single device — only use after recalling memories and confirming no preference requires approval. If unsure, use `propose_action` instead.
 - **bulk_execute_device_command**: Control multiple devices at once — must recall memories for ALL listed devices first.
 - **propose_action**: Propose an action for user approval. You MUST use this when: a memory constraint exists, the action is security-sensitive, the action is novel, or you're uncertain about user intent.
@@ -319,6 +320,8 @@ Reflexes fire instantly without AI reasoning — they are for **proven, uncondit
 - When you need state for multiple devices, use `get_device_states` (plural) with all IDs in one call — don't call `get_device_state` in a loop.
 - When checking memories before acting on multiple devices, write a single broad `memory_query` covering all relevant devices (e.g., "living room lights bedroom lights preferences") instead of one query per device. You can always follow up with a targeted query if the broad one misses something.
 - `list_devices` already returns state for ALL devices — if you need a quick overview, use that instead of querying devices individually.
+
+@history-skill.md
 
 ## Onboarding
 

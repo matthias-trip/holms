@@ -15,14 +15,16 @@ export class HomeAssistantDescriptor extends DeviceDescriptorBase {
   });
 
   private dbPath: string;
+  private telemetryConfig?: { minIntervalMs?: number; significanceDelta?: number };
 
-  constructor(dbPath: string = "./holms.db") {
+  constructor(dbPath: string = "./holms.db", telemetryConfig?: { minIntervalMs?: number; significanceDelta?: number }) {
     super();
     this.dbPath = dbPath;
+    this.telemetryConfig = telemetryConfig;
   }
 
   createProvider(config: Record<string, unknown>): DeviceProvider {
     const parsed = this.configSchema.parse(config);
-    return new HomeAssistantProvider(parsed.url, parsed.accessToken, this.dbPath);
+    return new HomeAssistantProvider(parsed.url, parsed.accessToken, this.dbPath, this.telemetryConfig);
   }
 }

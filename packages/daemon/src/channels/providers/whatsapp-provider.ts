@@ -37,6 +37,10 @@ export class WhatsAppProvider implements ChannelProvider {
     const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
     const { version } = await fetchLatestBaileysVersion();
 
+    // Silent logger — suppress noisy baileys/pino output
+    const noop = () => {};
+    const silentLogger = { level: "silent", info: noop, warn: noop, error: noop, debug: noop, trace: noop, fatal: noop, child: () => silentLogger } as any;
+
     const createSocket = async () => {
       if (this.stopped) return;
 
@@ -44,6 +48,7 @@ export class WhatsAppProvider implements ChannelProvider {
         version,
         auth: state,
         printQRInTerminal: false,
+        logger: silentLogger,
       });
 
       this.sock = sock;
@@ -177,6 +182,15 @@ export class WhatsAppProvider implements ChannelProvider {
         console.error(`[WhatsApp] Failed to send message to ${jid}:`, err);
       });
     }
+  }
+
+  async sendImage(conversationId: string, _messageId: string, image: Buffer, caption?: string): Promise<void> {
+    const jid = conversationId.replace("whatsapp:", "");
+    if (!this.sock) return;
+
+    await this.sock.sendMessage(jid, { image, caption }).catch((err: any) => {
+      console.error(`[WhatsApp] Failed to send image to ${jid}:`, err);
+    });
   }
 
   async sendApproval(conversationId: string, approval: ApprovalPayload): Promise<void> {

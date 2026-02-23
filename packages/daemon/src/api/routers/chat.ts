@@ -135,6 +135,48 @@ export function initActivityPersistence(
     });
   });
 
+  eventBus.on("history:flush", (data: { rowCount: number; entityCount: number; bufferSize: number; timestamp: number }) => {
+    store({
+      id: uuid(), type: "history_flush",
+      data: { rowCount: data.rowCount, entityCount: data.entityCount, bufferSize: data.bufferSize },
+      timestamp: data.timestamp, agentId: "history",
+    });
+  });
+
+  eventBus.on("history:entity_discovered", (data: { entityId: string; friendlyName: string; domain: string; area: string; valueType: string; timestamp: number }) => {
+    store({
+      id: uuid(), type: "history_entity_discovered",
+      data: { entityId: data.entityId, friendlyName: data.friendlyName, domain: data.domain, area: data.area, valueType: data.valueType },
+      timestamp: data.timestamp, agentId: "history",
+    });
+  });
+
+  eventBus.on("history:import_progress", (data: { deviceId: string; phase: string; processed: number; total: number; message?: string }) => {
+    if (data.phase === "done" || data.phase === "error") {
+      store({
+        id: uuid(), type: "history_import",
+        data: { deviceId: data.deviceId, phase: data.phase, rowCount: data.processed, message: data.message },
+        timestamp: Date.now(), agentId: "history",
+      });
+    }
+  });
+
+  eventBus.on("analyze_history:start", (data: { question: string; model: string; turnId?: string; timestamp: number }) => {
+    store({
+      id: uuid(), type: "analyze_history_start",
+      data: { question: data.question, model: data.model },
+      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId ?? getTurnId(),
+    });
+  });
+
+  eventBus.on("analyze_history:result", (data: { question: string; analysis: string; model: string; durationMs: number; turnId?: string; timestamp: number }) => {
+    store({
+      id: uuid(), type: "analyze_history_result",
+      data: { question: data.question, analysis: data.analysis, model: data.model, durationMs: data.durationMs },
+      timestamp: data.timestamp, agentId: "analyze_history", turnId: data.turnId ?? getTurnId(),
+    });
+  });
+
   eventBus.on("reflex:triggered", (data: { rule: { id: string; reason: string }; event: { deviceId: string; type: string }; action: { deviceId: string; command: string } }) => {
     store({
       id: uuid(), type: "reflex_fired",
@@ -188,6 +230,7 @@ export const chatRouter = t.router({
     return observable<
       | { type: "token"; token: string; messageId: string }
       | { type: "end"; messageId: string; content: string; reasoning?: string }
+      | { type: "status"; messageId: string; status: string }
     >((emit) => {
       const tokenHandler = (data: { token: string; messageId: string; timestamp: number }) => {
         emit.next({ type: "token", token: data.token, messageId: data.messageId });
@@ -195,11 +238,16 @@ export const chatRouter = t.router({
       const endHandler = (data: { messageId: string; content: string; reasoning?: string; timestamp: number }) => {
         emit.next({ type: "end", messageId: data.messageId, content: data.content, reasoning: data.reasoning });
       };
+      const statusHandler = (data: { messageId: string; status: string; timestamp: number }) => {
+        emit.next({ type: "status", messageId: data.messageId, status: data.status });
+      };
       ctx.eventBus.on("chat:token", tokenHandler);
       ctx.eventBus.on("chat:stream_end", endHandler);
+      ctx.eventBus.on("chat:status", statusHandler);
       return () => {
         ctx.eventBus.off("chat:token", tokenHandler);
         ctx.eventBus.off("chat:stream_end", endHandler);
+        ctx.eventBus.off("chat:status", statusHandler);
       };
     });
   }),

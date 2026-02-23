@@ -14,6 +14,7 @@ import type { ChannelStore } from "../channels/store.js";
 import type { PeopleStore } from "../people/store.js";
 import type { TriageStore } from "../triage/store.js";
 import type { GoalStore } from "../goals/store.js";
+import type { HistoryStore } from "../history/store.js";
 import type { HolmsConfig } from "../config.js";
 
 export interface TRPCContext {
@@ -33,6 +34,7 @@ export interface TRPCContext {
   peopleStore: PeopleStore;
   triageStore: TriageStore;
   goalStore: GoalStore;
+  historyStore: HistoryStore;
   config: HolmsConfig;
 }
 

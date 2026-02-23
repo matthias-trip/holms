@@ -1,0 +1,28 @@
+services:
+  holms:
+    image: ghcr.io/matthias-trip/holms:latest
+    ports:
+      - "${HOLMS_PORT:-3100}:3100"
+    volumes:
+      - ./data:/data
+      - ./models:/models
+      - ./plugins:/plugins
+      - ~/.claude:/root/.claude:ro
+    environment:
+      - HOLMS_PORT=3100
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3100/trpc').catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_SCHEDULE: "0 0 3 * * *"
+      WATCHTOWER_INCLUDE_STOPPED: "true"
+    restart: unless-stopped

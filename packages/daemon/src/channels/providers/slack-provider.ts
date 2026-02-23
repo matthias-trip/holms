@@ -214,6 +214,22 @@ export class SlackProvider implements ChannelProvider {
     this.activeRequests.delete(messageId);
   }
 
+  async sendImage(conversationId: string, _messageId: string, image: Buffer, caption?: string): Promise<void> {
+    const channelId = conversationId.replace("slack:", "");
+
+    try {
+      await this.app?.client.filesUploadV2({
+        token: this.botToken,
+        channel_id: channelId,
+        file: image,
+        filename: "chart.png",
+        initial_comment: caption,
+      });
+    } catch (err: any) {
+      console.warn("[Slack] Failed to upload image:", err);
+    }
+  }
+
   async sendApproval(conversationId: string, approval: ApprovalPayload): Promise<void> {
     const channelId = conversationId.replace("slack:", "");
 

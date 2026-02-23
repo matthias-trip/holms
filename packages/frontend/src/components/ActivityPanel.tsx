@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef } from "react";
 import {
   MessageCircle, Radar, Clock, Eye, CheckCircle2, XCircle, Zap,
-  ListFilter, Check, X, Brain, ChevronRight, ChevronDown, AlertCircle, Crosshair,
+  ListFilter, Check, X, Brain, ChevronRight, ChevronDown, AlertCircle, Crosshair, Database,
 } from "lucide-react";
 import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
@@ -21,7 +21,8 @@ type TimelineEntry =
   | { kind: "turn"; turn: Turn }
   | { kind: "reflex"; activity: AgentActivity }
   | { kind: "triage"; activity: AgentActivity }
-  | { kind: "triage_classify"; activity: AgentActivity };
+  | { kind: "triage_classify"; activity: AgentActivity }
+  | { kind: "history"; activity: AgentActivity };
 
 // ── Describe current action (for processing indicator) ──
 
@@ -36,6 +37,8 @@ function describeCurrentAction(activity: AgentActivity): string {
       return "Deep reasoning...";
     case "deep_reason_result":
       return "Deep reasoning complete";
+    case "analyze_history_start":
+      return "Analyzing history...";
     case "approval_pending":
       return "Waiting for approval...";
     case "reflection":
@@ -90,6 +93,59 @@ const TRIGGER_CONFIG: Record<TurnTrigger, { icon: React.ReactNode; label: string
   },
 };
 
+// ── Activity filters ──
+
+type ActivityFilter =
+  | "chat" | "events" | "automation" | "proactive" | "approval" | "feedback"
+  | "reflexes" | "triage" | "history";
+
+const FILTER_GROUPS: { label: string; filters: { key: ActivityFilter; label: string; icon: React.ReactNode }[] }[] = [
+  {
+    label: "Turns",
+    filters: [
+      { key: "chat", label: "Chat", icon: <MessageCircle size={11} /> },
+      { key: "events", label: "Events", icon: <Radar size={11} /> },
+      { key: "automation", label: "Automations", icon: <Clock size={11} /> },
+      { key: "proactive", label: "Proactive", icon: <Eye size={11} /> },
+      { key: "approval", label: "Approvals", icon: <CheckCircle2 size={11} /> },
+      { key: "feedback", label: "Feedback", icon: <XCircle size={11} /> },
+    ],
+  },
+  {
+    label: "System",
+    filters: [
+      { key: "reflexes", label: "Reflexes", icon: <Zap size={11} /> },
+      { key: "triage", label: "Triage", icon: <ListFilter size={11} /> },
+      { key: "history", label: "History", icon: <Database size={11} /> },
+    ],
+  },
+];
+
+const DEFAULT_FILTERS = new Set<ActivityFilter>([
+  "chat", "events", "automation", "proactive", "approval", "feedback", "reflexes",
+]);
+
+/** Map turn trigger → filter key */
+function triggerToFilter(trigger: TurnTrigger): ActivityFilter {
+  switch (trigger) {
+    case "user_message": return "chat";
+    case "device_events": return "events";
+    case "automation": return "automation";
+    case "proactive": return "proactive";
+    case "approval_result": return "approval";
+    case "outcome_feedback": return "feedback";
+    case "suggestions": return "chat";
+    case "onboarding": return "chat";
+    default: return "chat";
+  }
+}
+
+function getTurnTrigger(turn: Turn): TurnTrigger {
+  const turnStart = turn.activities.find((a) => a.type === "turn_start");
+  if (!turnStart) return "user_message";
+  return ((turnStart.data as Record<string, unknown>).trigger as TurnTrigger) ?? "user_message";
+}
+
 // ── Main component ──
 
 export default function ActivityPanel() {
@@ -97,6 +153,7 @@ export default function ActivityPanel() {
   const [rawView, setRawView] = useState<Set<string>>(new Set());
   const [liveTurns, setLiveTurns] = useState<Map<string, Turn>>(new Map);
   const [liveOrphans, setLiveOrphans] = useState<AgentActivity[]>([]);
+  const [activeFilters, setActiveFilters] = useState<Set<ActivityFilter>>(new Set(DEFAULT_FILTERS));
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: historicalTurns } = trpc.agents.turns.useQuery({ limit: 50 });
@@ -168,6 +225,8 @@ export default function ActivityPanel() {
         entries.push({ kind: "triage", activity });
       } else if (activity.type === "triage_classify") {
         entries.push({ kind: "triage_classify", activity });
+      } else if (activity.type === "history_flush" || activity.type === "history_entity_discovered" || activity.type === "history_import") {
+        entries.push({ kind: "history", activity });
       } else {
         entries.push({ kind: "reflex", activity });
       }
@@ -204,6 +263,40 @@ export default function ActivityPanel() {
     });
   };
 
+  const toggleFilter = (filter: ActivityFilter) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  };
+
+  const toggleGroup = (group: typeof FILTER_GROUPS[number]) => {
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      const allActive = group.filters.every((f) => next.has(f.key));
+      for (const f of group.filters) {
+        if (allActive) next.delete(f.key);
+        else next.add(f.key);
+      }
+      return next;
+    });
+  };
+
+  const filteredTimeline = useMemo(() => {
+    return timeline.filter((entry) => {
+      if (entry.kind === "turn") {
+        const trigger = getTurnTrigger(entry.turn);
+        return activeFilters.has(triggerToFilter(trigger));
+      }
+      if (entry.kind === "reflex") return activeFilters.has("reflexes");
+      if (entry.kind === "triage" || entry.kind === "triage_classify") return activeFilters.has("triage");
+      if (entry.kind === "history") return activeFilters.has("history");
+      return true;
+    });
+  }, [timeline, activeFilters]);
+
   const triggerCycle = trpc.agents.triggerCycle.useMutation();
 
   return (
@@ -225,9 +318,59 @@ export default function ActivityPanel() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div
+        className="flex items-center gap-1 px-6 py-2 flex-shrink-0 overflow-x-auto"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        {FILTER_GROUPS.map((group, gi) => (
+          <div key={group.label} className="flex items-center gap-1">
+            {gi > 0 && (
+              <div
+                className="mx-1.5 self-stretch"
+                style={{ width: "1px", background: "var(--gray-a5)" }}
+              />
+            )}
+            <button
+              onClick={() => toggleGroup(group)}
+              className="px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors duration-150 whitespace-nowrap"
+              style={{
+                color: group.filters.every((f) => activeFilters.has(f.key))
+                  ? "var(--gray-11)"
+                  : "var(--gray-8)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+              title={`Toggle all ${group.label.toLowerCase()}`}
+            >
+              {group.label}
+            </button>
+            {group.filters.map(({ key, label, icon }) => {
+              const active = activeFilters.has(key);
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleFilter(key)}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[12px] transition-all duration-150 whitespace-nowrap"
+                  style={{
+                    color: active ? "var(--gray-12)" : "var(--gray-8)",
+                    background: active ? "var(--gray-3)" : "transparent",
+                    border: `1px solid ${active ? "var(--gray-a5)" : "transparent"}`,
+                  }}
+                >
+                  <span style={{ opacity: active ? 1 : 0.5 }}>{icon}</span>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+
       {/* Timeline */}
       <div className="flex-1 overflow-auto" ref={scrollRef}>
-        {timeline.length === 0 ? (
+        {filteredTimeline.length === 0 ? (
           <div className="empty-state" style={{ paddingTop: "100px" }}>
             <div className="empty-state-icon">
               <Crosshair size={20} />
@@ -241,7 +384,10 @@ export default function ActivityPanel() {
           </div>
         ) : (
           <div className="px-5 py-4 space-y-2">
-            {timeline.map((entry) => {
+            {filteredTimeline.map((entry) => {
+              if (entry.kind === "history") {
+                return <HistoryRow key={entry.activity.id} activity={entry.activity} />;
+              }
               if (entry.kind === "reflex") {
                 return <ReflexRow key={entry.activity.id} activity={entry.activity} />;
               }
@@ -309,7 +455,8 @@ function TurnCard({
     if (a.type === "turn_start" || a.type === "thinking") return false;
     if (a.type === "tool_use") {
       const td = a.data as Record<string, unknown>;
-      if (String(td.tool ?? "").startsWith("deep_reason:")) return false;
+      const toolName = String(td.tool ?? "");
+      if (toolName.startsWith("deep_reason:") || toolName.startsWith("analyze_history:")) return false;
     }
     return true;
   });
@@ -565,6 +712,111 @@ function StepRow({ activity, allActivities }: { activity: AgentActivity; allActi
                   {deepReasonTools.map((step) => {
                     const td = step.data as Record<string, unknown>;
                     const toolName = String(td.tool ?? "").replace(/^deep_reason:/, "");
+                    const label = humanizeToolUse(toolName, td.input);
+                    return (
+                      <div key={step.id} className="flex items-center gap-1 py-0.5">
+                        <span style={{ color: "var(--accent-10)" }}>
+                          <Zap size={10} />
+                        </span>
+                        <span className="text-xs" style={{ color: "var(--gray-12)" }}>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div
+                className="p-3 text-[11px] overflow-auto"
+                style={{ color: "var(--gray-11)", maxHeight: "400px", lineHeight: 1.5 }}
+              >
+                <MarkdownMessage content={analysis} />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    case "analyze_history_start": {
+      const question = String(d.question ?? "");
+      return (
+        <div className="flex items-start gap-2 py-1.5">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
+            <Database size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            Analyzing history:{" "}
+            <span style={{ color: "var(--gray-9)" }}>
+              {question.slice(0, 120)}{question.length > 120 ? "..." : ""}
+            </span>
+          </span>
+        </div>
+      );
+    }
+
+    case "analyze_history_result": {
+      const question = String(d.question ?? "");
+      const analysis = String(d.analysis ?? "");
+      const model = d.model as string | undefined;
+      const durationMs = d.durationMs as number | undefined;
+
+      const analyzeHistoryTools = (allActivities ?? []).filter((s) => {
+        if (s.type !== "tool_use") return false;
+        const td = s.data as Record<string, unknown>;
+        return String(td.tool ?? "").startsWith("analyze_history:");
+      });
+
+      return (
+        <div className="py-1.5">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="w-full text-left flex items-start gap-2"
+          >
+            <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
+              <Database size={12} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium" style={{ color: "var(--gray-12)" }}>History analysis result</span>
+                <ChevronRight
+                  size={10}
+                  className="flex-shrink-0 transition-transform duration-150"
+                  style={{
+                    transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                    color: "var(--gray-8)",
+                  }}
+                />
+              </div>
+              {!expanded && analysis && (
+                <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>
+                  {analysis.slice(0, 200)}{analysis.length > 200 ? "..." : ""}
+                </p>
+              )}
+              <div className="flex items-center gap-2 mt-1 tabular-nums" style={{ fontFamily: "var(--font-mono)" }}>
+                {model && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{model}</span>}
+                {durationMs != null && durationMs > 0 && (
+                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+                    {durationMs < 60000
+                      ? `${(durationMs / 1000).toFixed(1)}s`
+                      : `${Math.floor(durationMs / 60000)}m ${Math.round((durationMs % 60000) / 1000)}s`}
+                  </span>
+                )}
+                {question && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{question.slice(0, 60)}</span>}
+              </div>
+            </div>
+          </button>
+
+          {expanded && (
+            <div
+              className="mt-2 ml-5 rounded-lg overflow-hidden"
+              style={{ border: "1px solid var(--gray-a5)", background: "var(--gray-a3)" }}
+            >
+              {analyzeHistoryTools.length > 0 && (
+                <div className="px-3 pt-2 pb-1 space-y-0.5" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+                  <p className="text-xs font-medium mb-1" style={{ color: "var(--gray-9)" }}>Tools used</p>
+                  {analyzeHistoryTools.map((step) => {
+                    const td = step.data as Record<string, unknown>;
+                    const toolName = String(td.tool ?? "").replace(/^analyze_history:/, "");
                     const label = humanizeToolUse(toolName, td.input);
                     return (
                       <div key={step.id} className="flex items-center gap-1 py-0.5">
@@ -858,6 +1110,183 @@ function TriageBatchRow({ activity }: { activity: AgentActivity }) {
         {relativeTime(activity.timestamp)}
       </span>
     </div>
+  );
+}
+
+// ── History Row ──
+
+function HistoryRow({ activity }: { activity: AgentActivity }) {
+  const [expanded, setExpanded] = useState(false);
+  const d = activity.data as Record<string, unknown>;
+
+  let color: string;
+  let chipLabel: string;
+  let heading: string;
+  let subtitle: string;
+  let metaParts: string[];
+  let expandedContent: React.ReactNode;
+
+  if (activity.type === "history_flush") {
+    const rowCount = d.rowCount as number ?? 0;
+    const entityCount = d.entityCount as number ?? 0;
+    const bufferSize = d.bufferSize as number | undefined;
+    color = "var(--info)";
+    chipLabel = "flush";
+    heading = "History flush";
+    subtitle = `${rowCount.toLocaleString()} row${rowCount !== 1 ? "s" : ""} · ${entityCount} entit${entityCount !== 1 ? "ies" : "y"} tracked`;
+    metaParts = [`${rowCount.toLocaleString()} rows`, `${entityCount} entities`];
+    if (bufferSize != null) metaParts.push(`buffer: ${bufferSize}`);
+    expandedContent = (
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
+          {rowCount.toLocaleString()} rows
+        </span>
+        <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+        <span className="text-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
+          {entityCount} entities
+        </span>
+        {bufferSize != null && (
+          <>
+            <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+            <span className="text-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
+              buffer: {bufferSize}
+            </span>
+          </>
+        )}
+      </div>
+    );
+  } else if (activity.type === "history_entity_discovered") {
+    const entityId = String(d.entityId ?? "");
+    const friendlyName = String(d.friendlyName ?? entityId);
+    const domain = String(d.domain ?? "");
+    const valueType = String(d.valueType ?? "");
+    const area = d.area ? String(d.area) : undefined;
+    color = "var(--ok)";
+    chipLabel = "discovered";
+    heading = "New entity";
+    subtitle = [area, friendlyName, domain, valueType].filter(Boolean).join(" · ");
+    metaParts = [domain, valueType, area].filter(Boolean) as string[];
+    expandedContent = (
+      <>
+        <span
+          className="text-xs block mb-1"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--gray-11)" }}
+        >
+          {entityId}
+        </span>
+        <div className="flex items-center gap-1 flex-wrap" style={{ fontFamily: "var(--font-mono)" }}>
+          {domain && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{domain}</span>}
+          {domain && area && <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>}
+          {area && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{area}</span>}
+          {(domain || area) && valueType && <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>}
+          {valueType && <span className="text-xs" style={{ color: "var(--gray-9)" }}>{valueType}</span>}
+        </div>
+      </>
+    );
+  } else {
+    // history_import
+    const rowCount = d.rowCount as number ?? 0;
+    const deviceId = String(d.deviceId ?? "");
+    const phase = String(d.phase ?? "done");
+    const message = d.message as string | undefined;
+    const isError = phase === "error";
+    color = isError ? "var(--err)" : "var(--ok)";
+    chipLabel = isError ? "import error" : "import done";
+    heading = isError ? "Import failed" : "Import complete";
+    subtitle = isError
+      ? (message ?? "Import failed")
+      : `${deviceId} · ${rowCount.toLocaleString()} row${rowCount !== 1 ? "s" : ""}`;
+    metaParts = [deviceId, `${rowCount.toLocaleString()} rows`];
+    expandedContent = (
+      <>
+        <div className="flex items-center gap-1 flex-wrap" style={{ fontFamily: "var(--font-mono)" }}>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{deviceId}</span>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{phase}</span>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{rowCount.toLocaleString()} rows</span>
+        </div>
+        {message && (
+          <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--gray-11)" }}>
+            {message}
+          </p>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <Card
+      className="animate-fade-in"
+      style={{
+        padding: 0,
+        border: "1px solid var(--gray-a5)",
+        boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+        background: "var(--gray-3)",
+      }}
+    >
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left flex items-center gap-3 px-4 py-3 transition-colors rounded-xl"
+      >
+        <span
+          className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center"
+          style={{
+            color,
+            background: `color-mix(in srgb, ${color} 8%, transparent)`,
+          }}
+        >
+          <Database size={14} />
+        </span>
+
+        <div className="flex-1 min-w-0">
+          <p className="text-sm truncate" style={{ color: "var(--gray-12)" }}>
+            {heading}
+          </p>
+
+          <p className="text-xs mt-1 truncate" style={{ color: "var(--gray-9)" }}>
+            {subtitle}
+          </p>
+
+          <div className="flex items-center gap-1 mt-1 flex-wrap" style={{ fontFamily: "var(--font-mono)" }}>
+            <span className="text-xs" style={{ color: "var(--gray-9)" }}>{chipLabel}</span>
+            {metaParts.map((part, i) => (
+              <span key={i} className="flex items-center gap-1">
+                <span className="text-xs" style={{ color: "var(--gray-9)" }}>&middot;</span>
+                <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>{part}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <span
+          className="text-xs tabular-nums flex-shrink-0"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
+        >
+          {relativeTime(activity.timestamp)}
+        </span>
+
+        <ChevronRight
+          size={12}
+          className="flex-shrink-0 transition-transform duration-200"
+          style={{
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+            color: "var(--gray-8)",
+          }}
+        />
+      </button>
+
+      {expanded && (
+        <div
+          className="px-4 pb-3"
+          style={{ marginLeft: "14px", borderLeft: "2px solid var(--gray-a5)" }}
+        >
+          <div className="pl-5">
+            {expandedContent}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

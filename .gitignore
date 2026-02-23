@@ -1,7 +1,14 @@
 node_modules/
 dist/
 *.db
+*.db-shm
+*.db-wal
+*.duckdb
+*.duckdb.wal
+data/
+models/
 .env
 .DS_Store
 .playwright-mcp/
 plugins/*/node_modules
+Archive.zip

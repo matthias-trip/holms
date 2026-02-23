@@ -37,6 +37,9 @@ import { PeopleStore } from "./people/store.js";
 import { createPeopleToolsServer } from "./people/tools.js";
 import { GoalStore } from "./goals/store.js";
 import { createGoalToolsServer } from "./goals/tools.js";
+import { HistoryStore } from "./history/store.js";
+import { HistoryIngestion } from "./history/ingestion.js";
+import { createHistoryToolsServer } from "./history/tools.js";
 import { startApiServer } from "./api/server.js";
 import { initActivityPersistence } from "./api/routers/chat.js";
 
@@ -59,14 +62,17 @@ async function main() {
   const triageStore = new TriageStore(config.dbPath);
   const peopleStore = new PeopleStore(config.dbPath);
   const goalStore = new GoalStore(config.dbPath);
+  const historyStore = await HistoryStore.create(config.history.dbPath);
   console.log(`[Init] Stores initialized (${config.dbPath})`);
 
   // 4. Init DeviceManager with descriptor pattern
   const providerStore = new DeviceProviderStore(config.dbPath);
   const deviceManager = new DeviceManager(providerStore);
 
+  const historyIngestion = new HistoryIngestion(historyStore, eventBus, deviceManager, config.history);
+
   // Register descriptors
-  deviceManager.registerDescriptor(new HomeAssistantDescriptor(config.dbPath));
+  deviceManager.registerDescriptor(new HomeAssistantDescriptor(config.dbPath, config.telemetry));
 
   // 5. Init ReflexEngine
   const reflexEngine = new ReflexEngine(reflexStore, deviceManager, eventBus);
@@ -97,6 +103,7 @@ async function main() {
   mcpPool.register("triage", () => createTriageToolsServer(triageStore));
   mcpPool.register("people", () => createPeopleToolsServer(peopleStore));
   mcpPool.register("goals", () => createGoalToolsServer(goalStore));
+  mcpPool.register("history", () => createHistoryToolsServer(historyStore));
 
   const hub = new CoordinatorHub(
     eventBus,
@@ -252,7 +259,10 @@ async function main() {
     );
   });
 
-  // 12b. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
+  // 12b. Start history ingestion
+  historyIngestion.start();
+
+  // 12c. Init activity persistence (stores agent events to DB + re-emits on activity:stored)
   initActivityPersistence(eventBus, activityStore, hub);
 
   // 13. Start tRPC API server
@@ -274,9 +284,11 @@ async function main() {
       peopleStore,
       triageStore,
       goalStore,
+      historyStore,
       config,
     },
     config.apiPort,
+    config.frontendDistDir,
   );
 
   // 14. Start ProactiveScheduler
@@ -304,6 +316,7 @@ async function main() {
     console.log("\n\nShutting down...");
     await channelManager.stopAll();
     scheduler.stop();
+    historyIngestion.stop();
     triageEngine.stopBatchTicker();
     apiServer.close();
     await deviceManager.disconnectAll();
@@ -316,6 +329,7 @@ async function main() {
     channelStore.close();
     peopleStore.close();
     goalStore.close();
+    await historyStore.close();
     providerStore.close();
     console.log("Goodbye!");
     process.exit(0);

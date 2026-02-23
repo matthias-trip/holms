@@ -1,6 +1,9 @@
+import { lazy, Suspense, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
+
+const VegaLiteChart = lazy(() => import("./VegaLiteChart.js"));
 
 const components: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
@@ -11,6 +14,19 @@ const components: Components = {
   ),
   em: ({ children }) => <em className="italic">{children}</em>,
   code: ({ className, children, ...props }) => {
+    if (className === "language-vega-lite") {
+      const raw = String(children).trim();
+      try {
+        JSON.parse(raw);
+        return (
+          <Suspense fallback={<code className={className} {...props}>{children}</code>}>
+            <VegaLiteChart spec={raw} />
+          </Suspense>
+        );
+      } catch {
+        // Incomplete JSON (still streaming) — show as code
+      }
+    }
     const isBlock = className?.includes("language-");
     if (isBlock) {
       return (
@@ -32,19 +48,29 @@ const components: Components = {
       </code>
     );
   },
-  pre: ({ children }) => (
-    <pre
-      className="rounded-lg p-3 my-2 overflow-x-auto text-[12px]"
-      style={{
-        background: "var(--slate)",
-        border: "1px solid var(--graphite)",
-        fontFamily: "var(--font-mono)",
-        color: "var(--frost)",
-      }}
-    >
-      {children}
-    </pre>
-  ),
+  pre: ({ children }) => {
+    // Unwrap <pre> when the child is a VegaLiteChart (avoid pre wrapper around chart div)
+    if (isValidElement(children)) {
+      const childType = (children as any)?.type;
+      // Check for Suspense wrapping VegaLiteChart or VegaLiteChart directly
+      if (childType === Suspense || childType === VegaLiteChart) {
+        return <>{children}</>;
+      }
+    }
+    return (
+      <pre
+        className="rounded-lg p-3 my-2 overflow-x-auto text-[12px]"
+        style={{
+          background: "var(--slate)",
+          border: "1px solid var(--graphite)",
+          fontFamily: "var(--font-mono)",
+          color: "var(--frost)",
+        }}
+      >
+        {children}
+      </pre>
+    );
+  },
   a: ({ href, children }) => (
     <a
       href={href}

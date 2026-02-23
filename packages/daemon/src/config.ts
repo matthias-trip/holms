@@ -10,6 +10,7 @@ export interface HolmsConfig {
   dbPath: string;
   hfCacheDir: string;
   claudeConfigDir?: string;
+  frontendDistDir: string;
   builtinPluginsDir: string;
   pluginsDir: string;
   pluginsStatePath: string;
@@ -17,6 +18,7 @@ export interface HolmsConfig {
     coordinator: string;
     deepReason: string;
     suggestions: string;
+    analyzeHistory: string;
   };
   proactive: {
     situationalCheckInterval: number; // ms
@@ -37,12 +39,25 @@ export interface HolmsConfig {
     batchIntervalMs: number;
     echoWindowMs: number;
   };
+  telemetry: {
+    minIntervalMs: number;       // throttle: min ms between emissions per sensor entity
+    significanceDelta: number;   // override throttle if relative change exceeds this fraction (0.1 = 10%)
+  };
+  history: {
+    dbPath: string;
+    flushIntervalMs: number;
+    flushBatchSize: number;
+    catalogRefreshMs: number;
+    ingestionEpsilon: number;    // skip storing if numeric value changed by less than this
+    minStorageIntervalMs: number; // max one row per entity per this many ms (default 60s)
+  };
 }
 
 const holmsHome = resolve(homedir(), ".holms");
 
 const defaults: HolmsConfig = {
   apiPort: 3100,
+  frontendDistDir: resolve(repoRoot, "packages", "frontend", "dist"),
   dbPath: resolve(process.cwd(), "holms.db"),
   hfCacheDir: resolve(holmsHome, "models"),
   builtinPluginsDir: resolve(repoRoot, "plugins"),
@@ -52,6 +67,7 @@ const defaults: HolmsConfig = {
     coordinator: "claude-sonnet-4-6",
     deepReason: "claude-sonnet-4-6",
     suggestions: "claude-haiku-4-5-20251001",
+    analyzeHistory: "claude-sonnet-4-6",
   },
   proactive: {
     situationalCheckInterval: 30 * 60 * 1000,
@@ -72,12 +88,25 @@ const defaults: HolmsConfig = {
     batchIntervalMs: 2 * 60 * 1000,
     echoWindowMs: 5000,
   },
+  telemetry: {
+    minIntervalMs: 60_000,
+    significanceDelta: 0.1,
+  },
+  history: {
+    dbPath: resolve(process.cwd(), "holms-history.duckdb"),
+    flushIntervalMs: 5000,
+    flushBatchSize: 100,
+    catalogRefreshMs: 3600000,
+    ingestionEpsilon: 0.01,
+    minStorageIntervalMs: 60_000,
+  },
 };
 
 export function loadConfig(): HolmsConfig {
   return {
     ...defaults,
     apiPort: parseInt(process.env.HOLMS_PORT ?? String(defaults.apiPort), 10),
+    frontendDistDir: process.env.HOLMS_FRONTEND_DIST ?? defaults.frontendDistDir,
     dbPath: process.env.HOLMS_DB_PATH ?? defaults.dbPath,
     hfCacheDir: (process.env.HOLMS_HF_CACHE_DIR ?? defaults.hfCacheDir).replace(/^~(?=$|\/)/, homedir()),
     pluginsDir: (process.env.HOLMS_PLUGINS_DIR ?? defaults.pluginsDir).replace(/^~(?=$|\/)/, homedir()),
@@ -87,9 +116,14 @@ export function loadConfig(): HolmsConfig {
       coordinator: process.env.HOLMS_MODEL_COORDINATOR ?? defaults.models.coordinator,
       deepReason: process.env.HOLMS_MODEL_DEEP_REASON ?? defaults.models.deepReason,
       suggestions: process.env.HOLMS_MODEL_SUGGESTIONS ?? defaults.models.suggestions,
+      analyzeHistory: process.env.HOLMS_MODEL_ANALYZE_HISTORY ?? defaults.models.analyzeHistory,
     },
     deepReason: {
       maxTurns: parseInt(process.env.HOLMS_DEEP_REASON_MAX_TURNS ?? String(defaults.deepReason.maxTurns), 10),
+    },
+    history: {
+      ...defaults.history,
+      dbPath: process.env.HOLMS_HISTORY_DB_PATH ?? defaults.history.dbPath,
     },
   };
 }

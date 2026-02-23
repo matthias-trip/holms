@@ -1,4 +1,4 @@
-import type { Device, DeviceEvent, DeviceArea, CommandResult, ChannelConfigField, DeviceProviderStatus } from "@holms/shared";
+import type { Device, DeviceEvent, DeviceArea, CommandResult, DataQueryResult, ChannelConfigField, DeviceProviderStatus } from "@holms/shared";
 import type { z } from "zod";
 
 export interface DeviceProvider {
@@ -21,6 +21,13 @@ export interface DeviceProvider {
     command: string,
     params: Record<string, unknown>,
   ): Promise<CommandResult>;
+
+  // Data queries (optional — read-only on-demand data)
+  queryData?(
+    deviceId: string,
+    query: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult>;
 }
 
 export interface DeviceProviderDescriptor {

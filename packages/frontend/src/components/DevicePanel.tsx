@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Lightbulb, Thermometer, Radar, Lock, CircleDot, Plug, Fan, Speaker,
   PanelTop, Shield, Bot, Droplets, Flame, ToggleLeft, Power, Video, Gauge,
-  Brain, ChevronRight,
+  Brain, ChevronRight, Database,
   type LucideIcon,
 } from "lucide-react";
 import { Button, Card, CardBody, Chip } from "@heroui/react";
@@ -614,6 +614,11 @@ function ExpandedDetail({ device, pinnedMemories }: {
         </div>
       )}
 
+      {/* Import History (HA devices only) */}
+      {device.id.startsWith("ha:") && (
+        <ImportHistory deviceId={device.id} />
+      )}
+
       {/* Metadata bar */}
       {device.metadata && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -629,6 +634,146 @@ function ExpandedDetail({ device, pinnedMemories }: {
         </div>
       )}
 
+    </div>
+  );
+}
+
+// ── Import History ──
+
+const DAY_OPTIONS = [1, 7, 14, 30] as const;
+
+function ImportHistory({ deviceId }: { deviceId: string }) {
+  const [selectedDays, setSelectedDays] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<{ totalRows: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ phase: string; processed: number; total: number } | null>(null);
+
+  const importMutation = trpc.history.importFromHA.useMutation();
+
+  trpc.history.onImportProgress.useSubscription(
+    { deviceId },
+    {
+      enabled: importing,
+      onData: (data) => {
+        setProgress({ phase: data.phase, processed: data.processed, total: data.total });
+        if (data.phase === "done" || data.phase === "error") {
+          setImporting(false);
+        }
+      },
+    },
+  );
+
+  const handleImport = useCallback(async (days: number) => {
+    setSelectedDays(days);
+    setImporting(true);
+    setResult(null);
+    setError(null);
+    setProgress({ phase: "fetching", processed: 0, total: 0 });
+
+    try {
+      const res = await importMutation.mutateAsync({ deviceId, days });
+      setResult(res);
+    } catch (err: any) {
+      setError(err.message ?? String(err));
+    } finally {
+      setImporting(false);
+    }
+  }, [deviceId, importMutation]);
+
+  const progressPercent = progress && progress.total > 0
+    ? Math.round((progress.processed / progress.total) * 100)
+    : 0;
+
+  return (
+    <div
+      className="rounded-lg p-3 space-y-2"
+      style={{ background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
+    >
+      <div className="flex items-center gap-1.5">
+        <Database size={12} strokeWidth={1.5} style={{ color: "var(--gray-8)" }} />
+        <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--gray-8)" }}>
+          Import History
+        </span>
+      </div>
+
+      {!importing && !result && (
+        <div className="flex items-center gap-1.5">
+          {DAY_OPTIONS.map((days) => (
+            <button
+              key={days}
+              onClick={() => handleImport(days)}
+              className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-all"
+              style={{
+                background: selectedDays === days ? "var(--accent-a5)" : "var(--gray-a3)",
+                color: selectedDays === days ? "var(--accent-11)" : "var(--gray-11)",
+                border: "1px solid var(--gray-a5)",
+                cursor: "pointer",
+              }}
+            >
+              {days}d
+            </button>
+          ))}
+        </div>
+      )}
+
+      {importing && progress && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] capitalize" style={{ color: "var(--gray-9)" }}>
+              {progress.phase}...
+            </span>
+            {progress.total > 0 && (
+              <span className="text-[11px] tabular-nums" style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}>
+                {progressPercent}%
+              </span>
+            )}
+          </div>
+          <div
+            className="w-full rounded-full overflow-hidden"
+            style={{ height: "4px", background: "var(--gray-a5)" }}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${progress.total > 0 ? progressPercent : 100}%`,
+                background: "var(--accent-9)",
+                animation: progress.total === 0 ? "pulse 1.5s ease-in-out infinite" : undefined,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px]" style={{ color: "var(--success, #22c55e)" }}>
+            Imported {result.totalRows.toLocaleString()} rows
+          </span>
+          <button
+            onClick={() => { setResult(null); setSelectedDays(null); }}
+            className="text-[10px] underline"
+            style={{ color: "var(--gray-8)", cursor: "pointer", background: "none", border: "none" }}
+          >
+            again
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[11px]" style={{ color: "var(--danger, #ef4444)" }}>
+            {error}
+          </span>
+          <button
+            onClick={() => { setError(null); setSelectedDays(null); }}
+            className="text-[10px] underline"
+            style={{ color: "var(--gray-8)", cursor: "pointer", background: "none", border: "none" }}
+          >
+            retry
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -199,14 +199,64 @@ packages/
 
 ## Getting started
 
-### Prerequisites
+### Quick install (Docker)
+
+The fastest way to run Holms. Requires [Docker](https://docs.docker.com/get-docker/) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) authenticated (`claude` CLI).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/matthias-trip/holms/main/install.sh | bash
+```
+
+This will pull the latest image, set up a `~/.holms` directory with data persistence, and start Holms with automatic updates via [Watchtower](https://containrrr.dev/watchtower/). The dashboard will be at [http://localhost:3100](http://localhost:3100).
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `HOLMS_DIR=/opt/holms` | Custom install directory (default: `~/.holms`) |
+| `HOLMS_PORT=8080` | Custom port (default: `3100`) |
+| `--no-auto-update` | Skip Watchtower auto-update sidecar |
+
+```bash
+# Custom port, custom directory, no auto-updates
+HOLMS_DIR=/opt/holms HOLMS_PORT=8080 bash <(curl -fsSL https://raw.githubusercontent.com/matthias-trip/holms/main/install.sh) --no-auto-update
+```
+
+**Managing your installation:**
+
+```bash
+# View logs
+docker compose -f ~/.holms/docker-compose.yml logs -f
+
+# Stop
+docker compose -f ~/.holms/docker-compose.yml down
+
+# Update manually (if auto-updates are disabled)
+docker compose -f ~/.holms/docker-compose.yml pull && docker compose -f ~/.holms/docker-compose.yml up -d
+```
+
+### Docker Compose (manual)
+
+If you prefer to manage the compose file yourself, clone the repo and use the included `docker-compose.yml`:
+
+```bash
+git clone https://github.com/matthias-trip/holms.git
+cd holms
+docker compose up -d
+```
+
+This uses the pre-built image from GHCR and includes a Watchtower sidecar for auto-updates. Edit `docker-compose.yml` to customize ports, volumes, or remove Watchtower.
+
+### Development setup
+
+For local development with hot-reloading.
+
+**Prerequisites:**
 
 - Node.js 20+
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI)
 
 The daemon uses the Claude Agent SDK, which runs Claude Code under the hood — no separate API key needed.
-
-### Install & run
 
 ```bash
 npm install

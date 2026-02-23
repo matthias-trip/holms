@@ -134,6 +134,11 @@ export interface EventBusEvents {
     message?: string;
     timestamp: number;
   }) => void;
+  "chat:status": (data: {
+    messageId: string;
+    status: string;
+    timestamp: number;
+  }) => void;
   "chat:message_feedback": (data: {
     messageId: string;
     sentiment: "positive" | "negative";
@@ -144,6 +149,41 @@ export interface EventBusEvents {
     messageId: string;
     response: string;
     timestamp: number;
+  }) => void;
+  "history:flush": (data: {
+    rowCount: number;
+    entityCount: number;
+    bufferSize: number;
+    timestamp: number;
+  }) => void;
+  "history:entity_discovered": (data: {
+    entityId: string;
+    friendlyName: string;
+    domain: string;
+    area: string;
+    valueType: string;
+    timestamp: number;
+  }) => void;
+  "analyze_history:start": (data: {
+    question: string;
+    model: string;
+    turnId?: string;
+    timestamp: number;
+  }) => void;
+  "analyze_history:result": (data: {
+    question: string;
+    analysis: string;
+    model: string;
+    durationMs: number;
+    turnId?: string;
+    timestamp: number;
+  }) => void;
+  "history:import_progress": (data: {
+    deviceId: string;
+    phase: string;
+    processed: number;
+    total: number;
+    message?: string;
   }) => void;
   "activity:stored": (activity: AgentActivity) => void;
 }

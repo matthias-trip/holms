@@ -45,6 +45,9 @@ export interface ChannelProvider {
   /** Pre-populate conversations from persisted storage on startup */
   seedConversations?(conversations: ChannelConversation[]): void;
 
+  /** Send an image (e.g. rendered chart) with optional caption */
+  sendImage?(conversationId: string, messageId: string, image: Buffer, caption?: string): Promise<void>;
+
   /** Send an interactive approval card (e.g. Block Kit buttons in Slack) */
   sendApproval?(conversationId: string, approval: ApprovalPayload): Promise<void>;
   /** Register a callback for when a user acts on an approval card */

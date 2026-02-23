@@ -14,6 +14,7 @@ import { deviceProvidersRouter } from "./routers/device-providers.js";
 import { peopleRouter } from "./routers/people.js";
 import { triageRouter } from "./routers/triage.js";
 import { goalsRouter } from "./routers/goals.js";
+import { historyRouter } from "./routers/history.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -32,6 +33,7 @@ export const appRouter = t.router({
   people: peopleRouter,
   triage: triageRouter,
   goals: goalsRouter,
+  history: historyRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -1,4 +1,4 @@
-import type { Device, DeviceEvent, DeviceArea, DeviceDomain, CommandResult, DeviceProviderInfo } from "@holms/shared";
+import type { Device, DeviceEvent, DeviceArea, DeviceDomain, CommandResult, DataQueryResult, DeviceProviderInfo } from "@holms/shared";
 import type { DeviceProvider, DeviceProviderDescriptor } from "./types.js";
 import type { DeviceProviderStore } from "./provider-store.js";
 
@@ -416,6 +416,95 @@ export class DeviceManager {
   /** Check if a named provider is connected (running). */
   isProviderConnected(providerName: string): boolean {
     return this.providers.some((p) => p.name === providerName);
+  }
+
+  validateDataQuery(
+    device: Device,
+    query: string,
+    params: Record<string, unknown>,
+  ): { valid: boolean; error?: string } {
+    if (!device.dataQueries || device.dataQueries.length === 0) {
+      return {
+        valid: false,
+        error: `Device ${device.id} does not support data queries`,
+      };
+    }
+
+    const descriptor = device.dataQueries.find((q) => q.name === query);
+    if (!descriptor) {
+      return {
+        valid: false,
+        error: `Device ${device.id} does not support query: ${query}. Available: ${device.dataQueries.map((q) => q.name).join(", ")}`,
+      };
+    }
+
+    // Check required params
+    for (const param of descriptor.params) {
+      if (param.required && !(param.name in params)) {
+        return {
+          valid: false,
+          error: `Missing required parameter "${param.name}" for query "${query}"`,
+        };
+      }
+    }
+
+    // Check param types
+    for (const param of descriptor.params) {
+      const value = params[param.name];
+      if (value === undefined) continue;
+
+      switch (param.type) {
+        case "string":
+          if (typeof value !== "string") {
+            return { valid: false, error: `Parameter "${param.name}" must be a string, got ${typeof value}` };
+          }
+          break;
+        case "enum":
+          if (param.options && !param.options.includes(String(value))) {
+            return { valid: false, error: `Parameter "${param.name}" must be one of [${param.options.join(", ")}], got "${value}"` };
+          }
+          break;
+        case "number":
+          if (typeof value !== "number") {
+            return { valid: false, error: `Parameter "${param.name}" must be a number, got ${typeof value}` };
+          }
+          break;
+        case "boolean":
+          if (typeof value !== "boolean") {
+            return { valid: false, error: `Parameter "${param.name}" must be a boolean, got ${typeof value}` };
+          }
+          break;
+      }
+    }
+
+    return { valid: true };
+  }
+
+  async queryData(
+    deviceId: string,
+    query: string,
+    params: Record<string, unknown>,
+  ): Promise<DataQueryResult> {
+    // Find device and validate
+    const device = this.deviceCache.get(deviceId) ?? await this.getDevice(deviceId);
+    if (device) {
+      const validation = this.validateDataQuery(device, query, params);
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
+      }
+    }
+
+    for (const provider of this.providers) {
+      const devices = await provider.getDevices();
+      if (devices.some((d) => d.id === deviceId)) {
+        if (!provider.queryData) {
+          return { success: false, error: `Provider ${provider.name} does not support data queries` };
+        }
+        return provider.queryData(deviceId, query, params);
+      }
+    }
+
+    return { success: false, error: `No provider found for device: ${deviceId}` };
   }
 
   async executeCommand(

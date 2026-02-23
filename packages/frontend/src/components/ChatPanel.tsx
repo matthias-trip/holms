@@ -4,11 +4,13 @@ import { Button, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { ChatMessage, ChatMessageFeedback, ApprovalMessageData } from "@holms/shared";
 import MarkdownMessage from "./MarkdownMessage";
+import FeedbackModal from "./FeedbackModal";
 
 interface StreamingMessage extends ChatMessage {
   streaming?: boolean;
   reasoning?: string;
   thinkingStartedAt?: number;
+  statusHint?: string;
 }
 
 function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
@@ -35,7 +37,7 @@ function parseApprovalData(content: string): ApprovalMessageData | null {
 }
 
 /** Live reasoning — streams as plain text (no markdown re-parse flicker), auto-scrolls */
-function LiveReasoningBlock({ reasoning, startedAt }: { reasoning: string; startedAt: number }) {
+function LiveReasoningBlock({ reasoning, startedAt, statusHint }: { reasoning: string; startedAt: number; statusHint?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [elapsed, setElapsed] = useState(0);
 
@@ -50,12 +52,16 @@ function LiveReasoningBlock({ reasoning, startedAt }: { reasoning: string; start
     }
   }, [reasoning]);
 
+  const label = statusHint
+    ? `${statusHint}${elapsed > 0 ? ` (${elapsed}s)` : ""}`
+    : `Thinking${elapsed > 0 ? ` (${elapsed}s)` : ""}...`;
+
   return (
     <div className="mb-2">
       <div className="flex items-center gap-1 mb-1">
         <Loader2 size={12} className="animate-spin-slow flex-shrink-0" style={{ color: "var(--gray-9)" }} />
         <span className="text-xs font-medium" style={{ color: "var(--gray-9)" }}>
-          Thinking{elapsed > 0 ? ` (${elapsed}s)` : ""}...
+          {label}
         </span>
       </div>
       <div
@@ -223,148 +229,82 @@ const SUGGESTED_PROMPTS = [
   { label: "Show device status", icon: Activity },
 ];
 
-function MessageFeedback({
+
+/** Expandable reflection text — click truncated text to show full version */
+function FeedbackReflection({ response }: { response: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-start gap-1.5 text-left w-full"
+      >
+        <Sparkles size={10} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-9)" }} />
+        <span
+          className="text-[11px] flex-1"
+          style={{
+            color: "var(--gray-10)",
+            lineHeight: "1.5",
+            ...(!expanded ? {
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical" as const,
+              overflow: "hidden",
+            } : {}),
+          }}
+        >
+          {response}
+        </span>
+        <ChevronRight
+          size={10}
+          className="flex-shrink-0 mt-0.5 transition-transform duration-150"
+          style={{
+            color: "var(--gray-8)",
+            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+/** Feedback display shown below the message when feedback has been submitted */
+function MessageFeedbackDisplay({
   messageId,
   feedback,
   onFeedbackUpdate,
 }: {
   messageId: string;
-  feedback?: ChatMessageFeedback;
+  feedback: ChatMessageFeedback;
   onFeedbackUpdate: (messageId: string, feedback: ChatMessageFeedback) => void;
 }) {
-  const [mode, setMode] = useState<"positive" | "negative" | null>(null);
-  const [comment, setComment] = useState("");
-
-  const mutation = trpc.chat.messageFeedback.useMutation({
-    onSuccess: () => {
-      onFeedbackUpdate(messageId, {
-        sentiment: mode!,
-        comment: comment.trim() || undefined,
-      });
-      setMode(null);
-      setComment("");
-    },
-  });
-
-  const submit = () => {
-    if (!mode) return;
-    mutation.mutate({
-      messageId,
-      sentiment: mode,
-      comment: comment.trim() || undefined,
-    });
-  };
-
-  if (feedback) {
-    return (
-      <div className="mt-2 pt-2" style={{ borderTop: "1px solid var(--gray-a3)" }}>
-        <div className="flex items-center gap-2">
-          {feedback.sentiment === "positive"
-            ? <ThumbsUp size={11} style={{ color: "var(--ok)" }} />
-            : <ThumbsDown size={11} style={{ color: "var(--warm)" }} />}
-          <span className="text-[11px]" style={{ color: "var(--gray-9)" }}>
-            {feedback.sentiment === "positive" ? "Helpful" : "Not helpful"}
+  return (
+    <div className="mt-1.5 pt-1.5" style={{ borderTop: "1px solid var(--gray-a3)" }}>
+      <div className="flex items-center gap-2">
+        {feedback.sentiment === "positive"
+          ? <ThumbsUp size={11} style={{ color: "var(--ok)" }} />
+          : <ThumbsDown size={11} style={{ color: "var(--warm)" }} />}
+        <span className="text-[11px]" style={{ color: "var(--gray-9)" }}>
+          {feedback.sentiment === "positive" ? "Helpful" : "Not helpful"}
+        </span>
+        {feedback.comment && (
+          <span className="text-[11px]" style={{ color: "var(--gray-8)" }}>
+            &mdash; {feedback.comment}
           </span>
-          {feedback.comment && (
-            <span className="text-[11px]" style={{ color: "var(--gray-8)" }}>
-              &mdash; {feedback.comment}
-            </span>
-          )}
-        </div>
-        {feedback.response ? (
-          <details className="mt-1.5 group/reflection">
-            <summary className="flex items-start gap-1.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-              <Sparkles size={10} className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-9)" }} />
-              <span className="text-[11px] group-open/reflection:hidden" style={{ color: "var(--gray-10)", lineHeight: "1.5", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                {feedback.response}
-              </span>
-              <ChevronRight size={10} className="chevron-rotate flex-shrink-0 mt-0.5 transition-transform duration-150 group-open/reflection:hidden" style={{ color: "var(--gray-8)" }} />
-            </summary>
-            <div className="text-[11px] -mt-[1px]" style={{ color: "var(--gray-10)", lineHeight: "1.5" }}>
-              <MarkdownMessage content={feedback.response} />
-            </div>
-          </details>
-        ) : (
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <span
-              className="w-[4px] h-[4px] rounded-full flex-shrink-0"
-              style={{ background: "var(--gray-8)", animation: "pulse-dot 1.5s ease-in-out infinite" }}
-            />
-            <span className="text-[11px]" style={{ color: "var(--gray-8)" }}>Reflecting...</span>
-          </div>
         )}
       </div>
-    );
-  }
-
-  if (mode) {
-    return (
-      <div className="mt-2 pt-2 space-y-1.5" style={{ borderTop: "1px solid var(--gray-a3)" }}>
-        <div className="flex items-center gap-2">
-          {mode === "positive"
-            ? <ThumbsUp size={11} style={{ color: "var(--ok)" }} />
-            : <ThumbsDown size={11} style={{ color: "var(--warm)" }} />}
-          <span className="text-[11px]" style={{ color: "var(--gray-10)" }}>
-            {mode === "positive" ? "Helpful" : "Not helpful"}
-          </span>
+      {feedback.response ? (
+        <FeedbackReflection response={feedback.response} />
+      ) : (
+        <div className="flex items-center gap-1.5 mt-1.5">
+          <span
+            className="w-[4px] h-[4px] rounded-full flex-shrink-0"
+            style={{ background: "var(--gray-8)", animation: "pulse-dot 1.5s ease-in-out infinite" }}
+          />
+          <span className="text-[11px]" style={{ color: "var(--gray-8)" }}>Reflecting...</span>
         </div>
-        <input
-          type="text"
-          placeholder="Add a comment (optional)"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          className="w-full text-[11px] px-2 py-1 rounded-md outline-none"
-          style={{
-            background: "var(--gray-2)",
-            border: "1px solid var(--gray-a4)",
-            color: "var(--gray-12)",
-          }}
-          autoFocus
-        />
-        <div className="flex items-center gap-2">
-          <button
-            onClick={submit}
-            disabled={mutation.isPending}
-            className="text-[11px] px-2 py-0.5 rounded-md font-medium transition-colors"
-            style={{
-              background: "var(--accent-9)",
-              color: "white",
-              opacity: mutation.isPending ? 0.5 : 1,
-            }}
-          >
-            {mutation.isPending ? "Sending..." : "Submit"}
-          </button>
-          <button
-            onClick={() => { setMode(null); setComment(""); }}
-            className="text-[11px] px-2 py-0.5 rounded-md transition-colors"
-            style={{ color: "var(--gray-9)" }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-2 pt-2 flex items-center gap-2 feedback-buttons" style={{ borderTop: "1px solid var(--gray-a3)" }}>
-      <button
-        onClick={() => setMode("positive")}
-        className="p-1 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
-        style={{ color: "var(--gray-7)" }}
-        title="Helpful"
-      >
-        <ThumbsUp size={11} />
-      </button>
-      <button
-        onClick={() => setMode("negative")}
-        className="p-1 rounded-md transition-colors hover:bg-[var(--gray-a3)]"
-        style={{ color: "var(--gray-7)" }}
-        title="Not helpful"
-      >
-        <ThumbsDown size={11} />
-      </button>
+      )}
     </div>
   );
 }
@@ -385,6 +325,10 @@ export default function ChatPanel() {
   const liveMessageIdsRef = useRef<Set<string>>(new Set());
   const streamEndReceivedRef = useRef(false);
   const pendingApprovalActionRef = useRef<{ approvalId: string; approved: boolean } | null>(null);
+
+  const [feedbackModal, setFeedbackModal] = useState<{ messageId: string; sentiment: "positive" | "negative" } | null>(null);
+
+  const feedbackMutation = trpc.chat.messageFeedback.useMutation();
 
   const utils = trpc.useUtils();
   const historyQuery = trpc.chat.history.useQuery({ limit: 100, channel: "web:default" });
@@ -493,6 +437,14 @@ export default function ChatPanel() {
               : m,
           ),
         );
+      } else if (event.type === "status") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === event.messageId
+              ? { ...m, statusHint: event.status }
+              : m,
+          ),
+        );
       } else if (event.type === "end") {
         streamEndReceivedRef.current = true;
         setMessages((prev) => {
@@ -500,7 +452,7 @@ export default function ChatPanel() {
           if (hasMatch) {
             return prev.map((m) =>
               m.id === event.messageId
-                ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning, thinkingStartedAt: m.thinkingStartedAt }
+                ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning, statusHint: undefined, thinkingStartedAt: m.thinkingStartedAt }
                 : m,
             );
           }
@@ -532,6 +484,20 @@ export default function ChatPanel() {
       ),
     );
   }, []);
+
+  const handleFeedbackSubmit = useCallback((comment?: string) => {
+    if (!feedbackModal) return;
+    const { messageId, sentiment } = feedbackModal;
+    feedbackMutation.mutate(
+      { messageId, sentiment, comment },
+      {
+        onSuccess: () => {
+          handleFeedbackUpdate(messageId, { sentiment, comment });
+          setFeedbackModal(null);
+        },
+      },
+    );
+  }, [feedbackModal, feedbackMutation, handleFeedbackUpdate]);
 
   trpc.approval.onProposal.useSubscription(undefined, {
     onData: (proposal) => {
@@ -822,11 +788,12 @@ export default function ChatPanel() {
                         <LiveReasoningBlock
                           reasoning={msg.reasoning}
                           startedAt={msg.thinkingStartedAt ?? msg.timestamp}
+                          statusHint={msg.statusHint}
                         />
                       ) : (
                         <div className="flex items-center gap-2 py-0.5">
                           <Loader2 size={12} className="animate-spin-slow flex-shrink-0" style={{ color: "var(--gray-9)" }} />
-                          <span className="text-xs" style={{ color: "var(--gray-9)" }}>Thinking...</span>
+                          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{msg.statusHint ?? "Thinking..."}</span>
                         </div>
                       )
                     ) : (
@@ -846,15 +813,37 @@ export default function ChatPanel() {
                     <p className="whitespace-pre-wrap">{msg.content}</p>
                   )}
                   {!msg.streaming && (
-                    <p
-                      className="text-xs mt-1"
-                      style={{ fontFamily: "var(--font-mono)", opacity: 0.4 }}
-                    >
-                      {new Date(msg.timestamp).toLocaleTimeString()}
-                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p
+                        className="text-xs"
+                        style={{ fontFamily: "var(--font-mono)", opacity: 0.4 }}
+                      >
+                        {new Date(msg.timestamp).toLocaleTimeString()}
+                      </p>
+                      {showFeedback && !msg.feedback && (
+                        <div className="flex items-center gap-0.5 feedback-buttons">
+                          <button
+                            onClick={() => setFeedbackModal({ messageId: msg.id, sentiment: "positive" })}
+                            className="p-0.5 rounded transition-colors hover:bg-[var(--gray-a3)]"
+                            style={{ color: "var(--gray-7)" }}
+                            title="Helpful"
+                          >
+                            <ThumbsUp size={11} />
+                          </button>
+                          <button
+                            onClick={() => setFeedbackModal({ messageId: msg.id, sentiment: "negative" })}
+                            className="p-0.5 rounded transition-colors hover:bg-[var(--gray-a3)]"
+                            style={{ color: "var(--gray-7)" }}
+                            title="Not helpful"
+                          >
+                            <ThumbsDown size={11} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
-                  {showFeedback && (
-                    <MessageFeedback
+                  {showFeedback && msg.feedback && (
+                    <MessageFeedbackDisplay
                       messageId={msg.id}
                       feedback={msg.feedback}
                       onFeedbackUpdate={handleFeedbackUpdate}
@@ -970,6 +959,16 @@ export default function ChatPanel() {
           </button>
         </div>
       </div>
+
+      {feedbackModal && (
+        <FeedbackModal
+          isOpen
+          sentiment={feedbackModal.sentiment}
+          onSubmit={handleFeedbackSubmit}
+          onClose={() => setFeedbackModal(null)}
+          isPending={feedbackMutation.isPending}
+        />
+      )}
     </div>
   );
 }
