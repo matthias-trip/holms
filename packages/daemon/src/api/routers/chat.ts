@@ -282,6 +282,7 @@ export const chatRouter = t.router({
           systemPrompt: `You generate chat message suggestions for a home automation assistant. You will be given a conversation transcript wrapped in <conversation_transcript> tags. Based on that conversation, return a JSON array of short messages (max 6 words each) the user might send next. These should read naturally as things a person would type — casual commands, requests, or questions about their home. Examples: "dim the living room lights", "what's the bedroom temperature?", "turn everything off". Return ONLY the JSON array, no other text. Do NOT respond to the conversation — only generate suggestions.`,
           maxTurns: 1,
           claudeConfigDir: ctx.config.claudeConfigDir,
+          claudeExecutablePath: ctx.config.claudeExecutablePath,
         });
 
         const match = resultText.match(/\[[\s\S]*\]/);

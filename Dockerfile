@@ -34,8 +34,11 @@ LABEL org.opencontainers.image.source="https://github.com/matthias-trip/holms"
 LABEL org.opencontainers.image.description="Holms — AI-driven home automation"
 LABEL org.opencontainers.image.licenses="MIT"
 
-# Git is needed by the Claude Agent SDK's bundled CLI at runtime
+# Git is needed by Claude Code at runtime
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Install native Claude Code CLI (used by Agent SDK via pathToClaudeCodeExecutable)
+RUN npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
 
@@ -60,6 +63,7 @@ RUN mkdir -p /root/.claude/debug
 RUN echo '{"hasCompletedOnboarding":true,"installMethod":"sdk","autoUpdaterStatus":"disabled"}' > /root/.claude.json
 
 # Environment defaults
+ENV HOLMS_CLAUDE_EXECUTABLE_PATH=/usr/local/bin/claude
 ENV HOLMS_PORT=3100
 ENV HOLMS_DB_PATH=/data/holms.db
 ENV HOLMS_HISTORY_DB_PATH=/data/holms-history.duckdb

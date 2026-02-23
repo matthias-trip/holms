@@ -76,6 +76,7 @@ Environment variables in `packages/daemon/.env` (loaded via `--env-file`):
 | `HOLMS_DB_PATH` | `./holms.db` | SQLite database path |
 | `HOLMS_HF_CACHE_DIR` | `~/.holms/models` | HuggingFace model cache for embeddings |
 | `HOLMS_CLAUDE_CONFIG_DIR` | `~/.claude` | Claude config directory |
+| `HOLMS_CLAUDE_EXECUTABLE_PATH` | *(auto)* | Path to native `claude` binary for Agent SDK |
 | `HOLMS_PLUGINS_DIR` | `~/.holms/plugins` | Plugin discovery directory |
 | `HOLMS_MODEL_COORDINATOR` | `claude-sonnet-4-6` | Model for main coordinator agent |
 | `HOLMS_MODEL_DEEP_REASON` | `claude-sonnet-4-6` | Model for deep reasoning sub-agent |

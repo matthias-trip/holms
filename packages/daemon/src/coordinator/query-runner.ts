@@ -11,14 +11,19 @@ import type { McpServerPool } from "./mcp-pool.js";
 import { buildSystemPrompt } from "./system-prompt.js";
 import { runWithChannel } from "./query-context.js";
 
-// ── SDK environment helper ──
+// ── SDK process options helper ──
 
-/** Build environment for SDK-spawned Claude CLI process.
- *  Always passes process.env explicitly so auth tokens are forwarded in containers. */
-function buildSDKEnv(config: { claudeConfigDir?: string }): Record<string, string | undefined> {
+/** Build env + executable options for SDK-spawned Claude CLI process. */
+function buildSDKProcessOptions(config: { claudeConfigDir?: string; claudeExecutablePath?: string }): {
+  env: Record<string, string | undefined>;
+  pathToClaudeCodeExecutable?: string;
+} {
   return {
-    ...process.env,
-    ...(config.claudeConfigDir ? { CLAUDE_CONFIG_DIR: config.claudeConfigDir } : {}),
+    env: {
+      ...process.env,
+      ...(config.claudeConfigDir ? { CLAUDE_CONFIG_DIR: config.claudeConfigDir } : {}),
+    },
+    ...(config.claudeExecutablePath ? { pathToClaudeCodeExecutable: config.claudeExecutablePath } : {}),
   };
 }
 
@@ -276,8 +281,8 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       permissionMode: "bypassPermissions",
       includePartialMessages: true,
       ...(opts.sessionId ? { resume: opts.sessionId } : {}),
-      env: buildSDKEnv(opts.config),
-      stderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
+      ...buildSDKProcessOptions(opts.config),
+      stderr: (data: string) => { console.error("[SDK stderr]", data.trim()); },
     },
   });
 
@@ -478,6 +483,7 @@ export interface TrackedQueryOptions {
   systemPrompt: string;
   maxTurns?: number;
   claudeConfigDir?: string;
+  claudeExecutablePath?: string;
 }
 
 export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ result: string; metrics: QueryMetrics }> {
@@ -508,8 +514,8 @@ export async function runTrackedQuery(opts: TrackedQueryOptions): Promise<{ resu
       systemPrompt: opts.systemPrompt,
       permissionMode: "bypassPermissions",
       disallowedTools: DISALLOWED_TOOLS,
-      env: buildSDKEnv({ claudeConfigDir: opts.claudeConfigDir }),
-      stderr: (data: string) => { if (data.includes("ERROR") || data.includes("Error")) console.error("[SDK stderr]", data.trim()); },
+      ...buildSDKProcessOptions({ claudeConfigDir: opts.claudeConfigDir, claudeExecutablePath: opts.claudeExecutablePath }),
+      stderr: (data: string) => { console.error("[SDK stderr]", data.trim()); },
     },
   })) {
     const msg = event as Record<string, unknown>;

@@ -10,6 +10,7 @@ export interface HolmsConfig {
   dbPath: string;
   hfCacheDir: string;
   claudeConfigDir?: string;
+  claudeExecutablePath?: string;
   frontendDistDir: string;
   builtinPluginsDir: string;
   pluginsDir: string;
@@ -112,6 +113,7 @@ export function loadConfig(): HolmsConfig {
     pluginsDir: (process.env.HOLMS_PLUGINS_DIR ?? defaults.pluginsDir).replace(/^~(?=$|\/)/, homedir()),
     pluginsStatePath: resolve(dirname(process.env.HOLMS_DB_PATH ?? defaults.dbPath), "plugins.json"),
     claudeConfigDir: process.env.HOLMS_CLAUDE_CONFIG_DIR?.replace(/^~(?=$|\/)/, homedir()) || undefined,
+    claudeExecutablePath: process.env.HOLMS_CLAUDE_EXECUTABLE_PATH || undefined,
     models: {
       coordinator: process.env.HOLMS_MODEL_COORDINATOR ?? defaults.models.coordinator,
       deepReason: process.env.HOLMS_MODEL_DEEP_REASON ?? defaults.models.deepReason,
