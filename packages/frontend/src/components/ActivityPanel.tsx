@@ -1082,33 +1082,109 @@ function TriageClassifyRow({ activity }: { activity: AgentActivity }) {
 // ── Triage Batch Row ──
 
 function TriageBatchRow({ activity }: { activity: AgentActivity }) {
+  const [expanded, setExpanded] = useState(false);
   const d = activity.data as Record<string, unknown>;
   const eventCount = d.eventCount as number ?? 0;
+  const devices = (d.devices ?? []) as Array<{
+    deviceId: string;
+    deviceName?: string;
+    eventCount: number;
+    latestValue?: number;
+    unit?: string;
+    avgDelta?: number;
+    maxDelta?: number;
+  }>;
+  const deviceCount = devices.length;
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-2 rounded-xl animate-fade-in"
+      className="rounded-xl animate-fade-in"
       style={{
         background: "color-mix(in srgb, var(--info) 3%, var(--color-background))",
         border: "1px solid color-mix(in srgb, var(--info) 10%, var(--gray-a5))",
       }}
     >
-      <span style={{ color: "var(--info)" }}>
-        <ListFilter size={13} />
-      </span>
-
-      <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
-        <span className="font-medium" style={{ color: "var(--info)" }}>Triage</span>
-        <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
-        Flushed {eventCount} batched event{eventCount !== 1 ? "s" : ""} to coordinator
-      </span>
-
-      <span
-        className="text-xs tabular-nums flex-shrink-0"
-        style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
+      <div
+        className="flex items-center gap-3 px-4 py-2 cursor-pointer"
+        onClick={() => devices.length > 0 && setExpanded(!expanded)}
       >
-        {relativeTime(activity.timestamp)}
-      </span>
+        <span style={{ color: "var(--info)" }}>
+          <ListFilter size={13} />
+        </span>
+
+        <span className="text-xs flex-1 truncate" style={{ color: "var(--gray-12)" }}>
+          <span className="font-medium" style={{ color: "var(--info)" }}>Triage</span>
+          <span style={{ color: "var(--gray-9)", margin: "0 4px" }}>&middot;</span>
+          {deviceCount > 0
+            ? `Flushed ${deviceCount} device${deviceCount !== 1 ? "s" : ""} (${eventCount} event${eventCount !== 1 ? "s" : ""})`
+            : `Flushed ${eventCount} batched event${eventCount !== 1 ? "s" : ""}`}
+        </span>
+
+        <span
+          className="text-xs tabular-nums flex-shrink-0"
+          style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}
+        >
+          {relativeTime(activity.timestamp)}
+        </span>
+
+        {devices.length > 0 && (
+          <ChevronRight
+            size={14}
+            className="flex-shrink-0 transition-transform duration-200"
+            style={{
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              color: "var(--gray-8)",
+            }}
+          />
+        )}
+      </div>
+
+      {expanded && devices.length > 0 && (
+        <div
+          className="px-4 pb-3 pt-1 space-y-1"
+          style={{ borderTop: "1px solid var(--gray-a3)" }}
+        >
+          {devices.map((dev) => (
+            <div
+              key={dev.deviceId}
+              className="flex items-center gap-2 text-xs py-0.5"
+              style={{ fontFamily: "var(--font-mono)", color: "var(--gray-11)" }}
+            >
+              <span className="truncate" style={{ color: "var(--gray-12)" }}>
+                {dev.deviceName ?? dev.deviceId}
+              </span>
+              <span style={{ color: "var(--gray-9)" }}>&mdash;</span>
+              <span className="tabular-nums" style={{ color: "var(--gray-9)" }}>
+                {dev.eventCount} event{dev.eventCount !== 1 ? "s" : ""}
+              </span>
+              {dev.latestValue != null && (
+                <>
+                  <span style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="tabular-nums" style={{ color: "var(--gray-9)" }}>
+                    latest: {dev.latestValue}{dev.unit ? ` ${dev.unit}` : ""}
+                  </span>
+                </>
+              )}
+              {dev.avgDelta != null && (
+                <>
+                  <span style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="tabular-nums" style={{ color: "var(--gray-9)" }}>
+                    avg &Delta;{dev.avgDelta}{dev.unit ? ` ${dev.unit}` : ""}
+                  </span>
+                </>
+              )}
+              {dev.maxDelta != null && (
+                <>
+                  <span style={{ color: "var(--gray-9)" }}>&middot;</span>
+                  <span className="tabular-nums" style={{ color: "var(--gray-9)" }}>
+                    max &Delta;{dev.maxDelta}{dev.unit ? ` ${dev.unit}` : ""}
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

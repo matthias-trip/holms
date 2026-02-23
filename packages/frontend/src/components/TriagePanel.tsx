@@ -45,8 +45,11 @@ export default function TriagePanel() {
             if (cond.deviceDomain) condParts.push(cond.deviceDomain);
             if (cond.eventType) condParts.push(cond.eventType);
             if (cond.area) condParts.push(cond.area);
-            if (cond.stateKey && cond.deltaThreshold != null) {
-              condParts.push(`\u0394${cond.stateKey} \u2264 ${cond.deltaThreshold}`);
+            if (cond.deltaThreshold != null) {
+              condParts.push(`\u0394 \u2265 ${cond.deltaThreshold}`);
+            }
+            if (rule.holdMinutes != null) {
+              condParts.push(`hold ${rule.holdMinutes}min`);
             }
 
             return (

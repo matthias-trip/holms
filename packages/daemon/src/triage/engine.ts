@@ -9,9 +9,15 @@ interface PendingEcho {
   timestamp: number;
 }
 
+interface DeviceBatchBuffer {
+  events: DeviceEvent[];
+  holdMinutes: number;
+  firstEventAt: number;
+}
+
 export class TriageEngine {
   private pendingEchoes = new Map<string, PendingEcho>();
-  private batchBuffer: DeviceEvent[] = [];
+  private batchBuffers = new Map<string, DeviceBatchBuffer>();
   private batchInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -33,23 +39,33 @@ export class TriageEngine {
     const sorted = this.sortBySpecificity(rules);
 
     for (const rule of sorted) {
-      if (this.matchesCondition(rule.condition, event)) {
-        const lane = rule.lane;
+      if (!this.matchesBaseCondition(rule.condition, event)) continue;
 
-        if (lane === "batched") {
-          this.batchBuffer.push(event);
+      // deltaThreshold acts as noise floor
+      if (rule.condition.deltaThreshold != null) {
+        const delta = event.data.delta as number | undefined;
+        if (delta != null && Math.abs(delta) < rule.condition.deltaThreshold) {
+          this.emitClassification(event, "silent", rule.id, `delta ${Math.abs(delta).toFixed(0)} below threshold ${rule.condition.deltaThreshold}`);
+          return "silent";
         }
-
-        this.emitClassification(event, lane, rule.id, rule.reason);
-        return lane;
       }
+
+      // Rule matches — use its lane
+      const lane = rule.lane;
+
+      if (lane === "batched") {
+        this.addToBatchBuffer(event, rule);
+      }
+
+      this.emitClassification(event, lane, rule.id, rule.reason);
+      return lane;
     }
 
     // 3. Built-in defaults
     const lane = this.defaultClassify(event);
 
     if (lane === "batched") {
-      this.batchBuffer.push(event);
+      this.addToBatchBuffer(event, null);
     }
 
     this.emitClassification(event, lane, null, "default");
@@ -64,23 +80,14 @@ export class TriageEngine {
   }
 
   startBatchTicker(forwardCallback: (events: DeviceEvent[]) => void): void {
-    const intervalMs = this.config.triage.batchIntervalMs;
+    // Tick every 30 seconds to check per-device buffers
+    const tickMs = 30_000;
 
     this.batchInterval = setInterval(() => {
-      if (this.batchBuffer.length === 0) return;
+      this.flushReadyBuffers(forwardCallback);
+    }, tickMs);
 
-      const events = this.batchBuffer.splice(0);
-
-      this.eventBus.emit("agent:triage_batch", {
-        eventCount: events.length,
-        timestamp: Date.now(),
-      });
-
-      console.log(`[Triage] Flushing ${events.length} batched event(s) to coordinator`);
-      forwardCallback(events);
-    }, intervalMs);
-
-    console.log(`[Triage] Batch ticker started (interval: ${intervalMs}ms)`);
+    console.log(`[Triage] Batch ticker started (tick: ${tickMs}ms)`);
   }
 
   stopBatchTicker(): void {
@@ -88,6 +95,124 @@ export class TriageEngine {
       clearInterval(this.batchInterval);
       this.batchInterval = null;
     }
+  }
+
+  private addToBatchBuffer(event: DeviceEvent, rule: TriageRule | null): void {
+    const deviceId = event.deviceId;
+    const holdMinutes = rule?.holdMinutes ?? (this.config.triage.batchIntervalMs / 60_000);
+    const existing = this.batchBuffers.get(deviceId);
+
+    if (existing) {
+      existing.events.push(event);
+      // Update hold time if a rule specifies a different one
+      if (rule?.holdMinutes != null) {
+        existing.holdMinutes = rule.holdMinutes;
+      }
+    } else {
+      this.batchBuffers.set(deviceId, {
+        events: [event],
+        holdMinutes,
+        firstEventAt: Date.now(),
+      });
+    }
+  }
+
+  private flushReadyBuffers(forwardCallback: (events: DeviceEvent[]) => void): void {
+    const now = Date.now();
+    const allFlushed: DeviceEvent[] = [];
+    const deviceDetails: Array<{
+      deviceId: string;
+      deviceName?: string;
+      eventCount: number;
+      latestValue?: number;
+      unit?: string;
+      avgDelta?: number;
+      maxDelta?: number;
+    }> = [];
+
+    for (const [deviceId, buffer] of this.batchBuffers) {
+      const elapsedMs = now - buffer.firstEventAt;
+      if (elapsedMs < buffer.holdMinutes * 60_000) continue;
+
+      // Ready to flush this device's buffer
+      const events = buffer.events;
+      this.batchBuffers.delete(deviceId);
+
+      if (events.length === 0) continue;
+
+      const aggregated = this.aggregateEvents(deviceId, events);
+      allFlushed.push(aggregated);
+
+      // Collect per-device details for the activity event
+      const device = this.deviceManager.getCachedDevice(deviceId);
+      const detail: typeof deviceDetails[number] = {
+        deviceId,
+        deviceName: device?.name,
+        eventCount: events.length,
+      };
+      const aggData = aggregated.data;
+      if (typeof aggData.value === "number") detail.latestValue = aggData.value;
+      if (typeof aggData.unit === "string") detail.unit = aggData.unit;
+      if (typeof aggData.avgDelta === "number") detail.avgDelta = aggData.avgDelta;
+      if (typeof aggData.maxDelta === "number") detail.maxDelta = aggData.maxDelta;
+      deviceDetails.push(detail);
+    }
+
+    if (allFlushed.length === 0) return;
+
+    const totalRawEvents = deviceDetails.reduce((sum, d) => sum + d.eventCount, 0);
+
+    this.eventBus.emit("agent:triage_batch", {
+      eventCount: totalRawEvents,
+      devices: deviceDetails,
+      timestamp: now,
+    });
+
+    console.log(`[Triage] Flushing ${allFlushed.length} device(s), ${totalRawEvents} raw event(s) to coordinator`);
+    forwardCallback(allFlushed);
+  }
+
+  private aggregateEvents(deviceId: string, events: DeviceEvent[]): DeviceEvent {
+    if (events.length === 1) return events[0]!;
+
+    const latest = events[events.length - 1]!;
+    const first = events[0]!;
+
+    const deltas: number[] = [];
+    const values: number[] = [];
+
+    for (const e of events) {
+      if (typeof e.data.delta === "number") deltas.push(e.data.delta);
+      if (typeof e.data.value === "number") values.push(e.data.value);
+    }
+
+    const aggregatedData: Record<string, unknown> = {
+      ...latest.data,
+      aggregated: true,
+      eventCount: events.length,
+      timeSpanMs: latest.timestamp - first.timestamp,
+    };
+
+    if (deltas.length > 0) {
+      aggregatedData.avgDelta = Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length);
+      aggregatedData.minDelta = Math.min(...deltas);
+      aggregatedData.maxDelta = Math.max(...deltas);
+    }
+
+    if (values.length > 0) {
+      aggregatedData.minValue = Math.min(...values);
+      aggregatedData.maxValue = Math.max(...values);
+    }
+
+    return {
+      deviceId,
+      type: latest.type,
+      data: aggregatedData,
+      timestamp: latest.timestamp,
+      domain: latest.domain,
+      area: latest.area,
+      previousState: first.previousState,
+    };
   }
 
   private isCommandEcho(event: DeviceEvent): boolean {
@@ -109,7 +234,8 @@ export class TriageEngine {
     return true;
   }
 
-  private matchesCondition(condition: TriageCondition, event: DeviceEvent): boolean {
+  /** Match base conditions (deviceId, domain, eventType, area) without deltaThreshold logic */
+  private matchesBaseCondition(condition: TriageCondition, event: DeviceEvent): boolean {
     if (condition.deviceId && condition.deviceId !== event.deviceId) return false;
     if (condition.eventType && condition.eventType !== event.type) return false;
 
@@ -120,22 +246,6 @@ export class TriageEngine {
 
       if (condition.deviceDomain && domain !== condition.deviceDomain) return false;
       if (condition.area && area !== condition.area) return false;
-    }
-
-    // Delta threshold matching
-    if (condition.stateKey && condition.deltaThreshold != null) {
-      const delta = event.data.delta as number | undefined;
-      const value = event.data[condition.stateKey];
-
-      // If there's an explicit delta field, use it
-      if (delta != null && Math.abs(delta) <= condition.deltaThreshold) {
-        return false; // Delta too small — doesn't match this rule
-      }
-
-      // If no delta but we have the value, we can't determine change — skip threshold check
-      if (delta == null && value != null) {
-        return true; // Condition matches on other fields, can't check delta
-      }
     }
 
     return true;
@@ -191,7 +301,6 @@ export class TriageEngine {
     if (condition.eventType) score += 4;
     if (condition.deviceDomain) score += 2;
     if (condition.area) score += 1;
-    if (condition.stateKey) score += 1;
     return score;
   }
 

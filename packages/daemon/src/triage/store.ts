@@ -19,10 +19,20 @@ export class TriageStore {
         reason TEXT NOT NULL,
         created_by TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 1
+        enabled INTEGER NOT NULL DEFAULT 1,
+        hold_minutes INTEGER
       )
     `);
+    this.migrate();
     this.deduplicate();
+  }
+
+  private migrate(): void {
+    // Add hold_minutes column if it doesn't exist
+    const cols = this.db.pragma("table_info(triage_rules)") as { name: string }[];
+    if (!cols.some((c) => c.name === "hold_minutes")) {
+      this.db.exec(`ALTER TABLE triage_rules ADD COLUMN hold_minutes INTEGER`);
+    }
   }
 
   create(
@@ -32,8 +42,8 @@ export class TriageStore {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO triage_rules (id, condition_json, lane, reason, created_by, created_at, enabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO triage_rules (id, condition_json, lane, reason, created_by, created_at, enabled, hold_minutes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -43,6 +53,7 @@ export class TriageStore {
         rule.createdBy,
         now,
         rule.enabled ? 1 : 0,
+        rule.holdMinutes ?? null,
       );
     return this.get(id)!;
   }
@@ -72,7 +83,7 @@ export class TriageStore {
 
   update(
     id: string,
-    updates: Partial<Pick<TriageRule, "condition" | "lane" | "reason" | "enabled">>,
+    updates: Partial<Pick<TriageRule, "condition" | "lane" | "reason" | "enabled" | "holdMinutes">>,
   ): TriageRule | undefined {
     const existing = this.get(id);
     if (!existing) return undefined;
@@ -92,6 +103,10 @@ export class TriageStore {
     if (updates.enabled !== undefined) {
       this.db.prepare(`UPDATE triage_rules SET enabled = ? WHERE id = ?`)
         .run(updates.enabled ? 1 : 0, id);
+    }
+    if (updates.holdMinutes !== undefined) {
+      this.db.prepare(`UPDATE triage_rules SET hold_minutes = ? WHERE id = ?`)
+        .run(updates.holdMinutes ?? null, id);
     }
 
     return this.get(id);
@@ -143,6 +158,7 @@ export class TriageStore {
       id: row.id,
       condition: JSON.parse(row.condition_json),
       lane: row.lane as TriageRule["lane"],
+      holdMinutes: row.hold_minutes ?? undefined,
       reason: row.reason,
       createdBy: row.created_by,
       createdAt: row.created_at,
@@ -159,4 +175,5 @@ interface TriageRuleRow {
   created_by: string;
   created_at: number;
   enabled: number;
+  hold_minutes: number | null;
 }

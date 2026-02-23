@@ -127,6 +127,15 @@ export interface EventBusEvents {
   }) => void;
   "agent:triage_batch": (data: {
     eventCount: number;
+    devices: Array<{
+      deviceId: string;
+      deviceName?: string;
+      eventCount: number;
+      latestValue?: number;
+      unit?: string;
+      avgDelta?: number;
+      maxDelta?: number;
+    }>;
     timestamp: number;
   }) => void;
   "channel:status_changed": (data: {

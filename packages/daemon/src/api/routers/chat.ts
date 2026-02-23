@@ -114,10 +114,10 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("agent:triage_batch", (data: { eventCount: number; timestamp: number }) => {
+  eventBus.on("agent:triage_batch", (data: { eventCount: number; devices: Array<{ deviceId: string; deviceName?: string; eventCount: number; latestValue?: number; unit?: string; avgDelta?: number; maxDelta?: number }>; timestamp: number }) => {
     store({
       id: uuid(), type: "triage",
-      data: { eventCount: data.eventCount },
+      data: { eventCount: data.eventCount, devices: data.devices },
       timestamp: data.timestamp, agentId: "triage",
     });
   });

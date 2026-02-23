@@ -424,7 +424,6 @@ export interface TriageCondition {
   deviceDomain?: DeviceDomain;
   eventType?: string;
   area?: string;
-  stateKey?: string;
   deltaThreshold?: number;
 }
 
@@ -432,6 +431,7 @@ export interface TriageRule {
   id: string;
   condition: TriageCondition;
   lane: TriageLane;
+  holdMinutes?: number;
   reason: string;
   createdBy: string;
   createdAt: number;

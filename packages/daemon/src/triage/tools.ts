@@ -6,7 +6,7 @@ import type { ActivityStore } from "../activity/store.js";
 export function createTriageToolsServer(store: TriageStore, activityStore?: ActivityStore) {
   const setTriageRule = tool(
     "set_triage_rule",
-    "Create a triage rule to control how device events reach you. Events are classified into three lanes:\n- **immediate**: Wakes you right away. Use for events requiring instant reasoning — binary sensor changes, security events, significant state changes.\n- **batched**: Accumulated and delivered every ~2 minutes. Use for gradual changes that don't need instant response — temperature drift, energy updates.\n- **silent**: Updates device state but never wakes you. Use for pure telemetry noise — unchanged values, periodic heartbeats, command confirmations.\n\nRules are matched by specificity: deviceId > deviceDomain > room > wildcard. First match wins.",
+    "Create a triage rule to control how device events reach you. Events are classified into three lanes:\n- **immediate**: Wakes you right away. Use for events requiring instant reasoning — binary sensor changes, security events, significant state changes.\n- **batched**: Accumulated, aggregated per device, and delivered as a single summary (count, avg/min/max delta, latest value) before delivery. Use holdMinutes to control how long batched events accumulate (default: 2 min).\n- **silent**: Updates device state but never wakes you. Use for pure telemetry noise — unchanged values, periodic heartbeats, command confirmations.\n\ndeltaThreshold acts as a noise floor — small changes are auto-silenced regardless of lane. One rule does everything: e.g. deltaThreshold=500 with lane='batched' silences changes under 500 and batches changes of 500+.\n\nRules are matched by specificity: deviceId > deviceDomain > room > wildcard. First match wins.",
     {
       condition: z
         .object({
@@ -18,16 +18,19 @@ export function createTriageToolsServer(store: TriageStore, activityStore?: Acti
           eventType: z.string().optional().describe("Event type to match (e.g. state_changed, motion_detected)"),
           room: z.string().optional().describe("Match all devices in this room"),
           area: z.string().optional().describe("Match all devices in this area (same as room — use for area-based filtering)"),
-          stateKey: z.string().optional().describe("Numeric state key for delta threshold matching (e.g. temperature)"),
           deltaThreshold: z
             .number()
             .optional()
-            .describe("Change must exceed this value to match the rule. Used with stateKey."),
+            .describe("Noise floor: events with |delta| below this value are automatically silenced. Events at or above are routed to the specified lane. Example: deltaThreshold=500 with lane='batched' → changes under 500 silenced, changes of 500+ batched."),
         })
         .describe("Conditions for matching events"),
       lane: z
         .enum(["immediate", "batched", "silent"])
         .describe("Which triage lane to route matching events to"),
+      holdMinutes: z
+        .number()
+        .optional()
+        .describe("For 'batched' lane: how many minutes to accumulate events before delivering an aggregated summary. Default is 2. Use higher values (15-60) for noisy sensors you rarely act on."),
       reason: z.string().describe("Why this rule exists — for your future reference"),
     },
     async (args) => {
@@ -36,13 +39,14 @@ export function createTriageToolsServer(store: TriageStore, activityStore?: Acti
         const updated = store.update(existing.id, {
           lane: args.lane,
           reason: args.reason,
+          holdMinutes: args.holdMinutes,
           enabled: true,
         });
         return {
           content: [
             {
               type: "text" as const,
-              text: `Updated existing triage rule "${existing.id}": route ${args.lane} — ${args.reason}`,
+              text: `Updated existing triage rule "${existing.id}": route ${args.lane}${args.holdMinutes ? ` (hold ${args.holdMinutes}min)` : ""} — ${args.reason}`,
             },
           ],
         };
@@ -50,6 +54,7 @@ export function createTriageToolsServer(store: TriageStore, activityStore?: Acti
       const rule = store.create({
         condition: args.condition,
         lane: args.lane,
+        holdMinutes: args.holdMinutes,
         reason: args.reason,
         createdBy: "coordinator",
         enabled: true,
@@ -58,7 +63,7 @@ export function createTriageToolsServer(store: TriageStore, activityStore?: Acti
         content: [
           {
             type: "text" as const,
-            text: `Created triage rule "${rule.id}": route ${args.lane} — ${args.reason}`,
+            text: `Created triage rule "${rule.id}": route ${args.lane}${args.holdMinutes ? ` (hold ${args.holdMinutes}min)` : ""} — ${args.reason}`,
           },
         ],
       };
