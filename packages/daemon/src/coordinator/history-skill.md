@@ -33,6 +33,8 @@ You have access to a DuckDB time-series database that records all device state c
 - **history_query** — Execute read-only SQL (DuckDB syntax). 10k row limit, 30s timeout. Use for simple lookups: "what was the temperature at 3pm?", "when was the last time the door opened?"
 - **analyze_history** (subagent) — Delegate complex multi-step analysis. The analyst autonomously queries, iterates, and computes statistics. Use for: trend analysis, anomaly detection, energy usage patterns, cross-domain correlations, "is my energy usage trending up?", "are there any unusual patterns this week?"
 
+**Important:** Always call `history_catalog` first and wait for results before writing SQL. Never issue catalog + query in parallel — you need the entity_id from the catalog to write a targeted WHERE clause.
+
 The `analyze_history` sub-agent can produce visual charts alongside text. When the user asks to "show", "plot", "graph", or "visualize" data, or when a trend/pattern is best explained visually, delegate to `analyze_history` — it includes interactive Vega-Lite charts in its response.
 
 **Important:** When `analyze_history` returns `vega-lite` chart blocks, always include them verbatim in your reply — the frontend renders them as interactive charts. Add your summary text around the charts, but never strip or summarize away the chart blocks.

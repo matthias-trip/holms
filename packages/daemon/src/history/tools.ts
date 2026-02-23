@@ -48,7 +48,7 @@ export function createHistoryToolsServer(store: HistoryStore) {
 
   const historyQuery = tool(
     "history_query",
-    "Execute a read-only SQL query against the DuckDB history database. Only SELECT/WITH statements allowed. 10,000 row limit — use aggregation (GROUP BY, time_bucket) for large result sets. 30s timeout. Tables: entity_history (entity_id, timestamp, value_num, value_str, domain, area) and entity_catalog (entity_id, friendly_name, domain, area, unit, value_type, first_seen, last_seen, sample_count).",
+    "Execute a read-only SQL query against the DuckDB history database. Only SELECT/WITH statements allowed. 10,000 row limit, 30s timeout. IMPORTANT: Always include a WHERE entity_id = '...' filter — call history_catalog first to discover the correct entity_id. Never scan the full table with GROUP BY entity_id. Tables: entity_history (entity_id, timestamp, value_num, value_str, domain, area) and entity_catalog (entity_id, friendly_name, domain, area, unit, value_type, first_seen, last_seen, sample_count).",
     {
       sql: z
         .string()
