@@ -1,6 +1,13 @@
 import * as vl from "vega-lite";
 import * as vega from "vega";
-import sharp from "sharp";
+import { Resvg } from "@resvg/resvg-js";
+import { fileURLToPath } from "node:url";
+import { resolve, dirname } from "node:path";
+
+const FONT_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../assets/Inter-Regular.ttf",
+);
 
 const VEGA_LITE_BLOCK_RE = /```vega-lite\n([\s\S]*?)```/g;
 
@@ -18,7 +25,7 @@ export function extractVegaLiteBlocks(content: string): { specs: string[]; textW
 }
 
 /**
- * Compile a Vega-Lite spec to SVG, then convert to PNG via sharp.
+ * Compile a Vega-Lite spec to SVG, then convert to PNG via resvg.
  */
 export async function renderVegaLiteSpec(specJson: string): Promise<{ png: Buffer; svg: string }> {
   const vlSpec = JSON.parse(specJson);
@@ -28,17 +35,25 @@ export async function renderVegaLiteSpec(specJson: string): Promise<{ png: Buffe
   if (!vlSpec.height) vlSpec.height = 400;
   if (!vlSpec.background) vlSpec.background = "#1a1a2e";
 
-  // Apply dark theme config
+  // Apply dark theme config with explicit Inter font
   if (!vlSpec.config) vlSpec.config = {};
   Object.assign(vlSpec.config, {
+    font: "Inter",
     axis: {
       labelColor: "#a0a0b0",
+      labelFont: "Inter",
       titleColor: "#d0d0e0",
+      titleFont: "Inter",
       gridColor: "#2a2a3e",
       domainColor: "#3a3a4e",
     },
-    legend: { labelColor: "#a0a0b0", titleColor: "#d0d0e0" },
-    title: { color: "#d0d0e0" },
+    legend: {
+      labelColor: "#a0a0b0",
+      labelFont: "Inter",
+      titleColor: "#d0d0e0",
+      titleFont: "Inter",
+    },
+    title: { color: "#d0d0e0", font: "Inter" },
     view: { stroke: "#2a2a3e" },
   });
 
@@ -48,7 +63,14 @@ export async function renderVegaLiteSpec(specJson: string): Promise<{ png: Buffe
   const svg = await view.toSVG();
   view.finalize();
 
-  const png = await sharp(Buffer.from(svg)).png().toBuffer();
+  const resvg = new Resvg(svg, {
+    font: {
+      fontFiles: [FONT_PATH],
+      loadSystemFonts: false,
+      defaultFontFamily: "Inter",
+    },
+  });
+  const png = Buffer.from(resvg.render().asPng());
 
   return { png, svg };
 }
