@@ -145,7 +145,7 @@ function ApprovalCard({
         className="w-10 h-10 rounded-lg mr-2.5 mt-0.5 flex-shrink-0"
       />
       <div
-        className="max-w-[65%] rounded-xl px-4 py-2.5"
+        className="max-w-[85%] rounded-xl px-4 py-2.5"
         style={{
           background: "var(--gray-3)",
           border: "1px solid var(--gray-a5)",
@@ -773,7 +773,7 @@ export default function ChatPanel() {
                   />
                 )}
                 <div
-                  className="max-w-[65%] rounded-xl px-4 py-2.5"
+                  className={`${msg.role === "user" ? "max-w-[65%]" : "max-w-[85%]"} rounded-xl px-4 py-2.5`}
                   style={{
                     background: msg.role === "user" ? "var(--accent-9)" : "var(--gray-3)",
                     border: msg.role === "user" ? "none" : "1px solid var(--gray-a5)",

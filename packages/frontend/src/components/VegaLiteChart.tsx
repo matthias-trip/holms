@@ -31,7 +31,7 @@ function VegaLiteChart({ spec }: { spec: string }) {
         const parsed = JSON.parse(spec);
 
         // Set responsive width
-        if (!parsed.width) parsed.width = "container";
+        if (!parsed.width || parsed.width === "container") parsed.width = 580;
         if (!parsed.height && !parsed.encoding?.row && !parsed.encoding?.facet) {
           parsed.height = 300;
         }
@@ -66,7 +66,7 @@ function VegaLiteChart({ spec }: { spec: string }) {
   return (
     <div
       ref={containerRef}
-      className="my-2 rounded-lg overflow-hidden"
+      className="my-2 rounded-lg overflow-hidden w-full"
       style={{ background: "var(--slate)", border: "1px solid var(--graphite)" }}
     />
   );
