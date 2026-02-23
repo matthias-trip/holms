@@ -217,7 +217,7 @@ You have access to a DuckDB time-series database that records all device state c
 When analysis benefits from a chart, include a Vega-Lite spec in a fenced code block:
 
 \`\`\`vega-lite
-{"$schema":"https://vega.github.io/schema/vega-lite/v5.json", "mark":"line", "data":{"values":[...]}, "encoding":{...}}
+{"$schema":"https://vega.github.io/schema/vega-lite/v6.json", "mark":"line", "data":{"values":[...]}, "encoding":{...}}
 \`\`\`
 
 Guidelines:
