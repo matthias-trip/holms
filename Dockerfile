@@ -37,6 +37,11 @@ LABEL org.opencontainers.image.source="https://github.com/matthias-trip/holms"
 LABEL org.opencontainers.image.description="Holms — AI-driven home automation"
 LABEL org.opencontainers.image.licenses="MIT"
 
+# Install Claude CLI (required by Claude Agent SDK at runtime)
+RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
 WORKDIR /app
 
 # Copy workspace structure
