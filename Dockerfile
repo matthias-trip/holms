@@ -40,6 +40,9 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 # Install native Claude Code CLI (used by Agent SDK via pathToClaudeCodeExecutable)
 RUN npm install -g @anthropic-ai/claude-code
 
+# Create non-root user (Claude CLI refuses --dangerously-skip-permissions as root)
+RUN groupadd -r holms && useradd -r -g holms -m -s /bin/bash holms
+
 WORKDIR /app
 
 # Copy workspace structure
@@ -59,11 +62,13 @@ COPY --from=builder /app/node_modules/ node_modules/
 # Pre-configure Claude CLI for headless operation:
 # - hasCompletedOnboarding: skip interactive setup prompts
 # - installMethod: prevent auto-updater from trying to install native binary
-RUN mkdir -p /root/.claude/debug
-RUN echo '{"hasCompletedOnboarding":true,"installMethod":"sdk","autoUpdaterStatus":"disabled"}' > /root/.claude.json
+RUN mkdir -p /home/holms/.claude/debug
+RUN echo '{"hasCompletedOnboarding":true,"installMethod":"sdk","autoUpdaterStatus":"disabled"}' > /home/holms/.claude.json
+RUN chown -R holms:holms /home/holms/.claude /home/holms/.claude.json
 
 # Environment defaults
 ENV HOLMS_CLAUDE_EXECUTABLE_PATH=/usr/local/bin/claude
+ENV HOLMS_CLAUDE_CONFIG_DIR=/home/holms/.claude
 ENV HOLMS_PORT=3100
 ENV HOLMS_DB_PATH=/data/holms.db
 ENV HOLMS_HISTORY_DB_PATH=/data/holms-history.duckdb
@@ -71,7 +76,12 @@ ENV HOLMS_HF_CACHE_DIR=/models
 ENV HOLMS_FRONTEND_DIST=/app/packages/frontend/dist
 ENV HOLMS_PLUGINS_DIR=/plugins
 
+# Ensure writable directories exist and are owned by holms user
+RUN mkdir -p /data /models /plugins && chown -R holms:holms /app /data /models /plugins
+
 EXPOSE 3100
+
+USER holms
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "fetch('http://localhost:3100/trpc').catch(()=>process.exit(1))"
