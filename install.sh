@@ -121,6 +121,7 @@ if [ "$AUTO_UPDATE" = true ]; then
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
+      DOCKER_API_VERSION: "1.44"
       WATCHTOWER_CLEANUP: "true"
       WATCHTOWER_SCHEDULE: "0 0 3 * * *"
       WATCHTOWER_INCLUDE_STOPPED: "true"
