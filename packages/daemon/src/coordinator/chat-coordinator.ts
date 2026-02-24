@@ -6,7 +6,7 @@ import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache, type ToolScope } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, type ContextCache, type ToolScope } from "./query-runner.js";
 
 /**
  * Per-channel stateful coordinator with SDK session resume.
@@ -46,7 +46,7 @@ export class ChatCoordinator {
     return this.enqueue(async () => {
       const scope = memoryScope ?? this.channel;
       const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, scope, undefined, this.goalStore));
-      const prompt = `${context}\n\nUser message: ${message}${BEFORE_ACTING_REMINDER}`;
+      const prompt = `${context}\n\nUser message: ${message}`;
       return this.runQuery(prompt, "user_message", `User message: ${message}`, messageId, channelDisplayName);
     });
   }

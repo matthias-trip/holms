@@ -74,16 +74,15 @@ export default function IntegrationsPanel() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 px-6 pt-6 pb-4">
-        <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Device Integrations</h3>
-        <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-          Device providers connect the assistant to smart home platforms.
-          Enable a provider and configure its credentials to start controlling devices.
-        </p>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Integrations</h3>
       </div>
 
-      <div className="flex-1 overflow-auto px-6 pb-6 space-y-2">
+      <div className="flex-1 overflow-auto px-6 py-6 space-y-2">
         {providers?.map((provider, i) => {
           const statusCfg = statusConfig[provider.status];
           const isConfiguring = configuringId === provider.id;

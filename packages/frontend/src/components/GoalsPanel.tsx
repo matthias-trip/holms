@@ -3,7 +3,7 @@ import {
   Eye, Zap, Flag, RefreshCw, AlertTriangle, MessageSquare,
   ChevronRight, Trash2, X, Target, ArrowRight, Clock,
 } from "lucide-react";
-import { Card, CardBody, Chip, Tabs, Tab } from "@heroui/react";
+import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import { relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
@@ -490,55 +490,61 @@ export default function GoalsPanel() {
     : (goals?.filter((g) => g.needsAttention).length ?? 0);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-start flex-shrink-0 px-6 py-4"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>
-              Goals
-            </h3>
-            {attentionCount > 0 && (
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>
+            Goals
+          </h3>
+          {attentionCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
+              style={{ background: "var(--warn-dim)", color: "var(--warn)" }}
+            >
               <span
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
-                style={{ background: "var(--warn-dim)", color: "var(--warn)" }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
-                  style={{ background: "var(--warn)" }}
-                />
-                {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
-              </span>
-            )}
-          </div>
-          <p className="text-xs mt-1" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-            Long-term objectives tracked by the assistant. Progress is logged automatically during goal reviews.
-          </p>
+                className="w-1.5 h-1.5 rounded-full animate-pulse-dot"
+                style={{ background: "var(--warn)" }}
+              />
+              {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
+            </span>
+          )}
         </div>
-        <span className="text-xs flex-shrink-0 mt-1" style={{ color: "var(--gray-9)" }}>
+        <span className="text-xs flex-shrink-0" style={{ color: "var(--gray-9)" }}>
           {activeCount} active
         </span>
       </div>
 
       {/* Filter tabs */}
       <div
-        className="px-6 py-2.5 flex-shrink-0"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+        className="flex gap-1 flex-shrink-0 px-6 py-2"
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
-        <Tabs
-          selectedKey={filter}
-          onSelectionChange={(key) => setFilter(key as FilterKey)}
-          size="sm"
-          variant="light"
-        >
-          <Tab key="all" title="All" />
-          <Tab key="active" title="Active" />
-          <Tab key="completed" title="Completed" />
-          <Tab key="attention" title="Needs Attention" />
-        </Tabs>
+        {([
+          { key: "all" as FilterKey, label: "All" },
+          { key: "active" as FilterKey, label: "Active" },
+          { key: "completed" as FilterKey, label: "Completed" },
+          { key: "attention" as FilterKey, label: "Needs Attention" },
+        ]).map(({ key, label }) => {
+          const active = filter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 cursor-pointer"
+              style={{
+                background: active ? "var(--gray-3)" : "transparent",
+                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
+                color: active ? "var(--gray-12)" : "var(--gray-8)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Goal list */}

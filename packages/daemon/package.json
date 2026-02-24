@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file=.env src/index.ts",
+    "dev": "tsx watch --ignore '*.db' --ignore '*.duckdb' --ignore '*.db-journal' --ignore '*.duckdb.wal' --env-file=.env src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file=.env dist/index.js",
     "typecheck": "tsc --noEmit"
@@ -19,6 +19,7 @@
     "@trpc/server": "^11.0.0",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "better-sqlite3": "^11.0.0",
+    "cron-parser": "^5.5.0",
     "home-assistant-js-websocket": "^9.6.0",
     "simple-statistics": "^7.8.0",
     "slackify-markdown": "^4.5.0",

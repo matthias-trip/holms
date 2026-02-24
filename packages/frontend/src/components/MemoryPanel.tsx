@@ -145,10 +145,10 @@ export default function MemoryPanel() {
     <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>What I Remember</h3>
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Memories</h3>
         {displayMemories && (
           <span className="text-xs" style={{ color: "var(--gray-9)" }}>{displayMemories.length} entries</span>
         )}

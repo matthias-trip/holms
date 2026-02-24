@@ -638,32 +638,30 @@ export default function ChatPanel() {
     <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        <div>
-          <h3 className="text-base font-medium" style={{ color: "var(--gray-12)" }}>Assistant</h3>
-          <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>
-            {isProcessing ? (
-              <span className="inline-flex items-center gap-1">
-                thinking
-                <span className="inline-flex gap-[3px]">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="inline-block w-[3px] h-[3px] rounded-full"
-                      style={{
-                        background: "var(--gray-9)",
-                        animation: "thinking-dot 1.4s ease-in-out infinite",
-                        animationDelay: `${i * 0.2}s`,
-                      }}
-                    />
-                  ))}
-                </span>
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Chat</h3>
+        <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+          {isProcessing ? (
+            <span className="inline-flex items-center gap-1">
+              thinking
+              <span className="inline-flex gap-[3px]">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="inline-block w-[3px] h-[3px] rounded-full"
+                    style={{
+                      background: "var(--gray-9)",
+                      animation: "thinking-dot 1.4s ease-in-out infinite",
+                      animationDelay: `${i * 0.2}s`,
+                    }}
+                  />
+                ))}
               </span>
-            ) : "ready"}
-          </p>
-        </div>
+            </span>
+          ) : "ready"}
+        </span>
       </div>
 
       {/* Messages */}

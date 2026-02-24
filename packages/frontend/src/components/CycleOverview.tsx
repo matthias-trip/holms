@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Brain, Eye, Target, FileText, Sparkles, ChevronRight, Zap, ThumbsUp, ThumbsDown } from "lucide-react";
-import { Tabs, Tab, Card, CardBody, Chip } from "@heroui/react";
+import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import { humanizeToolUse, isWriteAction, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
@@ -205,35 +205,41 @@ export default function CycleOverview() {
     <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        <div>
-          <h3 className="text-base font-medium" style={{ color: "var(--gray-12)" }}>Overview</h3>
-          <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>
-            What your home assistant has been up to
-          </p>
-        </div>
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Overview</h3>
         <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
       </div>
 
       {/* Filter tabs */}
       <div
-        className="px-6 py-2.5 flex-shrink-0 overflow-x-auto"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+        className="flex gap-1 flex-shrink-0 px-6 py-2"
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
-        <Tabs
-          selectedKey={filter}
-          onSelectionChange={(key) => setFilter(key as string)}
-          size="sm"
-          variant="light"
-        >
-          <Tab key="all" title="All" />
-          <Tab key="reflection" title="Reflections" />
-          <Tab key="situational" title="Situational" />
-          <Tab key="goal_review" title="Goals" />
-          <Tab key="daily_summary" title="Daily" />
-        </Tabs>
+        {([
+          { key: "all", label: "All" },
+          { key: "reflection", label: "Reflections" },
+          { key: "situational", label: "Situational" },
+          { key: "goal_review", label: "Goals" },
+          { key: "daily_summary", label: "Daily" },
+        ]).map(({ key, label }) => {
+          const active = filter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 cursor-pointer"
+              style={{
+                background: active ? "var(--gray-3)" : "transparent",
+                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
+                color: active ? "var(--gray-12)" : "var(--gray-8)",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Cycle list */}

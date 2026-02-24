@@ -164,16 +164,6 @@ export interface GoalWithEvents extends Goal {
 
 // ── Automation Types ──
 
-export type AutomationRecurrence = "once" | "daily" | "weekdays" | "weekends" | "weekly";
-
-export interface TimeTrigger {
-  type: "time";
-  hour: number;           // 0-23
-  minute: number;         // 0-59
-  recurrence: AutomationRecurrence;
-  dayOfWeek: number | null;
-}
-
 export interface DeviceEventTrigger {
   type: "device_event";
   deviceId: string;
@@ -189,7 +179,12 @@ export interface StateThresholdTrigger {
   value: number;
 }
 
-export type AutomationTrigger = TimeTrigger | DeviceEventTrigger | StateThresholdTrigger;
+export interface CronTrigger {
+  type: "cron";
+  expression: string;  // Standard 5-field cron: "*/5 * * * *"
+}
+
+export type AutomationTrigger = DeviceEventTrigger | StateThresholdTrigger | CronTrigger;
 
 export interface AutomationDisplay {
   conditions?: string[];  // ["Someone is home", "After sunset"]

@@ -549,31 +549,26 @@ export default function PeoplePanel() {
   });
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 px-6 pt-6 pb-4">
-        <div className="flex justify-between items-start">
-          <div>
-            <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>People</h3>
-            <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-              Household members. Link channels for auto-identification and
-              mark one as primary for notifications. Properties are managed by the assistant.
-            </p>
-          </div>
-          {!showCreate && (
-            <Button
-              size="sm"
-              color="primary"
-              variant="flat"
-              startContent={<Plus size={14} />}
-              onPress={() => setShowCreate(true)}
-            >
-              Add person
-            </Button>
-          )}
-        </div>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>People</h3>
+        {!showCreate && (
+          <Button
+            size="sm"
+            color="primary"
+            variant="flat"
+            startContent={<Plus size={14} />}
+            onPress={() => setShowCreate(true)}
+          >
+            Add person
+          </Button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-auto px-6 pb-6 space-y-2">
+      <div className="flex-1 overflow-auto px-6 py-6 space-y-2">
         {showCreate && (
           <CreatePersonForm
             onCancel={() => setShowCreate(false)}

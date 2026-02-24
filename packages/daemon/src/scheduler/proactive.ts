@@ -79,9 +79,9 @@ export class ProactiveScheduler {
   }
 
   private async tick(): Promise<void> {
-    // Check due time-triggered automations first — these are user commitments
+    // Check due cron-triggered automations first — these are user commitments
     if (this.automationStore && this.eventBus) {
-      const dueAutomations = this.automationStore.getDueTimeTriggers(Date.now());
+      const dueAutomations = this.automationStore.getDueCronTriggers(Date.now());
       for (const automation of dueAutomations) {
         console.log(`[ProactiveScheduler] Automation fired: "${automation.summary}" (${automation.id})`);
         this.eventBus.emit("automation:time_fired", { automation, timestamp: Date.now() });

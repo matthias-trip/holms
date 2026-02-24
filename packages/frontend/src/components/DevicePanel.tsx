@@ -322,9 +322,12 @@ export default function DevicePanel({ compact }: { compact?: boolean }) {
 
   // ── Full panel ──
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex justify-between items-center px-6 py-4">
-        <span className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Devices</span>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Devices</h3>
         {devices && (
           <span className="text-xs" style={{ color: "var(--gray-9)" }}>{devices.length} connected</span>
         )}

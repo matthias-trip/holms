@@ -1,54 +1,27 @@
 import Database from "better-sqlite3";
-import type { Automation, AutomationDisplay, AutomationRecurrence, AutomationTrigger } from "@holms/shared";
+import type { Automation, AutomationDisplay, AutomationTrigger } from "@holms/shared";
 import { v4 as uuid } from "uuid";
+import { CronExpressionParser } from "cron-parser";
 
-export function computeNextFireAt(
-  hour: number,
-  minute: number,
-  recurrence: AutomationRecurrence,
-  dayOfWeek: number | null,
-  after: number = Date.now(),
-): number {
-  const base = new Date(after);
+export function computeNextCronFireAt(expression: string, after: number = Date.now()): number {
+  const interval = CronExpressionParser.parse(expression, { currentDate: new Date(after) });
+  return interval.next().toDate().getTime();
+}
 
-  // Start from today at the target time
-  const candidate = new Date(base);
-  candidate.setHours(hour, minute, 0, 0);
-
-  // If the candidate is in the past, move to the next day
-  if (candidate.getTime() <= after) {
-    candidate.setDate(candidate.getDate() + 1);
-  }
-
+/** Convert legacy time trigger fields to a 5-field cron expression. */
+function timeToCron(hour: number, minute: number, recurrence: string, dayOfWeek: number | null): string {
   switch (recurrence) {
+    case "weekdays":
+      return `${minute} ${hour} * * 1-5`;
+    case "weekends":
+      return `${minute} ${hour} * * 0,6`;
+    case "weekly":
+      return `${minute} ${hour} * * ${dayOfWeek ?? 0}`;
     case "once":
     case "daily":
-      // candidate is already the next occurrence
-      break;
-
-    case "weekdays":
-      // 0=Sun, 6=Sat
-      while (candidate.getDay() === 0 || candidate.getDay() === 6) {
-        candidate.setDate(candidate.getDate() + 1);
-      }
-      break;
-
-    case "weekends":
-      while (candidate.getDay() !== 0 && candidate.getDay() !== 6) {
-        candidate.setDate(candidate.getDate() + 1);
-      }
-      break;
-
-    case "weekly":
-      if (dayOfWeek != null) {
-        while (candidate.getDay() !== dayOfWeek) {
-          candidate.setDate(candidate.getDate() + 1);
-        }
-      }
-      break;
+    default:
+      return `${minute} ${hour} * * *`;
   }
-
-  return candidate.getTime();
 }
 
 export class AutomationStore {
@@ -86,7 +59,7 @@ export class AutomationStore {
         .get();
 
       if (hasSchedules) {
-        // Copy legacy rows into automations table
+        // Copy legacy rows into automations table, converting directly to cron triggers
         const legacyRows = this.db
           .prepare(`SELECT * FROM schedules`)
           .all() as LegacyScheduleRow[];
@@ -97,13 +70,9 @@ export class AutomationStore {
         );
 
         for (const row of legacyRows) {
-          const trigger: AutomationTrigger = {
-            type: "time",
-            hour: row.hour,
-            minute: row.minute,
-            recurrence: row.recurrence as AutomationRecurrence,
-            dayOfWeek: row.day_of_week,
-          };
+          const expression = timeToCron(row.hour, row.minute, row.recurrence, row.day_of_week);
+          const trigger: AutomationTrigger = { type: "cron", expression };
+          const nextFireAt = computeNextCronFireAt(expression);
           const summary = row.instruction.slice(0, 80);
           insert.run(
             row.id,
@@ -117,7 +86,7 @@ export class AutomationStore {
             row.enabled,
             row.created_at,
             row.last_fired_at,
-            row.next_fire_at,
+            nextFireAt,
             row.channel ?? null,
           );
         }
@@ -134,6 +103,31 @@ export class AutomationStore {
     } catch {
       // Column already exists
     }
+
+    // Migrate existing time triggers → cron triggers (idempotent)
+    try {
+      const timeRows = this.db
+        .prepare(`SELECT id, trigger_json FROM automations WHERE trigger_json LIKE '%"type":"time"%'`)
+        .all() as { id: string; trigger_json: string }[];
+
+      if (timeRows.length > 0) {
+        const update = this.db.prepare(
+          `UPDATE automations SET trigger_json = ?, next_fire_at = ? WHERE id = ?`,
+        );
+
+        for (const row of timeRows) {
+          const old = JSON.parse(row.trigger_json) as { hour: number; minute: number; recurrence: string; dayOfWeek: number | null };
+          const expression = timeToCron(old.hour, old.minute, old.recurrence, old.dayOfWeek);
+          const trigger: AutomationTrigger = { type: "cron", expression };
+          const nextFireAt = computeNextCronFireAt(expression);
+          update.run(JSON.stringify(trigger), nextFireAt, row.id);
+        }
+
+        console.log(`[AutomationStore] Migrated ${timeRows.length} time triggers → cron`);
+      }
+    } catch (err) {
+      console.error("[AutomationStore] Time→cron migration error:", err);
+    }
   }
 
   create(input: {
@@ -148,26 +142,16 @@ export class AutomationStore {
     const channel = input.channel ?? null;
     const displayJson = input.display ? JSON.stringify(input.display) : null;
 
-    let nextFireAt: number | null = null;
-    let hour = 0;
-    let minute = 0;
-    let recurrence = "daily";
-    let dayOfWeek: number | null = null;
-
-    if (input.trigger.type === "time") {
-      hour = input.trigger.hour;
-      minute = input.trigger.minute;
-      recurrence = input.trigger.recurrence;
-      dayOfWeek = input.trigger.dayOfWeek;
-      nextFireAt = computeNextFireAt(hour, minute, input.trigger.recurrence, dayOfWeek);
-    }
+    const nextFireAt = input.trigger.type === "cron"
+      ? computeNextCronFireAt(input.trigger.expression)
+      : null;
 
     this.db
       .prepare(
         `INSERT INTO automations (id, summary, instruction, trigger_json, hour, minute, recurrence, day_of_week, enabled, created_at, last_fired_at, next_fire_at, channel, display_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, 0, 0, 'daily', NULL, 1, ?, NULL, ?, ?, ?)`,
       )
-      .run(id, input.summary, input.instruction, JSON.stringify(input.trigger), hour, minute, recurrence, dayOfWeek, now, nextFireAt, channel, displayJson);
+      .run(id, input.summary, input.instruction, JSON.stringify(input.trigger), now, nextFireAt, channel, displayJson);
 
     return this.get(id)!;
   }
@@ -186,13 +170,13 @@ export class AutomationStore {
     return rows.map((r) => this.rowToAutomation(r));
   }
 
-  getDueTimeTriggers(now: number): Automation[] {
+  getDueCronTriggers(now: number): Automation[] {
     const rows = this.db
       .prepare(`SELECT * FROM automations WHERE enabled = 1 AND next_fire_at IS NOT NULL AND next_fire_at <= ?`)
       .all(now) as AutomationRow[];
     return rows
       .map((r) => this.rowToAutomation(r))
-      .filter((a) => a.trigger.type === "time");
+      .filter((a) => a.trigger.type === "cron");
   }
 
   getDeviceEventAutomations(): Automation[] {
@@ -234,25 +218,15 @@ export class AutomationStore {
       ? JSON.stringify(fields.display)
       : (existing.display ? JSON.stringify(existing.display) : null);
 
-    let nextFireAt: number | null = null;
-    let hour = 0;
-    let minute = 0;
-    let recurrence = "daily";
-    let dayOfWeek: number | null = null;
-
-    if (trigger.type === "time") {
-      hour = trigger.hour;
-      minute = trigger.minute;
-      recurrence = trigger.recurrence;
-      dayOfWeek = trigger.dayOfWeek;
-      nextFireAt = computeNextFireAt(hour, minute, trigger.recurrence, dayOfWeek);
-    }
+    const nextFireAt = trigger.type === "cron"
+      ? computeNextCronFireAt(trigger.expression)
+      : null;
 
     this.db
       .prepare(
-        `UPDATE automations SET summary = ?, instruction = ?, trigger_json = ?, hour = ?, minute = ?, recurrence = ?, day_of_week = ?, enabled = ?, next_fire_at = ?, display_json = ? WHERE id = ?`,
+        `UPDATE automations SET summary = ?, instruction = ?, trigger_json = ?, hour = 0, minute = 0, recurrence = 'daily', day_of_week = NULL, enabled = ?, next_fire_at = ?, display_json = ? WHERE id = ?`,
       )
-      .run(summary, instruction, JSON.stringify(trigger), hour, minute, recurrence, dayOfWeek, enabled ? 1 : 0, nextFireAt, displayJson, id);
+      .run(summary, instruction, JSON.stringify(trigger), enabled ? 1 : 0, nextFireAt, displayJson, id);
 
     return this.get(id);
   }
@@ -263,18 +237,8 @@ export class AutomationStore {
 
     const now = Date.now();
 
-    if (automation.trigger.type === "time" && automation.trigger.recurrence === "once") {
-      this.db
-        .prepare(`UPDATE automations SET last_fired_at = ?, enabled = 0 WHERE id = ?`)
-        .run(now, id);
-    } else if (automation.trigger.type === "time") {
-      const nextFireAt = computeNextFireAt(
-        automation.trigger.hour,
-        automation.trigger.minute,
-        automation.trigger.recurrence,
-        automation.trigger.dayOfWeek,
-        now,
-      );
+    if (automation.trigger.type === "cron") {
+      const nextFireAt = computeNextCronFireAt(automation.trigger.expression, now);
       this.db
         .prepare(`UPDATE automations SET last_fired_at = ?, next_fire_at = ? WHERE id = ?`)
         .run(now, nextFireAt, id);

@@ -8,7 +8,7 @@ import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { ActivityStore } from "../activity/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, BEFORE_ACTING_REMINDER, type ContextCache, type ToolScope } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, type ContextCache, type ToolScope } from "./query-runner.js";
 
 function relativeTimeShort(ts: number): string {
   const diff = Math.max(0, Date.now() - ts);
@@ -68,14 +68,12 @@ export class EphemeralRunner {
       goalReviewPrompt = await this.buildGoalReviewContext();
     }
 
-    const summaryInstruction = `\n\nAlways begin your response with a single-line summary: **Summary:** <one sentence describing what you found or did>`;
-
     const prompts: Record<string, string> = {
-      situational: `${context}\n\nPROACTIVE CHECK: Briefly assess the current home state. Is anything out of the ordinary? Does anything need attention right now? Be concise — only act if needed. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, and constraints in the problem description. Check person properties for presence and schedule context.${BEFORE_ACTING_REMINDER}${summaryInstruction}`,
-      reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Use memory_query with recent time range and tags like ["action", "outcome"] to recall your recent actions. Did they work as intended? What would you do differently? Store any insights as reflection memories.\n\nTRIAGE REVIEW: Call get_triage_stats to see event counts since your last reflection. Devices with high batched counts you never act on → increase holdMinutes (e.g. 15-60) or switch to silent via set_triage_rule. Devices with high silent counts you might be missing → escalate. Use deltaThreshold as a noise floor to auto-silence small changes. Review existing rules with list_triage_rules and prune stale ones.${summaryInstruction}`,
-      goal_review: `${context}\n\n${goalReviewPrompt}\n\nGOAL REVIEW: All active goals with their recent timelines are shown above.\n\nFor each goal, review its timeline, assess progress, and log an observation via goal_log. If a goal is blocked, uncertain, or has reached a milestone, flag it for attention via goal_update. If a goal is achieved, mark it completed. If no longer relevant, mark it abandoned.\n\nAfter reviewing all goals, consider whether new goals should be created based on recent patterns observed across the home.${summaryInstruction}`,
-      daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity. What patterns did you notice? What did you learn? What will you do differently tomorrow? Use memory_query to recall today's events and actions, then store a single concise summary as a reflection memory.\n\nFocus on writing the summary. Save maintenance and cleanup for reflection cycles.${summaryInstruction}`,
-      automation: `${context}\n\n${extraContext}\n\nAUTOMATION FIRED: An automation has triggered. Follow the Before Acting protocol, then handle the instruction above. Do NOT create a reflex right now — just handle it. Only promote to a reflex after you've successfully handled this same automation multiple times and are confident the action never varies.${BEFORE_ACTING_REMINDER}`,
+      situational: `${context}\n\nPROACTIVE CHECK: Assess the current home state. Act only if needed.`,
+      reflection: `${context}\n\n${extraContext}\n\nREFLECTION: Review recent actions and triage configuration.`,
+      goal_review: `${context}\n\n${goalReviewPrompt}\n\nGOAL REVIEW: All active goals with their recent timelines are shown above. Review each goal per the Goal Review Cycle instructions.`,
+      daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity and patterns.`,
+      automation: `${context}\n\n${extraContext}\n\nAUTOMATION FIRED: An automation has triggered. Follow the Before Acting protocol, then handle the instruction above.`,
     };
 
     const proactiveScopes: Record<string, ToolScope> = {
@@ -193,7 +191,7 @@ export class EphemeralRunner {
     // Build triage stats hint for devices in this batch
     const triageHint = this.getTriageStatsForDevices(events.map((e) => e.deviceId));
 
-    const prompt = `${context}\n\nNew device events:\n${eventSummary}${triageHint}\n\nProcess these events. For complex situations requiring deeper analysis, use deep_reason — include all relevant device states, memories, automations, and constraints in the problem description, as the sub-agent cannot look things up on its own. For straightforward events, handle them directly.\n\nIMPORTANT: If a recalled preference memory describes an automation rule for this event, follow it — reason about conditions yourself and act accordingly. Do NOT create a reflex to handle it.${BEFORE_ACTING_REMINDER}\n\nConsider person properties (presence, schedule) in your context when deciding how to respond.\n\nIf you keep seeing events from a device without acting, use set_triage_rule to silence or adjust its routing.`;
+    const prompt = `${context}\n\nDEVICE EVENTS:\n${eventSummary}${triageHint}\n\nProcess these events following the Before Acting protocol.`;
 
     const userPrompt = `Device events:\n${eventSummary}`;
 

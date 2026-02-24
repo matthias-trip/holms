@@ -516,7 +516,7 @@ export default function UsagePanel() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
         style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
         <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Usage</h3>

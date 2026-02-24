@@ -17,15 +17,15 @@ export default function TriagePanel() {
 
 
   return (
-    <div className="h-full flex flex-col p-6" style={{ background: "var(--gray-2)" }}>
-      <div className="mb-4">
-        <h3 className="text-base font-bold mb-1" style={{ color: "var(--gray-12)" }}>Triage Rules</h3>
-        <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-          Rules that classify device events into lanes. Created by the assistant as it learns which events matter.
-        </p>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Triage</h3>
       </div>
 
-      <div className="flex-1 overflow-auto space-y-1.5">
+      <div className="flex-1 overflow-auto space-y-1.5 p-6">
         {(!rules || rules.length === 0) ? (
           <div className="empty-state">
             <div className="empty-state-icon">

@@ -39,9 +39,12 @@ export default function ApprovalPanel() {
   });
 
   return (
-    <div className="p-4 h-full flex flex-col">
-      <div className="flex items-center gap-3 mb-3">
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Needs Your OK</h3>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Approvals</h3>
         {pending && pending.length > 0 && (
           <Chip variant="flat" color="danger" size="sm">
             {pending.length} pending
@@ -49,7 +52,7 @@ export default function ApprovalPanel() {
         )}
       </div>
 
-      <div className="flex-1 overflow-auto space-y-2">
+      <div className="flex-1 overflow-auto space-y-2 p-6">
         {(!pending || pending.length === 0) ? (
           <div className="empty-state">
             <div className="empty-state-icon">

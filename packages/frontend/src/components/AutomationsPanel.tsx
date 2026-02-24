@@ -1,23 +1,14 @@
 import { useState } from "react";
-import { Clock, Radio, Gauge, ChevronDown, ChevronRight, Zap, Filter, Play, History } from "lucide-react";
+import { Clock, Radio, Gauge, Timer, ChevronDown, ChevronRight, Zap, Filter, Play, History, CheckCircle2, Brain } from "lucide-react";
 import { Card, CardBody, Chip } from "@heroui/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { trpc } from "../trpc";
-import { relativeTime } from "../utils/humanize";
+import { humanizeToolUse, relativeTime } from "../utils/humanize";
+import MarkdownMessage from "./MarkdownMessage";
 import type { Automation, AutomationDisplay, AutomationTrigger } from "@holms/shared";
 
 type View = "definitions" | "history";
-
-const RECURRENCE_LABELS: Record<string, string> = {
-  once: "Once",
-  daily: "Daily",
-  weekdays: "Weekdays",
-  weekends: "Weekends",
-  weekly: "Weekly",
-};
-
-const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const OPERATOR_LABELS: Record<string, string> = {
   gt: ">",
@@ -27,8 +18,55 @@ const OPERATOR_LABELS: Record<string, string> = {
   lte: "≤",
 };
 
-function formatTime(hour: number, minute: number): string {
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function humanizeDow(dow: string): string | null {
+  if (dow === "*") return null;
+  if (dow === "1-5") return "weekdays";
+  if (dow === "0,6") return "weekends";
+  const dayNum = Number(dow);
+  if (!Number.isNaN(dayNum) && dayNum >= 0 && dayNum <= 6) return DAY_NAMES[dayNum]!;
+  return null;
+}
+
+function humanizeCron(expression: string): string {
+  const parts = expression.split(/\s+/);
+  if (parts.length !== 5) return expression;
+  const [minute, hour, _dom, _month, dow] = parts;
+
+  // Interval patterns: */N ...
+  if (minute?.startsWith("*/") && hour === "*") {
+    const n = minute.slice(2);
+    const dowLabel = humanizeDow(dow!);
+    if (dowLabel) return `Every ${n}m, ${dowLabel}`;
+    return `Every ${n}m`;
+  }
+
+  // Hourly interval: 0 */N * * ...
+  if (hour?.startsWith("*/") && minute === "0") {
+    const n = hour.slice(2);
+    const dowLabel = humanizeDow(dow!);
+    if (dowLabel) return `Every ${n}h, ${dowLabel}`;
+    return `Every ${n}h`;
+  }
+
+  // Fixed hour:minute patterns
+  const h = Number(hour);
+  const m = Number(minute);
+  if (Number.isNaN(h) || Number.isNaN(m)) return expression;
+  const time = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+
+  if (dow === "*") return `Daily at ${time}`;
+  if (dow === "1-5") return `Weekdays at ${time}`;
+  if (dow === "0,6") return `Weekends at ${time}`;
+
+  // Single day of week
+  const dayNum = Number(dow);
+  if (!Number.isNaN(dayNum) && dayNum >= 0 && dayNum <= 6) {
+    return `${DAY_NAMES[dayNum]} at ${time}`;
+  }
+
+  return expression;
 }
 
 function formatChannel(channel: string): string {
@@ -65,21 +103,6 @@ function formatCost(usd: number): string {
 
 function TriggerBadge({ trigger }: { trigger: AutomationTrigger }) {
   switch (trigger.type) {
-    case "time":
-      return (
-        <div className="flex items-center gap-2">
-          <Clock size={14} style={{ color: "var(--accent-9)" }} />
-          <span className="text-lg font-bold tabular-nums" style={{ letterSpacing: "-0.02em", color: "var(--gray-12)" }}>
-            {formatTime(trigger.hour, trigger.minute)}
-          </span>
-          <Chip variant="flat" color="primary" size="sm">
-            {RECURRENCE_LABELS[trigger.recurrence] ?? trigger.recurrence}
-            {trigger.recurrence === "weekly" && trigger.dayOfWeek != null
-              ? ` (${DAY_NAMES[trigger.dayOfWeek]})`
-              : ""}
-          </Chip>
-        </div>
-      );
     case "device_event":
       return (
         <div className="flex items-center gap-2">
@@ -105,6 +128,17 @@ function TriggerBadge({ trigger }: { trigger: AutomationTrigger }) {
           </span>
         </div>
       );
+    case "cron": {
+      const label = humanizeCron(trigger.expression);
+      return (
+        <div className="flex items-center gap-2">
+          <Clock size={14} style={{ color: "var(--accent-9)" }} />
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            {label}
+          </span>
+        </div>
+      );
+    }
   }
 }
 
@@ -298,6 +332,263 @@ function StatusDot({ status }: { status: "completed" | "running" }) {
   );
 }
 
+// ── Run step row (reuses ActivityPanel patterns) ──
+
+interface RunStep {
+  type: string;
+  data: Record<string, unknown>;
+  timestamp: number;
+}
+
+function RunStepRow({ step }: { step: RunStep }) {
+  const d = step.data;
+
+  switch (step.type) {
+    case "tool_use": {
+      const tool = String(d.tool ?? "");
+      const label = humanizeToolUse(tool, d.input);
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--accent-10)" }}>
+            <Zap size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>{label}</span>
+        </div>
+      );
+    }
+
+    case "deep_reason_start": {
+      const problem = String(d.problem ?? "");
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
+            <Brain size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            Deep reasoning:{" "}
+            <span style={{ color: "var(--gray-9)" }}>
+              {problem.slice(0, 100)}{problem.length > 100 ? "..." : ""}
+            </span>
+          </span>
+        </div>
+      );
+    }
+
+    case "deep_reason_result": {
+      const analysis = String(d.analysis ?? "");
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--info)" }}>
+            <Brain size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            Deep reasoning result:{" "}
+            <span style={{ color: "var(--gray-9)" }}>
+              {analysis.slice(0, 100)}{analysis.length > 100 ? "..." : ""}
+            </span>
+          </span>
+        </div>
+      );
+    }
+
+    case "approval_pending":
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--warn)" }}>
+            <CheckCircle2 size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            Waiting for approval: {String(d.reason ?? d.command ?? "")}
+          </span>
+        </div>
+      );
+
+    case "approval_resolved":
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: d.status === "approved" ? "var(--ok)" : "var(--danger)" }}>
+            <CheckCircle2 size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-12)" }}>
+            Approval {String(d.status ?? "resolved")}
+          </span>
+        </div>
+      );
+
+    case "reflection":
+      return (
+        <div className="flex items-start gap-2 py-1">
+          <span className="flex-shrink-0 mt-0.5" style={{ color: "var(--gray-9)" }}>
+            <Brain size={12} />
+          </span>
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>
+            Reflection
+          </span>
+        </div>
+      );
+
+    case "result":
+      return null; // Shown as summary text, not as a step
+
+    default:
+      return null;
+  }
+}
+
+// ── Expandable run card (shared by InlineRunHistory + RunHistoryView) ──
+
+interface RunData {
+  turnId: string;
+  automationId: string | null;
+  automationSummary: string | null;
+  timestamp: number;
+  summary: string | null;
+  result: string | null;
+  model: string | null;
+  costUsd: number;
+  durationMs: number;
+  toolUseCount: number;
+  status: "completed" | "running";
+  steps: RunStep[];
+}
+
+function RunCard({ run, showAutomationName }: { run: RunData; showAutomationName?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [resultExpanded, setResultExpanded] = useState(false);
+
+  const toolSteps = run.steps.filter((s) => s.type === "tool_use");
+  const hasSteps = toolSteps.length > 0;
+  const resultText = run.result ?? "";
+  const showResultExpand = resultText.length > 200;
+
+  return (
+    <div
+      className="rounded-lg overflow-hidden"
+      style={{
+        background: "var(--gray-a3)",
+        border: "1px solid var(--gray-a5)",
+      }}
+    >
+      {/* Collapsed header */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left flex items-center gap-2 px-3 py-2.5 transition-colors"
+        style={{ cursor: hasSteps || resultText ? "pointer" : "default" }}
+      >
+        <StatusDot status={run.status} />
+
+        <span
+          className="flex-shrink-0 text-[11px] tabular-nums"
+          style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+        >
+          {relativeTime(run.timestamp)}
+        </span>
+
+        {showAutomationName && run.automationSummary && (
+          <Chip variant="flat" size="sm" style={{ fontSize: 11, flexShrink: 0 }}>
+            {run.automationSummary}
+          </Chip>
+        )}
+
+        <span
+          className="text-xs truncate flex-1 min-w-0"
+          style={{ color: "var(--gray-12)" }}
+        >
+          {run.summary ?? (run.status === "running" ? "Running..." : "No summary")}
+        </span>
+
+        {/* Metrics */}
+        <div
+          className="flex items-center gap-2 flex-shrink-0 text-[11px] tabular-nums"
+          style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
+        >
+          {run.status === "completed" && (
+            <>
+              <span>{formatDuration(run.durationMs)}</span>
+              <span>&middot;</span>
+              <span>{formatCost(run.costUsd)}</span>
+              {run.toolUseCount > 0 && (
+                <>
+                  <span>&middot;</span>
+                  <span>{run.toolUseCount} tool{run.toolUseCount !== 1 ? "s" : ""}</span>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {(hasSteps || resultText) && (
+          <ChevronRight
+            size={12}
+            className="flex-shrink-0 transition-transform duration-200"
+            style={{
+              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+              color: "var(--gray-8)",
+            }}
+          />
+        )}
+      </button>
+
+      {/* Expanded content */}
+      {expanded && (
+        <div
+          className="px-3 pb-3"
+          style={{ borderTop: "1px solid var(--gray-a5)" }}
+        >
+          {/* Tool call steps */}
+          {run.steps.filter((s) => s.type !== "result").length > 0 && (
+            <div className="pt-2 space-y-0">
+              {run.steps
+                .filter((s) => s.type !== "result")
+                .map((step, i) => (
+                  <RunStepRow key={i} step={step} />
+                ))}
+            </div>
+          )}
+
+          {/* Result text */}
+          {resultText && (
+            <div className="mt-2">
+              <div
+                className="text-[11px] rounded-lg p-2 overflow-hidden"
+                style={{
+                  color: "var(--gray-11)",
+                  background: "var(--gray-a3)",
+                  lineHeight: 1.5,
+                  maxHeight: resultExpanded ? undefined : "80px",
+                }}
+              >
+                <MarkdownMessage content={resultExpanded ? resultText : resultText.slice(0, 200)} />
+              </div>
+              {showResultExpand && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setResultExpanded(!resultExpanded); }}
+                  className="text-xs mt-1 cursor-pointer"
+                  style={{ color: "var(--gray-9)", background: "none", border: "none", padding: 0 }}
+                >
+                  {resultExpanded ? "Show less" : "Show more..."}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Model badge */}
+          {run.model && (
+            <div className="mt-2">
+              <span
+                className="text-[10px] tabular-nums"
+                style={{ color: "var(--gray-8)", fontFamily: "var(--font-mono)" }}
+              >
+                {run.model}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Inline run history for per-automation card ──
 
 function InlineRunHistory({ automationId }: { automationId: string }) {
@@ -317,33 +608,7 @@ function InlineRunHistory({ automationId }: { automationId: string }) {
   return (
     <div className="flex flex-col gap-1.5 py-1">
       {runs.map((run) => (
-        <div key={run.turnId} className="flex items-center gap-2 min-w-0">
-          <StatusDot status={run.status} />
-          <span
-            className="flex-shrink-0 text-[11px] tabular-nums"
-            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
-          >
-            {relativeTime(run.timestamp)}
-          </span>
-          <span
-            className="text-xs truncate flex-1 min-w-0"
-            style={{ color: "var(--gray-12)" }}
-          >
-            {run.summary ?? (run.status === "running" ? "Running..." : "No summary")}
-          </span>
-          <span
-            className="flex-shrink-0 text-[11px] tabular-nums"
-            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
-          >
-            {formatDuration(run.durationMs)}
-          </span>
-          <span
-            className="flex-shrink-0 text-[11px] tabular-nums"
-            style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
-          >
-            {formatCost(run.costUsd)}
-          </span>
-        </div>
+        <RunCard key={run.turnId} run={run as RunData} />
       ))}
     </div>
   );
@@ -366,9 +631,19 @@ function AutomationCard({ automation, index }: { automation: Automation; index: 
       <CardBody>
         <div className="flex justify-between gap-3">
           <div className="flex-1">
-            <p className="text-sm font-medium" style={{ color: "var(--gray-12)" }}>
-              {automation.summary}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium" style={{ color: "var(--gray-12)" }}>
+                {automation.summary}
+              </p>
+              {!automation.enabled && (
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                  style={{ color: "var(--gray-9)", background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
+                >
+                  Disabled
+                </span>
+              )}
+            </div>
 
             <span className="text-xs tabular-nums" style={{ color: "var(--gray-9)" }}>
               {automation.enabled && automation.nextFireAt && (
@@ -451,12 +726,6 @@ function AutomationCard({ automation, index }: { automation: Automation; index: 
               </div>
             )}
 
-            {!automation.enabled && (
-              <Chip variant="flat" color="danger" size="sm" className="mt-1">
-                Disabled
-              </Chip>
-            )}
-
           </div>
         </div>
       </CardBody>
@@ -487,59 +756,8 @@ function RunHistoryView() {
 
   return (
     <div className="space-y-2">
-      {runs.map((run, i) => (
-        <Card
-          key={run.turnId}
-          className="animate-fade-in"
-          style={{
-            animationDelay: `${i * 30}ms`,
-            background: "var(--gray-3)",
-            border: "1px solid var(--gray-a5)",
-          }}
-        >
-          <CardBody className="py-3 px-4">
-            <div className="flex items-start gap-2.5">
-              <div className="mt-1">
-                <StatusDot status={run.status} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs" style={{ color: "var(--gray-9)" }}>
-                    {relativeTime(run.timestamp)}
-                  </span>
-                  <Chip variant="flat" size="sm" style={{ fontSize: 11 }}>
-                    {run.automationSummary ?? "Unknown automation"}
-                  </Chip>
-                </div>
-
-                {run.summary && (
-                  <p className="text-xs mt-1" style={{ color: "var(--gray-12)", lineHeight: "1.5" }}>
-                    {run.summary}
-                  </p>
-                )}
-
-                {run.status === "running" && !run.summary && (
-                  <p className="text-xs mt-1" style={{ color: "var(--gray-9)", fontStyle: "italic" }}>
-                    Running...
-                  </p>
-                )}
-
-                <div
-                  className="flex items-center gap-3 mt-1.5 text-[11px] tabular-nums"
-                  style={{ color: "var(--gray-9)", fontFamily: "var(--font-mono)" }}
-                >
-                  {run.status === "completed" && (
-                    <>
-                      <span>{formatDuration(run.durationMs)}</span>
-                      <span>{formatCost(run.costUsd)}</span>
-                      <span>{run.toolUseCount} tool{run.toolUseCount !== 1 ? "s" : ""}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
+      {runs.map((run) => (
+        <RunCard key={run.turnId} run={run as RunData} showAutomationName />
       ))}
     </div>
   );
@@ -553,14 +771,18 @@ export default function AutomationsPanel() {
 
   return (
     <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Tab bar */}
+      {/* Header */}
       <div
-        className="flex gap-1 flex-shrink-0"
-        style={{
-          padding: "10px 24px",
-          borderBottom: "1px solid var(--gray-a3)",
-          background: "var(--gray-1)",
-        }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Automations</h3>
+      </div>
+
+      {/* View tabs */}
+      <div
+        className="flex gap-1 flex-shrink-0 px-6 py-2"
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
         {([
           { key: "definitions" as View, label: "Automations" },
@@ -588,13 +810,6 @@ export default function AutomationsPanel() {
       <div className="flex-1 overflow-auto p-6">
         {view === "definitions" && (
           <>
-            <div className="mb-5">
-              <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Automations</h3>
-              <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-                AI-reasoned automations triggered by time, device events, or state thresholds.
-                The assistant reasons about the instruction each time an automation fires.
-              </p>
-            </div>
 
             <div className="space-y-2">
               {!automations || automations.length === 0 ? (

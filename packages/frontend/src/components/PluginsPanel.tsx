@@ -21,15 +21,12 @@ export default function PluginsPanel() {
   });
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-shrink-0 px-6 pt-6 pb-4 flex justify-between items-start">
-        <div>
-          <h3 className="text-base font-bold mb-2" style={{ color: "var(--gray-12)" }}>Plugins</h3>
-          <p className="text-xs" style={{ color: "var(--gray-9)", maxWidth: "500px", lineHeight: "1.6" }}>
-            Extend the assistant with plugins from the built-in plugins/ directory and ~/.holms/plugins.
-            Each plugin can provide MCP servers, commands, agents, skills, and hooks.
-          </p>
-        </div>
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+      >
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Plugins</h3>
         <Button
           variant="bordered"
           size="sm"
@@ -40,7 +37,7 @@ export default function PluginsPanel() {
         </Button>
       </div>
 
-      <div className="flex-1 overflow-auto px-6 pb-6 space-y-2">
+      <div className="flex-1 overflow-auto px-6 py-6 space-y-2">
         {!plugins || plugins.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">

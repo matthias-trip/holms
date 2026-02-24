@@ -54,8 +54,6 @@ const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
   onboarding:    ["device-query", "memory", "people"],
 };
 
-export const BEFORE_ACTING_REMINDER = `\n\nREMINDER: Before any device command → memory_query first (device name, room, ID). Obey preference constraints. Use propose_action if required by memory, novel, security-sensitive, or uncertain.`;
-
 // ── Prompt helper ──
 
 export function createSDKPrompt(text: string): () => AsyncGenerator<SDKUserMessage> {
@@ -508,11 +506,13 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
         result = `Error: ${(msg.error as string) ?? "Unknown error"}`;
       }
 
-      // Extract **Summary:** line if present
+      // Extract **Summary:** line if present, fall back to automation summary
       let summary: string | undefined;
       const summaryMatch = result.match(/^\*\*Summary:\*\*\s*(.+)/m);
       if (summaryMatch) {
         summary = summaryMatch[1].trim();
+      } else if (opts.automationSummary) {
+        summary = opts.automationSummary;
       }
 
       const metrics = extractResultMetrics(msg);

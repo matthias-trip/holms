@@ -217,7 +217,10 @@ async function main() {
 
     // If no reflex matched, coordinator reasons about it
     if (!handled) {
-      const context = `Automation "${automation.id}" fired (time trigger).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}\nRecurrence: ${automation.trigger.type === "time" ? automation.trigger.recurrence : "n/a"}`;
+      const triggerInfo = automation.trigger.type === "cron"
+        ? `cron trigger: ${automation.trigger.expression}`
+        : `${automation.trigger.type} trigger`;
+      const context = `Automation "${automation.id}" fired (${triggerInfo}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}`;
       hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined, automation.id, automation.summary).catch(console.error);
     }
   });

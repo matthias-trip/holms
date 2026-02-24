@@ -4,14 +4,6 @@ import type { AutomationStore } from "./store.js";
 import type { AutomationDisplay, AutomationTrigger } from "@holms/shared";
 import { getQueryChannel } from "../coordinator/query-context.js";
 
-const timeTriggerSchema = z.object({
-  type: z.literal("time"),
-  hour: z.number().min(0).max(23).describe("Hour of day (0-23)"),
-  minute: z.number().min(0).max(59).describe("Minute of hour (0-59)"),
-  recurrence: z.enum(["once", "daily", "weekdays", "weekends", "weekly"]).describe("How often it repeats"),
-  dayOfWeek: z.number().min(0).max(6).nullable().describe("Day of week (0=Sun..6=Sat), only for weekly"),
-});
-
 const deviceEventTriggerSchema = z.object({
   type: z.literal("device_event"),
   deviceId: z.string().describe("Device ID to watch"),
@@ -27,28 +19,30 @@ const stateThresholdTriggerSchema = z.object({
   value: z.number().describe("Threshold value"),
 });
 
+const cronTriggerSchema = z.object({
+  type: z.literal("cron"),
+  expression: z.string().describe("Standard 5-field cron expression, e.g. '*/5 * * * *' (every 5 minutes), '0 */2 * * *' (every 2 hours), '30 6 * * 1-5' (6:30 AM weekdays)"),
+});
+
 const triggerSchema = z.discriminatedUnion("type", [
-  timeTriggerSchema,
   deviceEventTriggerSchema,
   stateThresholdTriggerSchema,
+  cronTriggerSchema,
 ]);
 
 const displaySchema = z.object({
-  conditions: z.array(z.string()).optional().describe("Human-readable conditions that must be true, e.g. ['Someone is home', 'After sunset']"),
+  conditions: z.array(z.string()).optional().describe("Guard-rail conditions BEYOND the trigger itself, e.g. ['Someone is home', 'After sunset']. NEVER include schedule, time, day-of-week, or event info here — that's already in the trigger. Omit this field entirely if there are no extra conditions."),
   actions: z.array(z.string()).optional().describe("Human-readable action summaries, e.g. ['Dim living room to 20%', 'Lock front door']"),
 });
 
 export function createAutomationToolsServer(store: AutomationStore) {
   const createAutomation = tool(
     "create_automation",
-    `Create an automation that wakes the AI with an instruction when triggered. Three trigger types:
-- **time**: fires at a specific time (like a schedule). Example: "turn off lights at 22:30 daily"
-- **device_event**: fires when a device emits a matching event. eventType must match the ACTUAL event type the device emits (e.g. "state_changed", "motion_detected", "contact_changed"). Do NOT invent event types like "turn_off" — devices emit generic events like "state_changed" with details in the data fields. Use the condition field to match specific state values using standard DAL keys. Example: trigger on kitchen light turning off → eventType: "state_changed", condition: { power: "off" }. Binary sensor activated → condition: { active: true }. If unsure about the exact event type, omit eventType to match ANY event from that device.
-- **state_threshold**: fires when a numeric device state crosses a threshold. Example: "when living room temp exceeds 25°C, consider cooling"
+    `Create an automation that wakes the AI with an instruction when triggered. Three trigger types: **cron** (time-based), **device_event** (device emits matching event), **state_threshold** (numeric state crosses threshold). See system prompt for trigger details and eventType guidance.
 
-The instruction is what you will reason about each time it fires. Do NOT create a reflex alongside the automation — let the learning loop handle promotion.
+Do NOT create a reflex alongside the automation — let the learning loop handle promotion.
 
-IMPORTANT: Always provide the display field with conditions (any "only if" guard-rails from the instruction) and actions (the concrete things you will do). This powers the UI pipeline visualization.`,
+IMPORTANT: Always provide the display field with actions and optionally conditions. Conditions are ONLY for guard-rails beyond what the trigger already expresses — e.g. "Someone is home", "After sunset". NEVER restate the trigger's schedule, event, or time as a condition. Omit conditions entirely if there are none beyond the trigger.`,
     {
       summary: z.string().max(100).describe("Short description shown in UI list (max 100 chars)"),
       instruction: z.string().describe("Full natural language instruction to execute when triggered"),
@@ -66,9 +60,8 @@ IMPORTANT: Always provide the display field with conditions (any "only if" guard
       });
 
       let triggerDesc: string;
-      if (automation.trigger.type === "time") {
-        const t = automation.trigger;
-        triggerDesc = `at ${String(t.hour).padStart(2, "0")}:${String(t.minute).padStart(2, "0")} (${t.recurrence})`;
+      if (automation.trigger.type === "cron") {
+        triggerDesc = `on cron schedule "${automation.trigger.expression}"`;
       } else if (automation.trigger.type === "device_event") {
         triggerDesc = `on ${automation.trigger.deviceId} ${automation.trigger.eventType ?? "any event"}`;
       } else {

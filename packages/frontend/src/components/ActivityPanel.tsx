@@ -312,13 +312,10 @@ export default function ActivityPanel() {
     <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
       {/* Header */}
       <div
-        className="flex justify-between items-center flex-shrink-0 px-6 py-4"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
+        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
+        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
       >
-        <div>
-          <h3 className="text-base font-medium" style={{ color: "var(--gray-12)" }}>Activity</h3>
-          <p className="text-xs mt-1" style={{ color: "var(--gray-9)" }}>AI reasoning and decision history</p>
-        </div>
+        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Activity</h3>
         <div className="flex items-center gap-2">
           <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
           <span className="text-xs tabular-nums" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
@@ -330,7 +327,7 @@ export default function ActivityPanel() {
       {/* Filters */}
       <div
         className="flex items-center gap-1 px-6 py-2 flex-shrink-0 overflow-x-auto"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
+        style={{ borderBottom: "1px solid var(--gray-a3)" }}
       >
         {FILTER_GROUPS.map((group, gi) => (
           <div key={group.label} className="flex items-center gap-1">
@@ -342,14 +339,13 @@ export default function ActivityPanel() {
             )}
             <button
               onClick={() => toggleGroup(group)}
-              className="px-1.5 py-1 rounded-md text-[11px] font-medium transition-colors duration-150 whitespace-nowrap"
+              className="px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-150 whitespace-nowrap cursor-pointer"
               style={{
                 color: group.filters.every((f) => activeFilters.has(f.key))
                   ? "var(--gray-11)"
                   : "var(--gray-8)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
+                background: "transparent",
+                border: "1px solid transparent",
               }}
               title={`Toggle all ${group.label.toLowerCase()}`}
             >
@@ -361,7 +357,7 @@ export default function ActivityPanel() {
                 <button
                   key={key}
                   onClick={() => toggleFilter(key)}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[12px] transition-all duration-150 whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 whitespace-nowrap"
                   style={{
                     color: active ? "var(--gray-12)" : "var(--gray-8)",
                     background: active ? "var(--gray-3)" : "transparent",

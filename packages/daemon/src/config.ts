@@ -76,7 +76,7 @@ const defaults: HolmsConfig = {
     analyzeHistory: "claude-sonnet-4-6",
   },
   proactive: {
-    situationalCheckInterval: 30 * 60 * 1000,
+    situationalCheckInterval: 2 * 60 * 60 * 1000,
     reflectionInterval: 4 * 60 * 60 * 1000,
     goalReviewInterval: 24 * 60 * 60 * 1000,
     dailySummaryHour: 22,

@@ -6,7 +6,7 @@ import type { ActivityStore } from "../activity/store.js";
 export function createTriageToolsServer(store: TriageStore, activityStore?: ActivityStore) {
   const setTriageRule = tool(
     "set_triage_rule",
-    "Create a triage rule to control how device events reach you. Events are classified into three lanes:\n- **immediate**: Wakes you right away. Use for events requiring instant reasoning — binary sensor changes, security events, significant state changes.\n- **batched**: Accumulated, aggregated per device, and delivered as a single summary (count, avg/min/max delta, latest value) before delivery. Use holdMinutes to control how long batched events accumulate (default: 2 min).\n- **silent**: Updates device state but never wakes you. Use for pure telemetry noise — unchanged values, periodic heartbeats, command confirmations.\n\ndeltaThreshold acts as a noise floor — small changes are auto-silenced regardless of lane. One rule does everything: e.g. deltaThreshold=500 with lane='batched' silences changes under 500 and batches changes of 500+.\n\nRules are matched by specificity: deviceId > deviceDomain > room > wildcard. First match wins.",
+    "Create a triage rule to control how device events reach you. Lanes: immediate (wake now), batched (aggregate then deliver), silent (never wake). See system prompt for lane details and deltaThreshold guidance.\n\nRules are matched by specificity: deviceId > deviceDomain > room > wildcard. First match wins.",
     {
       condition: z
         .object({
