@@ -195,12 +195,15 @@ export async function buildAgentContext(
     }
   }
 
+  const memoryCount = memoryStore.getCount();
+
   return buildDynamicContext({
     currentTime: new Date().toLocaleString(),
     deviceSummary,
     peopleSummary,
     goalsSummary,
     memoryScope,
+    memoryHealth: { count: memoryCount },
     onboarding: opts?.onboarding,
   });
 }

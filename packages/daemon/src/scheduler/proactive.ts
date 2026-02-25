@@ -11,9 +11,13 @@ interface WakeupConfig {
   lastRun: number;
 }
 
+const MEMORY_MAINTENANCE_THRESHOLD = 150;
+const MEMORY_MAINTENANCE_COOLDOWN = 2 * 60 * 60 * 1000; // 2 hours
+
 export class ProactiveScheduler {
   private wakeups: WakeupConfig[];
   private timer: ReturnType<typeof setInterval> | null = null;
+  private lastMemoryMaintenance = 0;
 
   constructor(
     private hub: CoordinatorHub,
@@ -123,6 +127,20 @@ export class ProactiveScheduler {
         await this.hub.handleProactiveWakeup("daily_summary");
       } catch (error) {
         console.error("[ProactiveScheduler] Daily summary error:", error);
+      }
+    }
+
+    // Check if memory store needs maintenance (throttled to once per 2h)
+    if (Date.now() - this.lastMemoryMaintenance >= MEMORY_MAINTENANCE_COOLDOWN) {
+      const memoryCount = this.memoryStore.getCount();
+      if (memoryCount >= MEMORY_MAINTENANCE_THRESHOLD) {
+        this.lastMemoryMaintenance = Date.now();
+        console.log(`[ProactiveScheduler] Memory maintenance triggered: ${memoryCount} memories (threshold: ${MEMORY_MAINTENANCE_THRESHOLD})`);
+        try {
+          await this.hub.handleProactiveWakeup("memory_maintenance");
+        } catch (error) {
+          console.error("[ProactiveScheduler] Memory maintenance error:", error);
+        }
       }
     }
   }

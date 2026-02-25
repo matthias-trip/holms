@@ -61,6 +61,7 @@ export class EphemeralRunner {
       goal_review: "GOAL REVIEW: Check active goals and progress.",
       daily_summary: "DAILY SUMMARY: Summarize today's activity and patterns.",
       automation: `AUTOMATION FIRED: ${extraContext || "An automation has triggered."}`,
+      memory_maintenance: "MEMORY MAINTENANCE: Compact and prune memory store.",
     };
 
     let goalReviewPrompt = "";
@@ -74,6 +75,7 @@ export class EphemeralRunner {
       goal_review: `${context}\n\n${goalReviewPrompt}\n\nGOAL REVIEW: All active goals with their recent timelines are shown above. Review each goal per the Goal Review Cycle instructions.`,
       daily_summary: `${context}\n\nDAILY SUMMARY: Summarize today's activity and patterns.`,
       automation: `${context}\n\n${extraContext}\n\nAUTOMATION FIRED: An automation has triggered. Follow the Before Acting protocol, then handle the instruction above.`,
+      memory_maintenance: `${context}\n\nMEMORY MAINTENANCE: The memory store needs compaction. Follow the Memory Maintenance Checklist:\n1. Call memory_reflect to assess the current state\n2. Merge each similarity cluster via memory_merge — review coverage warnings, broaden cues if needed\n3. Prune neverAccessed memories (stored but never surfaced in queries — likely low value)\n4. Review staleMemories (sorted by accessCount) — prune low-access stale memories, rewrite outdated ones\n5. Check growth rate, note if > 5/day\n6. If you started with 100+ memories, call memory_reflect again to verify reduction`,
     };
 
     const proactiveScopes: Record<string, ToolScope> = {
@@ -82,6 +84,7 @@ export class EphemeralRunner {
       goal_review: "goal_review",
       daily_summary: "memory_only",
       automation: "device_action",
+      memory_maintenance: "memory_only",
     };
 
     const prompt = prompts[wakeupType] ?? prompts.situational!;
@@ -90,7 +93,7 @@ export class EphemeralRunner {
     const proactiveType = wakeupType !== "automation" ? wakeupType : undefined;
     const toolScope = proactiveScopes[wakeupType] ?? "device_action";
 
-    const lightweightTypes = new Set(["reflection", "goal_review", "daily_summary"]);
+    const lightweightTypes = new Set(["reflection", "goal_review", "daily_summary", "memory_maintenance"]);
     const model = lightweightTypes.has(wakeupType) ? this.config.models.lightweight : undefined;
 
     return this.runEphemeral(prompt, trigger, userPrompt, proactiveType, channel, toolScope, model, automationId, automationSummary);

@@ -189,9 +189,62 @@ export function createMemoryToolsServer(store: MemoryStore) {
     },
   );
 
+  const memoryMerge = tool(
+    "memory_merge",
+    "Merge multiple source memories into a single target memory. Replaces N separate rewrite+forget calls with one atomic operation. Rewrites the target with merged content, deletes all sources, and validates coverage — warns if any source concept may become unretrievable under the new retrieval cues (similarity < 0.7). Review coverage warnings and broaden retrieval_cues if needed.",
+    {
+      target_id: z.number().describe("ID of the memory to keep (will be rewritten with merged content)"),
+      source_ids: z.array(z.number()).describe("IDs of memories to merge into the target (will be deleted after merge)"),
+      content: z.string().describe("New merged content for the target memory"),
+      retrieval_cues: z
+        .string()
+        .describe("New retrieval cues covering all merged concepts. Pack with keywords from ALL source memories to maximize coverage."),
+      tags: z
+        .array(z.string())
+        .describe("Tags for the merged memory"),
+    },
+    async (args) => {
+      const result = await store.merge({
+        targetId: args.target_id,
+        sourceIds: args.source_ids,
+        content: args.content,
+        retrievalCues: args.retrieval_cues,
+        tags: args.tags,
+      });
+
+      if (!result) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Merge failed: target memory #${args.target_id} not found`,
+            },
+          ],
+        };
+      }
+
+      const parts = [`Merged ${args.source_ids.length} memories into #${result.memory.id}: ${result.memory.content}`];
+      if (result.coverageWarnings.length > 0) {
+        parts.push("\n\nCoverage warnings:");
+        for (const w of result.coverageWarnings) {
+          parts.push(`- Source #${w.sourceId} (similarity ${w.similarity}): "${w.sourceContent}" — consider broadening retrieval_cues`);
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: parts.join("\n"),
+          },
+        ],
+      };
+    },
+  );
+
   const memoryReflect = tool(
     "memory_reflect",
-    "Get memory store statistics for self-maintenance. Returns: totalCount, tagDistribution, ageDistribution (bucketed), similarClusters (groups with >0.85 similarity — merge candidates), recentGrowthRate (memories/day over last 7 days).",
+    "Get memory store statistics for self-maintenance. Returns: totalCount, tagDistribution, ageDistribution (bucketed), similarClusters (groups with >0.85 similarity — merge candidates with IDs and content snippets), staleMemories (unpinned, not updated in 30+ days, sorted by access count — lowest first are strongest prune candidates), neverAccessed (stored but never surfaced in any query, older than 7 days — likely low value), recentGrowthRate (memories/day over last 7 days). Use memory_merge to efficiently consolidate clusters.",
     {},
     async () => {
       const stats = await store.reflect();
@@ -209,6 +262,6 @@ export function createMemoryToolsServer(store: MemoryStore) {
   return createSdkMcpServer({
     name: "memory",
     version: "3.0.0",
-    tools: [memoryWrite, memoryQuery, memoryRewrite, memoryForget, memoryReflect],
+    tools: [memoryWrite, memoryQuery, memoryRewrite, memoryForget, memoryMerge, memoryReflect],
   });
 }

@@ -18,11 +18,23 @@ export function buildDynamicContext(context: {
   peopleSummary?: string;
   goalsSummary?: string;
   memoryScope?: string;
+  memoryHealth?: { count: number };
   onboarding?: boolean;
 }): string {
   let ctx = `## Current Context
 - Time: ${context.currentTime}
 - Devices: ${context.deviceSummary}`;
+
+  if (context.memoryHealth) {
+    const n = context.memoryHealth.count;
+    if (n >= 200) {
+      ctx += `\n- Memory: ${n} memories — maintenance overdue, prioritize compaction`;
+    } else if (n >= 100) {
+      ctx += `\n- Memory: ${n} memories — maintenance recommended during next reflection`;
+    } else if (n >= 50) {
+      ctx += `\n- Memory: ${n} memories`;
+    }
+  }
 
   if (context.onboarding) {
     ctx += `\n- Mode: ONBOARDING — follow the Onboarding section above`;

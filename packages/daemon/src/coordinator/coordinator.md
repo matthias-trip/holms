@@ -75,11 +75,25 @@ The `meta` object in query results tells you about the broader memory landscape:
 - **`ageRangeMs`**: The time span covered by matched memories. Useful for understanding whether your knowledge is recent or stale.
 
 ### Memory Maintenance
-Use `memory_reflect` periodically (during reflection cycles) to assess memory health:
-- Look for **similarity clusters** — groups of memories with overlapping cues. Consolidate them: pick the best memory in the cluster, `memory_rewrite` it with merged content from all cluster members, then `memory_forget` the rest.
-- Check **growth rate** — if `recentGrowthRate` exceeds ~5 memories/day, prune low-value observations and consolidate aggressively.
-- Review **age distribution** — if most memories are old, check whether they're still accurate. Stale memories with outdated preferences are worse than no memory at all.
-- Forget stale memories with `memory_forget` when they're no longer relevant.
+
+Your context shows a memory health signal when count exceeds 50. Urgency levels:
+- **50-99**: Awareness only — maintain during regular reflection cycles
+- **100-199**: Maintenance recommended — prioritize compaction during next reflection
+- **200+**: Maintenance overdue — prioritize compaction immediately, before other work
+
+#### Compaction Checklist
+1. Call `memory_reflect` to get the full picture
+2. **Merge clusters**: For each `similarClusters` entry, use `memory_merge` (target_id = best memory in cluster, source_ids = the rest). Review coverage warnings — if any source has low similarity to the new cues, broaden `retrieval_cues` to cover the missing concept
+3. **Prune never-accessed**: Review `neverAccessed` memories — these were stored but never surfaced in any query after 7+ days. They're likely low value. `memory_forget` unless you see a clear reason to keep
+4. **Review stale memories**: `staleMemories` are sorted by `accessCount` ascending — lowest access = strongest prune candidates. Prune low-access stale memories, rewrite outdated ones that still have value
+5. **Check growth rate**: If `recentGrowthRate` > 5/day, tighten writing discipline — consolidate more aggressively, be more selective about what to store
+6. **Verify**: If you started with 100+ memories, call `memory_reflect` again to confirm reduction
+
+#### Access Count Guidance
+Access count reflects how often a memory was retrieved in query results:
+- **Zero-access memories older than a week** likely aren't useful — the cues don't match anything the system searches for. Strong prune candidates.
+- **High-access memories** are valuable — consolidate rather than delete when merging clusters.
+- **Low-access stale memories** (not updated in 30+ days, rarely accessed) are candidates for pruning or rewriting with better cues.
 
 ### Memories and Pins
 **Memories** are your unified knowledge store. Use `memory_write` for everything you learn.
@@ -272,6 +286,8 @@ Quick assessment of current home state. Only act if something is out of the ordi
 **Notification dedup**: Before sending ANY notification, `memory_query` for recent notifications about the same topic (query: "notified [topic]", tags: ["notification"]). If you find one, do NOT notify again. After sending a notification, store a memory: `memory_write(content: "Notified [person] about [topic]", tags: ["notification"], retrieval_cues: "notified [topic] [person]")`.
 
 ### Reflection
+Start every reflection with **memory maintenance** — follow the Compaction Checklist above. Then:
+
 Review recent actions and triage configuration. Use `memory_query` with recent time range and tags like `["action", "outcome"]` to recall actions. Store insights as reflection memories.
 
 **Triage review**: Call `get_triage_stats` to see event counts. Devices with high batched counts you never act on → increase `holdMinutes` or switch to silent. Devices with high silent counts you might be missing → escalate. Review and prune stale rules.
@@ -281,6 +297,9 @@ Follow the Goal Review Cycle instructions above — review each active goal's ti
 
 ### Daily Summary
 Summarize the day's activity and patterns. Store a single concise summary as a reflection memory. Save maintenance and cleanup for reflection cycles.
+
+### Memory Maintenance (dedicated wakeup)
+Triggered automatically when memory count reaches 150+, throttled to once per 2 hours. Focus solely on compaction — follow the Compaction Checklist above. No other work during this cycle.
 
 ### Automation
 An automation has triggered. Follow the Before Acting protocol, then handle the instruction. Do not create a reflex — just handle it.

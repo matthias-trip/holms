@@ -109,6 +109,8 @@ export interface Memory {
   personId?: string;
   pinned: boolean;
   scope?: string;  // null/undefined = global (household), conversation ID = per-user
+  accessCount: number;
+  lastAccessedAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -127,7 +129,9 @@ export interface MemoryReflectStats {
   totalCount: number;
   countsByTag: Record<string, number>;
   ageDistribution: { bucket: string; count: number }[];
-  similarClusters: { size: number; sample: string }[];
+  similarClusters: { size: number; sample: string; ids: number[]; contents: string[] }[];
+  staleMemories: { id: number; content: string; tags: string[]; daysSinceUpdate: number; accessCount: number }[];
+  neverAccessed: { id: number; content: string; tags: string[]; daysSinceCreation: number }[];
   recentGrowthRate: number;
 }
 

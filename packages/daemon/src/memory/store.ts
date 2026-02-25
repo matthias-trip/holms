@@ -13,6 +13,8 @@ interface MemoryRow {
   pinned: number;
   scope: string | null;
   embedding: Buffer | null;
+  access_count: number;
+  last_accessed_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -77,6 +79,12 @@ export class MemoryStore {
     }
     if (!colNames.has("pinned")) {
       db.exec(`ALTER TABLE memories ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!colNames.has("access_count")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!colNames.has("last_accessed_at")) {
+      db.exec(`ALTER TABLE memories ADD COLUMN last_accessed_at INTEGER`);
     }
 
     // Migrate existing entity_note rows → pinned memories
@@ -206,6 +214,15 @@ export class MemoryStore {
     const limited = ranked.slice(0, limit);
     const memories: ScoredMemory[] = limited.map((r) => ({ ...r.memory, similarity: r.similarity }));
 
+    // Track access counts for returned memories
+    if (memories.length > 0) {
+      const ids = memories.map((m) => m.id);
+      const placeholders = ids.map(() => "?").join(",");
+      this.db
+        .prepare(`UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id IN (${placeholders})`)
+        .run(Date.now(), ...ids);
+    }
+
     // Compute meta
     const timestamps = memories.map((m) => m.createdAt);
     const ageRangeMs: [number, number] = timestamps.length > 0
@@ -308,8 +325,8 @@ export class MemoryStore {
 
     // Similar clusters — pairwise comparison on a sample
     const withEmbeddings = all.filter((r) => r.embedding !== null);
-    const sample = withEmbeddings.slice(0, 100); // limit pairwise cost
-    const clusters: { size: number; sample: string }[] = [];
+    const sample = withEmbeddings.slice(0, 500); // 125k dot products, sub-second
+    const clusters: { size: number; sample: string; ids: number[]; contents: string[] }[] = [];
     const visited = new Set<number>();
 
     for (let i = 0; i < sample.length; i++) {
@@ -339,24 +356,121 @@ export class MemoryStore {
         clusters.push({
           size: cluster.length,
           sample: sample[i]!.content.slice(0, 100),
+          ids: cluster.map((idx) => sample[idx]!.id),
+          contents: cluster.map((idx) => sample[idx]!.content.slice(0, 200)),
         });
       }
     }
+
+    // Stale memories: unpinned, not updated in 30+ days, sorted by access count ascending
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+    const staleMemories = all
+      .filter((r) => r.pinned === 0 && r.updated_at < thirtyDaysAgo)
+      .sort((a, b) => a.access_count - b.access_count)
+      .slice(0, 20)
+      .map((r) => ({
+        id: r.id,
+        content: r.content.slice(0, 200),
+        tags: JSON.parse(r.tags) as string[],
+        daysSinceUpdate: Math.floor((now - r.updated_at) / (24 * 60 * 60 * 1000)),
+        accessCount: r.access_count,
+      }));
+
+    // Never-accessed memories: access_count = 0, older than 7 days
+    const sevenDaysAgoTs = now - 7 * 24 * 60 * 60 * 1000;
+    const neverAccessed = all
+      .filter((r) => r.access_count === 0 && r.created_at < sevenDaysAgoTs)
+      .slice(0, 20)
+      .map((r) => ({
+        id: r.id,
+        content: r.content.slice(0, 200),
+        tags: JSON.parse(r.tags) as string[],
+        daysSinceCreation: Math.floor((now - r.created_at) / (24 * 60 * 60 * 1000)),
+      }));
 
     // Growth rate: memories created in last 7 days / 7
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
     const recentCount = all.filter((r) => r.created_at >= sevenDaysAgo).length;
     const recentGrowthRate = recentCount / 7;
 
-    console.log(`[Memory] Reflect: ${all.length} memories, ${clusters.length} similar clusters, growth ${recentGrowthRate.toFixed(1)}/day`);
+    console.log(`[Memory] Reflect: ${all.length} memories, ${clusters.length} similar clusters, ${staleMemories.length} stale, ${neverAccessed.length} never-accessed, growth ${recentGrowthRate.toFixed(1)}/day`);
 
     return {
       totalCount: all.length,
       countsByTag,
       ageDistribution,
       similarClusters: clusters,
+      staleMemories,
+      neverAccessed,
       recentGrowthRate,
     };
+  }
+
+  async merge(opts: {
+    targetId: number;
+    sourceIds: number[];
+    content: string;
+    retrievalCues: string;
+    tags: string[];
+  }): Promise<{ memory: Memory; coverageWarnings: { sourceId: number; sourceContent: string; similarity: number }[] } | null> {
+    console.log(`[Memory] Merging sources [${opts.sourceIds.join(", ")}] into target #${opts.targetId}`);
+
+    const target = this.getById(opts.targetId);
+    if (!target) {
+      console.log(`[Memory] Merge failed: target #${opts.targetId} not found`);
+      return null;
+    }
+
+    // Collect source embeddings before deleting
+    const sourceData: { id: number; content: string; embedding: Float32Array | null }[] = [];
+    for (const sourceId of opts.sourceIds) {
+      const row = this.db.prepare(`SELECT * FROM memories WHERE id = ?`).get(sourceId) as MemoryRow | undefined;
+      if (row) {
+        const emb = row.embedding
+          ? new Float32Array((row.embedding as Buffer).buffer, (row.embedding as Buffer).byteOffset, EMBEDDING_DIM)
+          : null;
+        sourceData.push({ id: row.id, content: row.content, embedding: emb });
+      }
+    }
+
+    // Rewrite the target with merged content (triggers re-embedding)
+    const merged = await this.rewrite(opts.targetId, {
+      content: opts.content,
+      retrievalCues: opts.retrievalCues,
+      tags: opts.tags,
+    });
+    if (!merged) return null;
+
+    // Get the new embedding for coverage validation
+    const targetRow = this.db.prepare(`SELECT embedding FROM memories WHERE id = ?`).get(opts.targetId) as { embedding: Buffer | null } | undefined;
+    const newEmbedding = targetRow?.embedding
+      ? new Float32Array((targetRow.embedding as Buffer).buffer, (targetRow.embedding as Buffer).byteOffset, EMBEDDING_DIM)
+      : null;
+
+    // Check coverage of each source against the new embedding
+    const coverageWarnings: { sourceId: number; sourceContent: string; similarity: number }[] = [];
+    if (newEmbedding) {
+      for (const source of sourceData) {
+        if (source.embedding) {
+          const sim = cosineSimilarity(newEmbedding, source.embedding);
+          if (sim < 0.7) {
+            coverageWarnings.push({
+              sourceId: source.id,
+              sourceContent: source.content.slice(0, 200),
+              similarity: Math.round(sim * 100) / 100,
+            });
+          }
+        }
+      }
+    }
+
+    // Delete all source memories
+    for (const sourceId of opts.sourceIds) {
+      this.forget(sourceId);
+    }
+
+    console.log(`[Memory] Merged ${sourceData.length} sources into #${opts.targetId}${coverageWarnings.length > 0 ? ` (${coverageWarnings.length} coverage warnings)` : ""}`);
+    return { memory: merged, coverageWarnings };
   }
 
   getAll(): Memory[] {
@@ -425,6 +539,11 @@ export class MemoryStore {
     return map;
   }
 
+  getCount(): number {
+    const row = this.db.prepare(`SELECT COUNT(*) as cnt FROM memories`).get() as { cnt: number };
+    return row.cnt;
+  }
+
   close(): void {
     this.db.close();
   }
@@ -445,6 +564,8 @@ export class MemoryStore {
       personId: row.person_id ?? undefined,
       pinned: row.pinned === 1,
       scope: row.scope ?? undefined,
+      accessCount: row.access_count,
+      lastAccessedAt: row.last_accessed_at ?? undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
