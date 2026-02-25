@@ -190,8 +190,9 @@ async function main() {
       // Automations claimed this event — wake AI with each instruction, skip triage
       for (const automation of matchedAutomations) {
         eventBus.emit("automation:event_fired", { automation, event, timestamp: Date.now() });
-        const context = `Automation "${automation.id}" fired (${automation.trigger.type}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}\nTriggering event: ${event.type} from ${event.deviceId}\nEvent data: ${JSON.stringify(event.data)}`;
-        hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined, automation.id, automation.summary).catch(console.error);
+        const channelHint = automation.channel ? `\nOrigin channel: ${automation.channel}` : "";
+        const context = `Automation "${automation.id}" fired (${automation.trigger.type}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}\nTriggering event: ${event.type} from ${event.deviceId}\nEvent data: ${JSON.stringify(event.data)}${channelHint}`;
+        hub.handleProactiveWakeup("automation", context, undefined, automation.id, automation.summary).catch(console.error);
       }
       return; // Event claimed by automation — skip triage
     }
@@ -220,8 +221,9 @@ async function main() {
       const triggerInfo = automation.trigger.type === "cron"
         ? `cron trigger: ${automation.trigger.expression}`
         : `${automation.trigger.type} trigger`;
-      const context = `Automation "${automation.id}" fired (${triggerInfo}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}`;
-      hub.handleProactiveWakeup("automation", context, automation.channel ?? undefined, automation.id, automation.summary).catch(console.error);
+      const channelHint = automation.channel ? `\nOrigin channel: ${automation.channel}` : "";
+      const context = `Automation "${automation.id}" fired (${triggerInfo}).\nSummary: ${automation.summary}\nInstruction: ${automation.instruction}${channelHint}`;
+      hub.handleProactiveWakeup("automation", context, undefined, automation.id, automation.summary).catch(console.error);
     }
   });
 
