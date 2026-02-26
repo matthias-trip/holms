@@ -170,6 +170,19 @@ export class WhatsAppProvider implements ChannelProvider {
     }
   }
 
+  sendProgress(conversationId: string, _messageId: string, text: string): void {
+    const jid = conversationId.replace("whatsapp:", "");
+    if (!this.sock) return;
+
+    // Send as italicized WhatsApp message
+    this.sock.sendMessage(jid, { text: `_${text}_` }).catch((err: any) => {
+      console.error(`[WhatsApp] Failed to send progress to ${jid}:`, err);
+    });
+
+    // Refresh composing indicator so the user sees continued activity
+    this.sock.sendPresenceUpdate("composing", jid).catch(() => {});
+  }
+
   sendStreamEnd(conversationId: string, _messageId: string, content: string): void {
     const jid = conversationId.replace("whatsapp:", "");
     this.composingFor.delete(conversationId);

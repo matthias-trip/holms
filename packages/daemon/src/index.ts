@@ -20,6 +20,7 @@ import { createApprovalToolsServer } from "./coordinator/approval-queue.js";
 import { createAutomationToolsServer } from "./automation/tools.js";
 import { createTriageToolsServer } from "./triage/tools.js";
 import { createChannelToolsServer } from "./channels/tools.js";
+import { createProgressToolsServer } from "./coordinator/progress-tools.js";
 import { ProactiveScheduler } from "./scheduler/proactive.js";
 import { createSchedulerToolsServer } from "./scheduler/tools.js";
 import { AutomationStore } from "./automation/store.js";
@@ -123,6 +124,7 @@ async function main() {
 
   // Register channel tools after ChannelManager exists — pool is read at query time, not captured
   mcpPool.register("channel", () => createChannelToolsServer(channelManager));
+  mcpPool.register("progress", () => createProgressToolsServer(channelManager));
 
   // Register channel descriptors
   channelManager.registerDescriptor(new WebChannelDescriptor());

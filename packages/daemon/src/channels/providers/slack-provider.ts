@@ -187,6 +187,19 @@ export class SlackProvider implements ChannelProvider {
     }).catch((err: any) => console.warn("[Slack] Failed to add reaction:", err));
   }
 
+  sendProgress(conversationId: string, messageId: string, text: string): void {
+    const tracking = this.activeRequests.get(messageId);
+    if (!tracking) return;
+
+    // Post as a thread reply to keep the main channel clean
+    this.app?.client.chat.postMessage({
+      token: this.botToken,
+      channel: tracking.channelId,
+      thread_ts: tracking.userTs,
+      text: `_${text}_`,
+    }).catch((err: any) => console.warn("[Slack] Failed to send progress:", err));
+  }
+
   sendStreamEnd(conversationId: string, messageId: string, content: string): void {
     const tracking = this.activeRequests.get(messageId);
     const channelId = tracking?.channelId ?? conversationId.replace("slack:", "");

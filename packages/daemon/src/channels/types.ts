@@ -45,6 +45,9 @@ export interface ChannelProvider {
   /** Pre-populate conversations from persisted storage on startup */
   seedConversations?(conversations: ChannelConversation[]): void;
 
+  /** Send a lightweight progress update (ephemeral, not persisted to chat history) */
+  sendProgress?(conversationId: string, messageId: string, text: string): void;
+
   /** Send an image (e.g. rendered chart) with optional caption */
   sendImage?(conversationId: string, messageId: string, image: Buffer, caption?: string): Promise<void>;
 

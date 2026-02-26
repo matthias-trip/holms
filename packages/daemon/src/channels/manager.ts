@@ -378,6 +378,26 @@ export class ChannelManager {
     }
   }
 
+  /** Send a lightweight progress update to the user's channel (ephemeral, not persisted) */
+  sendProgressUpdate(messageId: string, text: string): void {
+    const pending = this.pendingResponses.get(messageId);
+    if (!pending) return;
+    const provider = this.providers.get(pending.providerId);
+    if (!provider) return;
+
+    // Deliver via provider (WhatsApp sends a message, Slack posts a thread reply, web is a status event)
+    if (provider.sendProgress) {
+      provider.sendProgress(pending.conversationId, messageId, text);
+    }
+
+    // Emit chat:status so the web frontend picks it up
+    this.eventBus.emit("chat:status", {
+      messageId,
+      status: text,
+      timestamp: Date.now(),
+    });
+  }
+
   /** Track a response message so streaming events route to the right provider */
   trackResponse(messageId: string, providerId: string, conversationId: string): void {
     this.pendingResponses.set(messageId, { providerId, conversationId });

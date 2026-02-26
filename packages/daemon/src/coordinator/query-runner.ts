@@ -9,7 +9,7 @@ import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { getStaticSystemPrompt, buildDynamicContext } from "./system-prompt.js";
-import { runWithChannel } from "./query-context.js";
+import { runWithQueryContext } from "./query-context.js";
 
 // ── SDK process options helper ──
 
@@ -46,8 +46,8 @@ export type ToolScope =
 
 const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
   full:          ["device-query", "device-command", "memory", "reflex", "approval",
-                  "automation", "triage", "people", "goals", "history", "channel", "scheduler"],
-  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage", "channel", "people"],
+                  "automation", "triage", "people", "goals", "history", "channel", "scheduler", "progress"],
+  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage", "channel", "people", "progress"],
   reflection:    ["memory", "triage", "reflex", "history"],
   goal_review:   ["goals", "memory", "history"],
   memory_only:   ["memory"],
@@ -241,7 +241,7 @@ export interface ToolQueryResult {
 }
 
 export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryResult> {
-  return runWithChannel(opts.channel, () => runToolQueryInner(opts));
+  return runWithQueryContext(opts.channel, opts.messageId, () => runToolQueryInner(opts));
 }
 
 function buildAnalyzeHistoryAgent(config: HolmsConfig): AgentDefinition {
