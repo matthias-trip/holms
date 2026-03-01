@@ -63,14 +63,14 @@ export default function ReflexPanel() {
                       <div className="flex items-center gap-2">
                         <Chip variant="flat" color="primary" size="sm">When</Chip>
                         <span className="text-xs" style={{ color: "var(--gray-12)" }}>
-                          {rule.trigger.deviceId ?? "any device"}
+                          {rule.trigger.deviceId ?? "any source"}
                           {rule.trigger.eventType ? ` fires ${rule.trigger.eventType}` : ""}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Chip variant="flat" color="success" size="sm">Then</Chip>
                         <span className="text-xs" style={{ color: "var(--gray-12)" }}>
-                          {rule.action.command} &rarr; {rule.action.deviceId}
+                          {rule.action.command} &rarr; {rule.action.deviceId ?? "source"}
                         </span>
                       </div>
                     </div>

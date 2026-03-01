@@ -1,0 +1,5 @@
+{
+  "name": "Philips Hue",
+  "version": "1.0.0",
+  "description": "Lights, sensors, and scenes via the Hue Bridge V2 API"
+}

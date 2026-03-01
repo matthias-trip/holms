@@ -1,0 +1,5 @@
+{
+  "name": "iSmartGate",
+  "version": "1.0.0",
+  "description": "Garage door and gate control via the iSmartGate local API"
+}

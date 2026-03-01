@@ -2,7 +2,14 @@ import { initTRPC } from "@trpc/server";
 import { observable } from "@trpc/server/observable";
 import { z } from "zod";
 import type { TRPCContext } from "../context.js";
-import { importHAHistory, type ImportProgress } from "../../history/import.js";
+
+export interface ImportProgress {
+  deviceId: string;
+  phase: "fetching" | "processing" | "deleting" | "inserting" | "cataloging" | "done" | "error";
+  processed: number;
+  total: number;
+  message?: string;
+}
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -13,12 +20,9 @@ export const historyRouter = t.router({
       days: z.number().min(1).max(365),
       resolution: z.string().regex(/^\d+[smh]$/).optional().default("1m"),
     }))
-    .mutation(async ({ ctx, input }) => {
-      return importHAHistory(input.deviceId, input.days, {
-        deviceManager: ctx.deviceManager,
-        historyStore: ctx.historyStore,
-        eventBus: ctx.eventBus,
-      }, { resolution: input.resolution });
+    .mutation(async () => {
+      // TODO: Reimplement via Habitat's history import capabilities
+      throw new Error("HA history import has been removed during Habitat migration. Use Habitat's native history capabilities.");
     }),
 
   onImportProgress: t.procedure

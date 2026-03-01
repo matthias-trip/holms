@@ -2,9 +2,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Loader2, ChevronRight, AlertCircle, SendHorizonal, Lightbulb, Cloud, Moon, Activity, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Button, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
-import type { ChatMessage, ChatMessageFeedback, ApprovalMessageData } from "@holms/shared";
+import type { ChatMessage, ChatMessageFeedback, ApprovalMessageData, QuestionMessageData } from "@holms/shared";
 import MarkdownMessage from "./MarkdownMessage";
+import { LiveReasoningBlock, ReasoningBlock } from "./ReasoningBlocks";
 import FeedbackModal from "./FeedbackModal";
+import QuestionCard from "./QuestionCard";
 
 interface StreamingMessage extends ChatMessage {
   streaming?: boolean;
@@ -36,92 +38,12 @@ function parseApprovalData(content: string): ApprovalMessageData | null {
   return null;
 }
 
-/** Live reasoning — streams as plain text (no markdown re-parse flicker), auto-scrolls */
-function LiveReasoningBlock({ reasoning, startedAt, statusHint }: { reasoning: string; startedAt: number; statusHint?: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
-    return () => clearInterval(interval);
-  }, [startedAt]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [reasoning]);
-
-  const label = statusHint
-    ? `${statusHint}${elapsed > 0 ? ` (${elapsed}s)` : ""}`
-    : `Thinking${elapsed > 0 ? ` (${elapsed}s)` : ""}...`;
-
-  return (
-    <div className="mb-2">
-      <div className="flex items-center gap-1 mb-1">
-        <Loader2 size={12} className="animate-spin-slow flex-shrink-0" style={{ color: "var(--gray-9)" }} />
-        <span className="text-xs font-medium" style={{ color: "var(--gray-9)" }}>
-          {label}
-        </span>
-      </div>
-      <div
-        ref={scrollRef}
-        className="pl-4 text-[11px] overflow-auto whitespace-pre-wrap"
-        style={{
-          color: "var(--gray-11)",
-          maxHeight: "200px",
-          lineHeight: 1.6,
-          borderLeft: "2px solid var(--gray-a5)",
-        }}
-      >
-        {reasoning}
-      </div>
-    </div>
-  );
-}
-
-/** Collapsed reasoning toggle — shows "Thought for Xs", click to expand full markdown */
-function ReasoningBlock({ reasoning, durationSec }: { reasoning: string; durationSec?: number }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const label = durationSec != null && durationSec > 0
-    ? `Thought for ${durationSec}s`
-    : "Reasoning";
-
-  return (
-    <div className="mb-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-left"
-      >
-        <ChevronRight
-          size={10}
-          className="flex-shrink-0 transition-transform duration-150"
-          style={{
-            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-            color: "var(--gray-8)",
-          }}
-        />
-        <span className="text-xs font-medium" style={{ color: "var(--gray-9)" }}>{label}</span>
-      </button>
-      <div
-        className="overflow-hidden transition-all duration-200 ease-in-out"
-        style={{ maxHeight: expanded ? "400px" : "0px", opacity: expanded ? 1 : 0 }}
-      >
-        <div
-          className="mt-1.5 pl-4 text-[11px] overflow-auto"
-          style={{
-            color: "var(--gray-11)",
-            maxHeight: "380px",
-            lineHeight: 1.6,
-            borderLeft: "2px solid var(--gray-a5)",
-          }}
-        >
-          <MarkdownMessage content={reasoning} />
-        </div>
-      </div>
-    </div>
-  );
+function parseQuestionData(content: string): QuestionMessageData | null {
+  try {
+    const data = JSON.parse(content);
+    if (data && typeof data.questionId === "string" && Array.isArray(data.options)) return data as QuestionMessageData;
+  } catch { /* not JSON */ }
+  return null;
 }
 
 function ApprovalCard({
@@ -329,6 +251,7 @@ export default function ChatPanel() {
   const [feedbackModal, setFeedbackModal] = useState<{ messageId: string; sentiment: "positive" | "negative" } | null>(null);
 
   const feedbackMutation = trpc.chat.messageFeedback.useMutation();
+  const submitSecretMutation = trpc.chat.submitSecret.useMutation();
 
   const utils = trpc.useUtils();
   const historyQuery = trpc.chat.history.useQuery({ limit: 100, channel: "web:default" });
@@ -455,6 +378,19 @@ export default function ChatPanel() {
                 ? { ...m, content: event.content, streaming: false, reasoning: event.reasoning, statusHint: undefined, thinkingStartedAt: m.thinkingStartedAt }
                 : m,
             );
+          }
+          // New message not yet in the list (e.g., question from ask_user tool)
+          const questionData = parseQuestionData(event.content);
+          if (questionData) {
+            const newMsg: StreamingMessage = {
+              id: event.messageId,
+              role: "assistant",
+              content: event.content,
+              timestamp: Date.now(),
+              status: "question_pending",
+            };
+            liveMessageIdsRef.current.add(newMsg.id);
+            return [...prev, newMsg];
           }
           return prev;
         });
@@ -615,6 +551,10 @@ export default function ChatPanel() {
     setInput("");
   };
 
+  const handleSendSecret = async (questionId: string, value: string) => {
+    await submitSecretMutation.mutateAsync({ questionId, value });
+  };
+
   const handleApprove = (approvalId: string) => {
     pendingApprovalActionRef.current = { approvalId, approved: true };
     approveMutation.mutate({ id: approvalId });
@@ -731,8 +671,9 @@ export default function ChatPanel() {
           <div className="space-y-4">
             {messages.map((msg, i) => {
               const isApproval = msg.status === "approval_pending" || msg.status === "approval_resolved";
+              const isQuestion = msg.status === "question_pending" || msg.status === "question_answered";
               // Determine if this assistant message is eligible for feedback
-              const showFeedback = !isApproval && msg.role === "assistant" && !msg.streaming && msg.content && (() => {
+              const showFeedback = !isApproval && !isQuestion && msg.role === "assistant" && !msg.streaming && msg.content && (() => {
                 // Collect last 10 eligible assistant message IDs
                 const eligible = messages
                   .filter((m) => m.role === "assistant" && !m.streaming && m.content
@@ -754,6 +695,40 @@ export default function ChatPanel() {
                     />
                   );
                 }
+              }
+
+              if (isQuestion) {
+                const questionData = parseQuestionData(msg.content);
+                if (questionData) {
+                  const nextMsg = messages[i + 1];
+                  const isAnswered = !!nextMsg && nextMsg.role === "user";
+                  return (
+                    <div key={msg.id} className="space-y-3">
+                      {msg.reasoning && (
+                        <div className="flex justify-start">
+                          <img src="/chaticon.png" alt="Holms" className="w-8 h-8 rounded-lg mr-2 mt-0.5 flex-shrink-0" />
+                          <div
+                            className="max-w-[85%] rounded-xl px-4 py-2.5"
+                            style={{ background: "var(--gray-3)", border: "1px solid var(--gray-a5)", color: "var(--gray-12)", fontSize: "13px", lineHeight: "1.6" }}
+                          >
+                            <MarkdownMessage content={msg.reasoning} />
+                          </div>
+                        </div>
+                      )}
+                      <QuestionCard
+                        data={questionData}
+                        onSend={handleSendText}
+                        onSendSecret={handleSendSecret}
+                        answered={isAnswered}
+                      />
+                    </div>
+                  );
+                }
+              }
+
+              // Skip empty finalized assistant messages (ask_user placeholder with no reasoning)
+              if (msg.role === "assistant" && !msg.streaming && !msg.content && !msg.reasoning && !isApproval && !isQuestion) {
+                return null;
               }
 
               const isLive = liveMessageIdsRef.current.has(msg.id);
@@ -796,7 +771,7 @@ export default function ChatPanel() {
                       )
                     ) : (
                       <>
-                        {msg.reasoning && (
+                        {msg.reasoning && msg.content && (
                           <ReasoningBlock
                             reasoning={msg.reasoning}
                             durationSec={msg.thinkingStartedAt
@@ -804,7 +779,11 @@ export default function ChatPanel() {
                               : undefined}
                           />
                         )}
-                        <MarkdownMessage content={msg.content} />
+                        {msg.content ? (
+                          <MarkdownMessage content={msg.content} />
+                        ) : msg.reasoning ? (
+                          <MarkdownMessage content={msg.reasoning} />
+                        ) : null}
                       </>
                     )
                   ) : (

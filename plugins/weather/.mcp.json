@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "weather": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/server.js"],
-      "cwd": "${CLAUDE_PLUGIN_ROOT}"
-    }
-  }
-}

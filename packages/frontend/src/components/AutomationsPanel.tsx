@@ -108,7 +108,7 @@ function TriggerBadge({ trigger }: { trigger: AutomationTrigger }) {
         <div className="flex items-center gap-2">
           <Radio size={14} style={{ color: "var(--accent-9)" }} />
           <Chip variant="flat" color="secondary" size="sm">
-            Device Event
+            Source Event
           </Chip>
           <span className="text-xs" style={{ color: "var(--gray-11)" }}>
             {trigger.deviceId}

@@ -1,0 +1,8 @@
+{
+  "type": "afvalinfo",
+  "entry": "dist/index.js",
+  "multiInstance": false,
+  "setup": {
+    "discover": { "description": "Look up waste collector for a Dutch address (zip code + house number)" }
+  }
+}

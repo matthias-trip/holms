@@ -1,0 +1,10 @@
+{
+  "type": "brink",
+  "entry": "dist/index.js",
+  "multiInstance": false,
+  "setup": {
+    "pair": {
+      "description": "Authenticate with the Brink Home cloud portal to access your ventilation system"
+    }
+  }
+}

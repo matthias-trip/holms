@@ -1,5 +1,4 @@
 import type { CoordinatorHub } from "../coordinator/coordinator-hub.js";
-import type { DeviceManager } from "../devices/manager.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { AutomationStore } from "../automation/store.js";
 import type { EventBus } from "../event-bus.js";
@@ -21,7 +20,6 @@ export class ProactiveScheduler {
 
   constructor(
     private hub: CoordinatorHub,
-    private deviceManager: DeviceManager,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private automationStore?: AutomationStore,

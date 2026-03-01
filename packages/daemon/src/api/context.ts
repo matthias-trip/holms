@@ -1,4 +1,4 @@
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { ReflexStore } from "../reflex/store.js";
 import type { ChatStore } from "../chat/store.js";
@@ -15,10 +15,11 @@ import type { PeopleStore } from "../people/store.js";
 import type { TriageStore } from "../triage/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { HistoryStore } from "../history/store.js";
+import type { SecretStore } from "../habitat/secret-store.js";
 import type { HolmsConfig } from "../config.js";
 
 export interface TRPCContext {
-  deviceManager: DeviceManager;
+  habitat: Habitat;
   memoryStore: MemoryStore;
   reflexStore: ReflexStore;
   chatStore: ChatStore;
@@ -35,6 +36,7 @@ export interface TRPCContext {
   triageStore: TriageStore;
   goalStore: GoalStore;
   historyStore: HistoryStore;
+  secretStore: SecretStore;
   config: HolmsConfig;
 }
 

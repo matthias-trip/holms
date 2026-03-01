@@ -10,5 +10,9 @@ models/
 .env
 .DS_Store
 .playwright-mcp/
-plugins/*/node_modules
+adapters/*/node_modules
+adapters/*/dist
 Archive.zip
+*.png
+secret.key
+plugins.json

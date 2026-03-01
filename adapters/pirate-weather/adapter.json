@@ -1,0 +1,5 @@
+{
+  "type": "pirate-weather",
+  "entry": "dist/index.js",
+  "multiInstance": true
+}

@@ -19,12 +19,11 @@ import {
   ChevronDown,
   ChevronRight,
   Radio,
-  Puzzle,
   Sparkles,
 } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import ChatPanel from "./components/ChatPanel";
-import DevicePanel from "./components/DevicePanel";
+import SpacesPanel from "./components/SpacesPanel";
 import MemoryPanel from "./components/MemoryPanel";
 import ReflexPanel from "./components/ReflexPanel";
 import ActivityPanel from "./components/ActivityPanel";
@@ -32,40 +31,38 @@ import AutomationsPanel from "./components/AutomationsPanel";
 import GoalsPanel from "./components/GoalsPanel";
 import PeoplePanel from "./components/PeoplePanel";
 import TriagePanel from "./components/TriagePanel";
-import IntegrationsPanel from "./components/IntegrationsPanel";
+import AdaptersPanel from "./components/AdaptersPanel";
 import ChannelsPanel from "./components/ChannelsPanel";
-import PluginsPanel from "./components/PluginsPanel";
 import UsagePanel from "./components/UsagePanel";
 import CycleOverview from "./components/CycleOverview";
 import SystemStatus from "./components/SystemStatus";
-import { trpc } from "./trpc";
 
 type Panel =
   | "dashboard"
   | "chat"
   | "activity"
   | "usage"
-  | "devices"
+  | "spaces"
   | "people"
   | "memory"
   | "reflexes"
   | "triage"
   | "automations"
   | "goals"
-  | "integrations"
-  | "channels"
-  | "plugins";
+  | "adapters"
+  | "channels";
 
 const VALID_PANELS = new Set<string>([
-  "dashboard", "chat", "activity", "usage", "devices", "people",
-  "memory", "reflexes", "triage", "automations", "goals", "integrations",
-  "channels", "plugins",
+  "dashboard", "chat", "activity", "usage", "spaces", "people",
+  "memory", "reflexes", "triage", "automations", "goals", "adapters",
+  "channels",
 ]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
-  // Backward compat: #settings → #integrations
-  if (hash === "settings") return "integrations";
+  // Backward compat
+  if (hash === "settings" || hash === "integrations" || hash === "plugins") return "adapters";
+  if (hash === "devices") return "spaces";
   return VALID_PANELS.has(hash) ? (hash as Panel) : "dashboard";
 }
 
@@ -90,7 +87,7 @@ const NAV: NavEntry[] = [
     label: "Insights",
     icon: Search,
     items: [
-      { id: "devices", label: "Devices" },
+      { id: "spaces", label: "Spaces" },
       { id: "usage", label: "Usage" },
       { id: "memory", label: "Memory" },
       { id: "reflexes", label: "Reflexes" },
@@ -101,10 +98,9 @@ const NAV: NavEntry[] = [
     label: "Settings",
     icon: Settings,
     items: [
-      { id: "integrations", label: "Integrations" },
+      { id: "adapters", label: "Adapters" },
       { id: "channels", label: "Channels" },
       { id: "people", label: "People" },
-      { id: "plugins", label: "Plugins" },
     ],
   },
 ];
@@ -114,16 +110,15 @@ const NAV_ICONS: Record<Panel, React.ComponentType<{ size: number; strokeWidth: 
   chat: MessageCircle,
   activity: Activity,
   usage: BarChart3,
-  devices: Lightbulb,
+  spaces: Lightbulb,
   people: Users,
   memory: Target,
   automations: Clock,
   goals: Sparkles,
   reflexes: Zap,
   triage: ListFilter,
-  integrations: Plug,
+  adapters: Plug,
   channels: Radio,
-  plugins: Puzzle,
 };
 
 function NavButton({
@@ -244,69 +239,6 @@ function CollapsibleGroup({
   );
 }
 
-function OnboardingBanner({ onNavigate }: { onNavigate: (panel: Panel) => void }) {
-  const { data: status } = trpc.deviceProviders.onboardingStatus.useQuery(undefined, {
-    refetchInterval: 5000,
-  });
-
-  if (!status) return null;
-
-  if (!status.hasProvider) {
-    return (
-      <div
-        className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-center gap-3"
-        style={{ background: "var(--accent-a3)", border: "1px solid var(--accent-a5)" }}
-      >
-        <Plug size={18} style={{ color: "var(--accent-9)", flexShrink: 0 }} />
-        <div className="flex-1">
-          <div className="text-sm font-medium" style={{ color: "var(--gray-12)" }}>
-            Welcome to Holms
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: "var(--gray-10)" }}>
-            Connect Home Assistant in Settings to get started
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="flat"
-          color="primary"
-          onPress={() => onNavigate("integrations")}
-        >
-          Settings
-        </Button>
-      </div>
-    );
-  }
-
-  if (status.needsOnboarding) {
-    return (
-      <div
-        className="mx-6 mt-4 px-4 py-3 rounded-lg flex items-center gap-3"
-        style={{ background: "var(--accent-a3)", border: "1px solid var(--accent-a5)" }}
-      >
-        <Search size={18} className="animate-pulse" style={{ color: "var(--accent-9)", flexShrink: 0 }} />
-        <div className="flex-1">
-          <div className="text-sm font-medium" style={{ color: "var(--gray-12)" }}>
-            Discovering your home...
-          </div>
-          <div className="text-xs mt-0.5" style={{ color: "var(--gray-10)" }}>
-            The assistant is analyzing your Home Assistant entities and setting up your home
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="flat"
-          color="primary"
-          onPress={() => onNavigate("chat")}
-        >
-          View Chat
-        </Button>
-      </div>
-    );
-  }
-
-  return null;
-}
 
 /** Returns the group label that contains the given panel, or null for top-level items. */
 function groupForPanel(panel: Panel): string | null {
@@ -424,22 +356,20 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
-        {activePanel === "dashboard" && <OnboardingBanner onNavigate={setActivePanel} />}
         <div className="flex-1 overflow-hidden">
           {activePanel === "dashboard" && <CycleOverview />}
           {activePanel === "chat" && <ChatPanel />}
           {activePanel === "activity" && <ActivityPanel />}
           {activePanel === "usage" && <UsagePanel />}
-          {activePanel === "devices" && <DevicePanel />}
+          {activePanel === "spaces" && <SpacesPanel />}
           {activePanel === "people" && <PeoplePanel />}
           {activePanel === "memory" && <MemoryPanel />}
           {activePanel === "automations" && <AutomationsPanel />}
           {activePanel === "goals" && <GoalsPanel />}
           {activePanel === "reflexes" && <ReflexPanel />}
           {activePanel === "triage" && <TriagePanel />}
-          {activePanel === "integrations" && <IntegrationsPanel />}
+          {activePanel === "adapters" && <AdaptersPanel />}
           {activePanel === "channels" && <ChannelsPanel />}
-          {activePanel === "plugins" && <PluginsPanel />}
         </div>
       </main>
     </div>

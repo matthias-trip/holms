@@ -172,10 +172,13 @@ export function initActivityPersistence(
     });
   });
 
-  eventBus.on("reflex:triggered", (data: { rule: { id: string; reason: string }; event: { deviceId: string; type: string }; action: { deviceId: string; command: string } }) => {
+  eventBus.on("reflex:triggered", (data) => {
+    const event = data.event;
+    const triggerDevice = "deviceId" in event ? (event as any).deviceId : `${(event as any).space}/${(event as any).source}`;
+    const triggerEvent = "type" in event ? (event as any).type : (event as any).property;
     store({
       id: uuid(), type: "reflex_fired",
-      data: { ruleId: data.rule.id, reason: data.rule.reason, triggerDevice: data.event.deviceId, triggerEvent: data.event.type, actionDevice: data.action.deviceId, actionCommand: data.action.command },
+      data: { ruleId: data.rule.id, reason: data.rule.reason, triggerDevice, triggerEvent, actionDevice: data.action.deviceId, actionCommand: data.action.command },
       timestamp: Date.now(), agentId: "reflex_engine",
     });
   });
@@ -195,18 +198,25 @@ export const chatRouter = t.router({
     }),
 
   send: t.procedure
-    .input(z.object({ message: z.string() }))
+    .input(z.object({
+      message: z.string(),
+      channel: z.string().optional(),
+      flow: z.union([
+        z.object({ kind: z.literal("setup"), adapterType: z.string() }),
+        z.object({ kind: z.literal("tweak"), instanceId: z.string() }),
+      ]).optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const now = Date.now();
       const msg: InboundMessage = {
         id: uuid(),
-        conversationId: "web:default",
+        conversationId: input.channel ?? "web:default",
         senderId: "web-user",
         content: input.message,
         timestamp: now,
       };
 
-      const { userMsgId, thinkingMsgId } = await ctx.channelManager.sendMessage(msg);
+      const { userMsgId, thinkingMsgId } = await ctx.channelManager.sendMessage(msg, input.flow);
 
       return {
         userMsg: { id: userMsgId, role: "user" as const, content: input.message, timestamp: now },
@@ -291,6 +301,34 @@ export const chatRouter = t.router({
         console.error("[Suggestions] Failed to generate:", err);
         return { suggestions: [] };
       }
+    }),
+
+  submitSecret: t.procedure
+    .input(z.object({ questionId: z.string(), value: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      // Find the pending question message
+      const msg = ctx.chatStore.getById(input.questionId);
+      if (!msg) throw new Error("Question not found");
+      if (msg.status !== "question_pending") throw new Error("Question already answered");
+
+      // Encrypt and store the secret
+      const ref = ctx.secretStore.store(input.value);
+
+      // Inject the ref as a user message via channelManager
+      const channel = msg.channel ?? "web:default";
+      const inbound = {
+        id: uuid(),
+        conversationId: channel,
+        senderId: "web-user",
+        content: ref,
+        timestamp: Date.now(),
+      };
+      await ctx.channelManager.sendMessage(inbound);
+
+      // Mark the question as answered
+      ctx.chatStore.updateMessage(input.questionId, { status: "question_answered" });
+
+      return { ok: true };
     }),
 
   messageFeedback: t.procedure

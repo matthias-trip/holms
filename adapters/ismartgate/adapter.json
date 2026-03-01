@@ -1,0 +1,5 @@
+{
+  "type": "ismartgate",
+  "entry": "dist/index.js",
+  "multiInstance": true
+}

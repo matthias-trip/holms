@@ -1,4 +1,69 @@
-// ── Device Types ──
+// ── Habitat Types (space/property/source model) ──
+
+export type PropertyName =
+  | "illumination"
+  | "climate"
+  | "occupancy"
+  | "access"
+  | "media"
+  | "power"
+  | "water"
+  | "safety"
+  | "air_quality"
+  | "schedule"
+  | "weather";
+
+export interface Space {
+  id: string;
+  displayName: string;
+  floor?: string;
+  sources: Source[];
+}
+
+export interface Source {
+  id: string;
+  spaceId: string;
+  adapterId: string;
+  entityId: string;
+  properties: SourceProperty[];
+  reachable: boolean;
+}
+
+export interface SourceProperty {
+  sourceId: string;
+  property: PropertyName;
+  role: string;
+  mounting?: string;
+  features: string[];
+}
+
+export interface HabitatEvent {
+  space: string;
+  source: string;
+  property: PropertyName;
+  state: Record<string, unknown>;
+  previousState?: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface AdapterConfig {
+  id: string;
+  type: string;
+  displayName?: string;
+  config: Record<string, unknown>;
+}
+
+export interface AdapterHealth {
+  id: string;
+  type: string;
+  status: "running" | "stopped" | "restarting" | "crashed";
+  entityCount: number;
+  lastPing?: number;
+  restartCount: number;
+  pid?: number;
+}
+
+// ── Device Types (deprecated — kept for backward compat with event bus events and PendingApproval) ──
 
 // Open domain system — known domains + extensible via string
 export type DeviceDomain =
@@ -170,14 +235,14 @@ export interface GoalWithEvents extends Goal {
 
 export interface DeviceEventTrigger {
   type: "device_event";
-  deviceId: string;
+  deviceId: string;       // now matches a source ID in the habitat model
   eventType?: string;     // e.g. "motion_detected", "state_changed"
   condition?: Record<string, unknown>; // optional data field matching
 }
 
 export interface StateThresholdTrigger {
   type: "state_threshold";
-  deviceId: string;
+  deviceId: string;       // now matches a source ID in the habitat model
   stateKey: string;       // e.g. "currentTemp"
   operator: "gt" | "lt" | "eq" | "gte" | "lte";
   value: number;
@@ -258,6 +323,8 @@ export type ChatMessageStatus =
   | "thinking"
   | "approval_pending"
   | "approval_resolved"
+  | "question_pending"
+  | "question_answered"
   | null;
 
 export interface ChatMessageFeedback {
@@ -275,6 +342,14 @@ export interface ChatMessage {
   approvalId?: string;
   channel?: string;
   feedback?: ChatMessageFeedback;
+}
+
+export interface QuestionMessageData {
+  questionId: string;
+  prompt: string;
+  options: string[];
+  allowFreeInput: boolean;
+  inputType?: "text" | "secret";
 }
 
 /** JSON shape stored in content when status is approval_pending or approval_resolved */
@@ -318,6 +393,7 @@ export interface ChannelCapabilities {
   threads: boolean;
   reactions: boolean;
   fileUpload: boolean;
+  interactiveQuestions: boolean;
 }
 
 export interface ChannelConfigField {
@@ -439,6 +515,15 @@ export interface TriageRule {
 
 // ── Plugin Types ──
 
+export interface AdapterInstance {
+  id: string;
+  type: string;
+  displayName?: string;
+  config: Record<string, unknown>;
+  health: AdapterHealth | null;
+  configuredEntityCount: number;
+}
+
 export interface PluginInfo {
   name: string;
   version: string;
@@ -449,6 +534,9 @@ export interface PluginInfo {
   capabilities: string[];
   installed: boolean;
   origin: "builtin" | "user";
+  multiInstance?: boolean;
+  adapterType?: string;
+  adapterInstances?: AdapterInstance[];
 }
 
 // ── Event Types for the bus ──

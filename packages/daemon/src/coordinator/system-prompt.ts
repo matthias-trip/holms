@@ -14,16 +14,26 @@ export function getStaticSystemPrompt(): string {
 /** Dynamic context — changes per turn, sent as user message prefix */
 export function buildDynamicContext(context: {
   currentTime: string;
-  deviceSummary: string;
+  spaceSummary: string;
   peopleSummary?: string;
   goalsSummary?: string;
   memoryScope?: string;
   memoryHealth?: { count: number };
   onboarding?: boolean;
+  tweakInstance?: {
+    instanceId: string;
+    type: string;
+    status: string;
+    entityCount: number;
+    config: Record<string, unknown>;
+  };
+  setupSkill?: string;
 }): string {
   let ctx = `## Current Context
 - Time: ${context.currentTime}
-- Devices: ${context.deviceSummary}`;
+
+### Spaces
+${context.spaceSummary}`;
 
   if (context.memoryHealth) {
     const n = context.memoryHealth.count;
@@ -46,6 +56,32 @@ export function buildDynamicContext(context: {
 
   if (context.goalsSummary) {
     ctx += `\n- Active Goals:\n${context.goalsSummary}`;
+  }
+
+  if (context.tweakInstance) {
+    const t = context.tweakInstance;
+    ctx += `
+
+## Mode: ADAPTER TWEAK
+You are modifying an existing adapter instance. Do NOT create a new instance, start onboarding, query memories, or list adapters.
+All instance details are provided below — work directly with this instance.
+- Instance ID: ${t.instanceId}
+- Type: ${t.type}
+- Status: ${t.status}
+- Entity count: ${t.entityCount}
+- Current config: ${JSON.stringify(t.config)}
+
+Work with this specific instance. Use adapters_discover to see its entities. To update config, call adapters_configure with id="${t.instanceId}" and type="${t.type}".`;
+  }
+
+  if (context.setupSkill) {
+    ctx += `\n\n## Mode: ADAPTER SETUP
+You are in an adapter setup flow. Follow the skill instructions below step by step.
+Do NOT query memories, list adapters, or discover gateways unless the skill instructs you to.
+Skip the normal "Before Answering" and "Before Acting" protocols — the skill provides the complete procedure.
+When collecting credentials (API keys, passwords, tokens): use ask_user with input_type: "secret" — never as plain text.
+
+${context.setupSkill}`;
   }
 
   if (context.memoryScope) {

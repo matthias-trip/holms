@@ -17,6 +17,7 @@ export class WebChannelDescriptor extends ChannelDescriptorBase {
     threads: false,
     reactions: false,
     fileUpload: false,
+    interactiveQuestions: true,
   };
 
   readonly configSchema = z.object({});

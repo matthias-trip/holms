@@ -1,12 +1,12 @@
 import type { EventBus } from "../event-bus.js";
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
 import type { PeopleStore } from "../people/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
-import { runToolQuery, buildAgentContext, type ContextCache, type ToolScope } from "./query-runner.js";
+import { runToolQuery, buildAgentContext, type ContextCache, type ToolScope, type FlowContext } from "./query-runner.js";
 
 /**
  * Per-channel stateful coordinator with SDK session resume.
@@ -17,11 +17,12 @@ export class ChatCoordinator {
   private sessionId: string | null = null;
   private currentTurnId: string | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private flowContext?: FlowContext;
 
   constructor(
     readonly channel: string,
     private eventBus: EventBus,
-    private deviceManager: DeviceManager,
+    private habitat: Habitat,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
@@ -35,6 +36,11 @@ export class ChatCoordinator {
     return this.currentTurnId;
   }
 
+  /** Set flow context (sticky — once set, persists for the lifetime of this coordinator). */
+  setFlowContext(fc: FlowContext): void {
+    if (!this.flowContext) this.flowContext = fc;
+  }
+
   /** Enqueue a task that runs serially within this channel */
   private enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const task = this.queue.then(fn, fn);
@@ -45,9 +51,12 @@ export class ChatCoordinator {
   async handleUserRequest(message: string, messageId?: string, channelDisplayName?: string, memoryScope?: string): Promise<string> {
     return this.enqueue(async () => {
       const scope = memoryScope ?? this.channel;
-      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, scope, undefined, this.goalStore));
+      const isSetupOrTweak = this.flowContext?.kind === "setup" || this.flowContext?.kind === "tweak";
+      const agentOpts = isSetupOrTweak ? { flowContext: this.flowContext, pluginManager: this.pluginManager } : undefined;
+      const toolScope = isSetupOrTweak ? "setup" as ToolScope : undefined;
+      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, scope, agentOpts, this.goalStore));
       const prompt = `${context}\n\nUser message: ${message}`;
-      return this.runQuery(prompt, "user_message", `User message: ${message}`, messageId, channelDisplayName);
+      return this.runQuery(prompt, "user_message", `User message: ${message}`, messageId, channelDisplayName, toolScope);
     });
   }
 
@@ -59,12 +68,10 @@ export class ChatCoordinator {
     messageId?: string,
   ): Promise<string> {
     return this.enqueue(async () => {
-      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, this.channel, undefined, this.goalStore));
+      const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, this.channel, undefined, this.goalStore));
 
-      // Resolve human-readable device name for the prompt
-      const device = await this.deviceManager.getDevice(action.deviceId);
-      const deviceLabel = device ? device.name : action.deviceId;
-      const actionDesc = `${action.command} on "${deviceLabel}"`;
+      // Build human-readable description for the prompt
+      const actionDesc = `${action.command} on "${action.deviceId}"`;
       const reasonClause = action.reason ? ` (${action.reason})` : "";
 
       const userPrompt = approved
@@ -98,6 +105,7 @@ export class ChatCoordinator {
         coordinatorType: "chat",
         toolScope,
         model,
+        flowContext: this.flowContext,
       });
       this.sessionId = sessionId;
       return result;

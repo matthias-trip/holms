@@ -41,10 +41,10 @@ export default function TriagePanel() {
             const cond = rule.condition;
 
             const condParts: string[] = [];
-            if (cond.deviceId) condParts.push(cond.deviceId);
-            if (cond.deviceDomain) condParts.push(cond.deviceDomain);
+            if (cond.deviceId) condParts.push(`source:${cond.deviceId}`);
+            if (cond.deviceDomain) condParts.push(`property:${cond.deviceDomain}`);
             if (cond.eventType) condParts.push(cond.eventType);
-            if (cond.area) condParts.push(cond.area);
+            if (cond.area) condParts.push(`space:${cond.area}`);
             if (cond.deltaThreshold != null) {
               condParts.push(`\u0394 \u2265 ${cond.deltaThreshold}`);
             }

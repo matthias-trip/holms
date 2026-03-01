@@ -5,7 +5,8 @@ import type { CoordinatorHub } from "../coordinator/coordinator-hub.js";
 import type { ApprovalQueue } from "../coordinator/approval-queue.js";
 import type { PeopleStore } from "../people/store.js";
 import type { ChannelStore } from "./store.js";
-import type { ChannelConversationInfo, ChannelProviderInfo, DeviceEvent } from "@holms/shared";
+import type { ChannelCapabilities, ChannelConversationInfo, ChannelProviderInfo, DeviceEvent } from "@holms/shared";
+import type { FlowContext } from "../coordinator/query-runner.js";
 import { executeApprovalDecision } from "../coordinator/approval-processor.js";
 import { extractVegaLiteBlocks, renderVegaLiteSpec } from "../history/chart-renderer.js";
 import { v4 as uuid } from "uuid";
@@ -404,7 +405,7 @@ export class ChannelManager {
   }
 
   /** Accept a message for a channel (used by tRPC for web, and internally for external providers) */
-  async sendMessage(msg: InboundMessage): Promise<{ userMsgId: string; thinkingMsgId: string }> {
+  async sendMessage(msg: InboundMessage, flowContext?: FlowContext): Promise<{ userMsgId: string; thinkingMsgId: string }> {
     const conversation = this.getConversation(msg.conversationId);
     if (!conversation) throw new Error(`Unknown conversation: ${msg.conversationId}`);
 
@@ -447,7 +448,7 @@ export class ChannelManager {
     }
 
     // Run coordinator in background (streaming via events)
-    this.runCoordinator(thinkingId, prompt, msg.conversationId, conversation.displayName, memoryScope);
+    this.runCoordinator(thinkingId, prompt, msg.conversationId, conversation.displayName, memoryScope, flowContext);
 
     return { userMsgId: msg.id, thinkingMsgId: thinkingId };
   }
@@ -457,9 +458,9 @@ export class ChannelManager {
     await this.sendMessage(msg);
   }
 
-  private async runCoordinator(thinkingId: string, prompt: string, channel: string, displayName?: string, memoryScope?: string): Promise<void> {
+  private async runCoordinator(thinkingId: string, prompt: string, channel: string, displayName?: string, memoryScope?: string, flowContext?: FlowContext): Promise<void> {
     try {
-      const result = await this.hub.handleUserRequest(prompt, thinkingId, channel, displayName, memoryScope);
+      const result = await this.hub.handleUserRequest(prompt, thinkingId, channel, displayName, memoryScope, flowContext);
       this.chatStore.updateMessage(thinkingId, {
         content: result,
         status: null,
@@ -508,6 +509,11 @@ export class ChannelManager {
         }
       }
     }
+    // Fallback: synthesize a transient conversation for dynamic channels (e.g. web:setup-*)
+    const providerId = id.split(":")[0];
+    if (providerId && this.providers.has(providerId)) {
+      return { id, providerId, displayName: id, topic: undefined, externalId: id };
+    }
     return undefined;
   }
 
@@ -539,6 +545,13 @@ export class ChannelManager {
     });
 
     return true;
+  }
+
+  /** Get the capabilities for a channel by its conversation ID (e.g. "web:default") */
+  getCapabilities(channelId: string): ChannelCapabilities | undefined {
+    const providerId = channelId.split(":")[0];
+    const descriptor = this.descriptors.get(providerId);
+    return descriptor?.capabilities;
   }
 
   /** Update a conversation's topic */

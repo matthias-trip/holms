@@ -1,0 +1,5 @@
+{
+  "type": "caldav",
+  "entry": "dist/index.js",
+  "multiInstance": true
+}

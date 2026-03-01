@@ -4,18 +4,21 @@
   "private": true,
   "workspaces": [
     "packages/shared",
+    "packages/adapter-sdk",
     "packages/daemon",
     "packages/frontend"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w @holms/daemon\" \"npm run dev -w @holms/frontend\"",
+    "dev": "concurrently \"npm run dev -w @holms/daemon\" \"wait-on tcp:3100 && npm run dev -w @holms/frontend\"",
     "dev:daemon": "npm run dev -w @holms/daemon",
     "dev:frontend": "npm run dev -w @holms/frontend",
-    "build": "npm run build -w @holms/shared && npm run build -w @holms/daemon && npm run build -w @holms/frontend",
+    "build": "npm run build -w @holms/shared && npm run build -w @holms/adapter-sdk && npm run build -w @holms/daemon && npm run build -w @holms/frontend",
+    "build:adapters": "for d in adapters/*/; do [ -f \"$d/package.json\" ] && (cd \"$d\" && npm install && npm run build) || true; done",
     "start": "npm run start -w @holms/daemon"
   },
   "devDependencies": {
     "concurrently": "^9.0",
-    "typescript": "^5.5"
+    "typescript": "^5.5",
+    "wait-on": "^9.0.4"
   }
 }

@@ -1,6 +1,7 @@
-import type { DeviceEvent, TurnTrigger } from "@holms/shared";
+import type { TurnTrigger } from "@holms/shared";
+import type { HabitatEvent } from "../habitat/types.js";
 import type { EventBus } from "../event-bus.js";
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
@@ -26,12 +27,12 @@ function relativeTimeShort(ts: number): string {
  * Multiple runs can execute concurrently (no processing gate).
  */
 export class EphemeralRunner {
-  private eventQueue: DeviceEvent[] = [];
+  private eventQueue: HabitatEvent[] = [];
   private batchTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private eventBus: EventBus,
-    private deviceManager: DeviceManager,
+    private habitat: Habitat,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
@@ -42,7 +43,7 @@ export class EphemeralRunner {
     private activityStore?: ActivityStore,
   ) {}
 
-  enqueueEvent(event: DeviceEvent): void {
+  enqueueEvent(event: HabitatEvent): void {
     this.eventQueue.push(event);
 
     if (this.batchTimer) clearTimeout(this.batchTimer);
@@ -53,7 +54,7 @@ export class EphemeralRunner {
   }
 
   async handleProactiveWakeup(wakeupType: string, extraContext: string = "", channel?: string, automationId?: string, automationSummary?: string): Promise<string> {
-    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const userPrompts: Record<string, string> = {
       situational: "PROACTIVE CHECK: Assess the current home state.",
@@ -131,9 +132,9 @@ export class EphemeralRunner {
 
   async runOnboarding(): Promise<string> {
     console.log("[EphemeralRunner] Starting onboarding — discovering home...");
-    const context = await buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, { onboarding: true }, this.goalStore) /* skip cache — onboarding is one-time */;
+    const context = await buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, { onboarding: true }, this.goalStore) /* skip cache — onboarding is one-time */;
 
-    const prompt = `${context}\n\nONBOARDING: You are setting up a new home for the first time. The entity filter is empty — no devices are visible yet. Follow the Onboarding instructions in your system prompt to discover and configure this home. Start by calling list_available_entities.`;
+    const prompt = `${context}\n\nONBOARDING: You are setting up a new home for the first time. No adapters are configured yet. Follow the Onboarding instructions in your system prompt to discover and configure this home. Start by calling adapters_discover to find available adapters, then adapters_configure to connect them, and spaces_assign to organize sources into spaces.`;
 
     return this.runEphemeral(prompt, "onboarding", "ONBOARDING: Discovering your home...", undefined, "web:default", "onboarding");
   }
@@ -145,7 +146,7 @@ export class EphemeralRunner {
     sentiment: "positive" | "negative";
     comment?: string;
   }): Promise<string> {
-    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const sentimentLabel = opts.sentiment === "positive" ? "POSITIVE (thumbs up)" : "NEGATIVE (thumbs down)";
     const commentSection = opts.comment ? `\nUser comment: "${opts.comment}"` : "";
@@ -162,7 +163,7 @@ export class EphemeralRunner {
     sentiment: "positive" | "negative";
     comment?: string;
   }): Promise<string> {
-    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const sentimentLabel = opts.sentiment === "positive" ? "POSITIVE (thumbs up)" : "NEGATIVE (thumbs down)";
     const commentSection = opts.comment ? `\nUser comment: "${opts.comment}"` : "";
@@ -173,7 +174,7 @@ export class EphemeralRunner {
   }
 
   async handleOutcomeFeedback(feedback: string): Promise<string> {
-    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
     const prompt = `${context}\n\nOUTCOME FEEDBACK: ${feedback}\n\nReflect on this feedback. What does it tell you about the user's preferences? Store relevant insights as memories and adjust your future behavior accordingly.`;
     return this.runEphemeral(prompt, "outcome_feedback", `OUTCOME FEEDBACK: ${feedback}`, undefined, undefined, "memory_only", this.config.models.lightweight);
   }
@@ -182,70 +183,23 @@ export class EphemeralRunner {
     if (this.eventQueue.length === 0) return;
 
     const events = this.eventQueue.splice(0);
-    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.deviceManager, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
+    const context = await this.contextCache.getOrBuild(() => buildAgentContext(this.habitat, this.memoryStore, this.peopleStore, undefined, undefined, this.goalStore));
 
     const eventSummary = events
       .map(
         (e) =>
-          `[${new Date(e.timestamp).toLocaleTimeString()}] ${e.deviceId}: ${e.type} — ${JSON.stringify(e.data)}`,
+          `[${new Date(e.timestamp).toLocaleTimeString()}] ${e.space}/${e.property} (${e.source}): ${JSON.stringify(e.state)}`,
       )
       .join("\n");
 
-    // Build triage stats hint for devices in this batch
-    const triageHint = this.getTriageStatsForDevices(events.map((e) => e.deviceId));
+    const prompt = `${context}\n\nHABITAT EVENTS:\n${eventSummary}\n\nProcess these events following the Before Acting protocol.`;
 
-    const prompt = `${context}\n\nDEVICE EVENTS:\n${eventSummary}${triageHint}\n\nProcess these events following the Before Acting protocol.`;
-
-    const userPrompt = `Device events:\n${eventSummary}`;
+    const userPrompt = `Habitat events:\n${eventSummary}`;
 
     // Fire and forget — don't block subsequent batches
     this.runEphemeral(prompt, "device_events", userPrompt, undefined, undefined, "device_action").catch((err) => {
       console.error("[EphemeralRunner] Batch processing error:", err);
     });
-  }
-
-  private getTriageStatsForDevices(deviceIds: string[]): string {
-    if (!this.activityStore) return "";
-
-    const sinceTs = Date.now() - 4 * 3600_000;
-    const uniqueIds = new Set(deviceIds);
-
-    try {
-      const activities = this.activityStore.getActivities(10000);
-      const relevant = activities.filter(
-        (a) =>
-          a.type === "triage_classify" &&
-          a.timestamp >= sinceTs &&
-          uniqueIds.has((a.data as { deviceId: string }).deviceId),
-      );
-
-      if (relevant.length === 0) return "";
-
-      const byDevice = new Map<string, { batched: number; immediate: number; silent: number }>();
-      for (const ev of relevant) {
-        const data = ev.data as { deviceId: string; lane: string };
-        let entry = byDevice.get(data.deviceId);
-        if (!entry) {
-          entry = { batched: 0, immediate: 0, silent: 0 };
-          byDevice.set(data.deviceId, entry);
-        }
-        if (data.lane === "batched") entry.batched++;
-        else if (data.lane === "immediate") entry.immediate++;
-        else if (data.lane === "silent") entry.silent++;
-      }
-
-      const lines: string[] = ["\n\nTriage stats for these devices (last 4h):"];
-      for (const [deviceId, stats] of byDevice) {
-        const parts: string[] = [];
-        if (stats.batched > 0) parts.push(`${stats.batched} batched`);
-        if (stats.immediate > 0) parts.push(`${stats.immediate} immediate`);
-        if (stats.silent > 0) parts.push(`${stats.silent} silent`);
-        lines.push(`- ${deviceId}: ${parts.join(", ")}`);
-      }
-      return lines.join("\n");
-    } catch {
-      return "";
-    }
   }
 
   private async runEphemeral(promptText: string, trigger: TurnTrigger, userPrompt?: string, proactiveType?: string, channel?: string, toolScope?: ToolScope, model?: string, automationId?: string, automationSummary?: string): Promise<string> {

@@ -1,0 +1,9 @@
+{
+  "type": "hue",
+  "entry": "dist/index.js",
+  "multiInstance": true,
+  "setup": {
+    "discover": { "description": "Discover Hue bridges on the local network via mDNS" },
+    "pair": { "description": "Pair with a Hue bridge (press link button first)" }
+  }
+}

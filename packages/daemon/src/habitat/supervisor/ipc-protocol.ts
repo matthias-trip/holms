@@ -1,0 +1,26 @@
+export type {
+  ParentMessage,
+  InitMessage,
+  ObserveMessage,
+  ExecuteMessage,
+  PingMessage,
+  ShutdownMessage,
+  DiscoverMessage,
+  PairMessage,
+  QueryMessage,
+  ChildMessage,
+  ReadyMessage,
+  ObserveResultMessage,
+  ExecuteResultMessage,
+  StateChangedMessage,
+  PongMessage,
+  ErrorMessage,
+  LogMessage,
+  DiscoverResultMessage,
+  PairResultMessage,
+  QueryResultMessage,
+  EntityRegistration,
+  EntityGroup,
+} from "@holms/adapter-sdk";
+
+export { PROTOCOL_VERSION } from "@holms/adapter-sdk";

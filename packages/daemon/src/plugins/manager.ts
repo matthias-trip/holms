@@ -17,8 +17,21 @@ interface PluginState {
   [name: string]: { enabled: boolean };
 }
 
+interface AdapterSetupDecl {
+  discover?: { description: string };
+  pair?: { description: string };
+}
+
+interface AdapterManifest {
+  type: string;
+  entry: string;
+  setup?: AdapterSetupDecl;
+  multiInstance?: boolean;
+}
+
 const CAPABILITY_MARKERS: [string, string][] = [
   [".mcp.json", "mcp"],
+  ["adapter.json", "adapter"],
   ["commands", "commands"],
   ["agents", "agents"],
   ["skills", "skills"],
@@ -101,6 +114,15 @@ export class PluginManager {
       const hasNodeModules = existsSync(join(pluginPath, "node_modules"));
       const installed = !hasPackageJson || hasNodeModules;
 
+      // Read adapter type from adapter.json if this plugin has the adapter capability
+      let adapterType: string | undefined;
+      if (capabilities.includes("adapter")) {
+        try {
+          const adapterJson = JSON.parse(readFileSync(join(pluginPath, "adapter.json"), "utf-8")) as AdapterManifest;
+          if (adapterJson.type) adapterType = adapterJson.type;
+        } catch { /* skip */ }
+      }
+
       results.push({
         name,
         version: manifest.version || "0.0.0",
@@ -111,6 +133,7 @@ export class PluginManager {
         capabilities,
         installed,
         origin,
+        adapterType,
       });
     }
 
@@ -167,6 +190,47 @@ export class PluginManager {
     return patterns;
   }
 
+  /** Returns adapter type + absolute module path + setup capabilities for each enabled plugin with the adapter capability. */
+  getAdapterModules(): Array<{ type: string; modulePath: string; setup?: AdapterSetupDecl; multiInstance: boolean }> {
+    const results: Array<{ type: string; modulePath: string; setup?: AdapterSetupDecl; multiInstance: boolean }> = [];
+
+    for (const plugin of this.plugins) {
+      if (!plugin.enabled || !plugin.capabilities.includes("adapter")) continue;
+
+      const adapterJsonPath = join(plugin.path, "adapter.json");
+      try {
+        const manifest = JSON.parse(
+          readFileSync(adapterJsonPath, "utf-8"),
+        ) as AdapterManifest;
+        if (manifest.type && manifest.entry) {
+          const resolved = resolve(plugin.path, manifest.entry);
+          if (!resolved.endsWith(".js")) {
+            console.warn(
+              `[Plugins] Adapter "${plugin.name}" entry must be a .js file (got: ${manifest.entry}). Build the adapter first.`,
+            );
+            continue;
+          }
+          if (!existsSync(resolved)) {
+            console.warn(
+              `[Plugins] Adapter "${plugin.name}" entry not found: ${resolved}. Build the adapter first.`,
+            );
+            continue;
+          }
+          results.push({
+            type: manifest.type,
+            modulePath: resolved,
+            setup: manifest.setup,
+            multiInstance: manifest.multiInstance ?? false,
+          });
+        }
+      } catch {
+        // skip unreadable adapter.json
+      }
+    }
+
+    return results;
+  }
+
   setEnabled(name: string, enabled: boolean): PluginInfo {
     const plugin = this.plugins.find((p) => p.name === name);
     if (!plugin) {
@@ -206,6 +270,38 @@ export class PluginManager {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, output: message };
     }
+  }
+
+  /** Returns the SKILL.md content for the first matching setup skill of the given adapter type, or undefined. */
+  getSetupSkill(adapterType: string): string | undefined {
+    for (const plugin of this.plugins) {
+      if (!plugin.enabled) continue;
+      if (!plugin.capabilities.includes("adapter") || !plugin.capabilities.includes("skills")) continue;
+
+      // Check adapter.json type matches
+      const adapterJsonPath = join(plugin.path, "adapter.json");
+      try {
+        const manifest = JSON.parse(readFileSync(adapterJsonPath, "utf-8")) as AdapterManifest;
+        if (manifest.type !== adapterType) continue;
+      } catch {
+        continue;
+      }
+
+      // Find first SKILL.md in skills/ subdirectories
+      const skillsDir = join(plugin.path, "skills");
+      try {
+        for (const entry of readdirSync(skillsDir)) {
+          const skillFile = join(skillsDir, entry, "SKILL.md");
+          if (existsSync(skillFile)) {
+            return readFileSync(skillFile, "utf-8");
+          }
+        }
+      } catch {
+        // skip unreadable skills dir
+      }
+    }
+
+    return undefined;
   }
 
   refresh(): PluginInfo[] {

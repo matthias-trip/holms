@@ -1,6 +1,6 @@
-import type { DeviceEvent } from "@holms/shared";
+import type { HabitatEvent } from "../habitat/types.js";
 import type { EventBus } from "../event-bus.js";
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
@@ -11,7 +11,7 @@ import type { ActivityStore } from "../activity/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { ChatCoordinator } from "./chat-coordinator.js";
 import { EphemeralRunner } from "./ephemeral-runner.js";
-import { ContextCache } from "./query-runner.js";
+import { ContextCache, type FlowContext } from "./query-runner.js";
 
 /**
  * Facade that owns the shared MCP pool, manages per-channel ChatCoordinators
@@ -27,7 +27,7 @@ export class CoordinatorHub {
 
   constructor(
     private eventBus: EventBus,
-    private deviceManager: DeviceManager,
+    private habitat: Habitat,
     private memoryStore: MemoryStore,
     private config: HolmsConfig,
     private mcpPool: McpServerPool,
@@ -38,7 +38,7 @@ export class CoordinatorHub {
   ) {
     this.contextCache = new ContextCache(eventBus);
     this.ephemeralRunner = new EphemeralRunner(
-      eventBus, deviceManager, memoryStore,
+      eventBus, habitat, memoryStore,
       config, this.mcpPool, this.contextCache, pluginManager, peopleStore, goalStore, activityStore,
     );
 
@@ -72,7 +72,7 @@ export class CoordinatorHub {
     let coordinator = this.chatCoordinators.get(channel);
     if (!coordinator) {
       coordinator = new ChatCoordinator(
-        channel, this.eventBus, this.deviceManager,
+        channel, this.eventBus, this.habitat,
         this.memoryStore, this.config, this.mcpPool,
         this.contextCache, this.pluginManager, this.peopleStore, this.goalStore,
       );
@@ -81,8 +81,10 @@ export class CoordinatorHub {
     return coordinator;
   }
 
-  async handleUserRequest(message: string, messageId?: string, channel: string = "web:default", channelDisplayName?: string, memoryScope?: string): Promise<string> {
-    return this.getChat(channel).handleUserRequest(message, messageId, channelDisplayName, memoryScope);
+  async handleUserRequest(message: string, messageId?: string, channel: string = "web:default", channelDisplayName?: string, memoryScope?: string, flowContext?: FlowContext): Promise<string> {
+    const chat = this.getChat(channel);
+    if (flowContext) chat.setFlowContext(flowContext);
+    return chat.handleUserRequest(message, messageId, channelDisplayName, memoryScope);
   }
 
   async handleApprovalResult(
@@ -99,7 +101,7 @@ export class CoordinatorHub {
 
   // ── Ephemeral routing ──
 
-  enqueueEvent(event: DeviceEvent): void {
+  enqueueEvent(event: HabitatEvent): void {
     this.ephemeralRunner.enqueueEvent(event);
   }
 

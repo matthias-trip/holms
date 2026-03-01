@@ -1,7 +1,7 @@
 import { query, type SDKUserMessage, type AgentDefinition } from "@anthropic-ai/claude-agent-sdk";
 import type { TurnTrigger } from "@holms/shared";
 import type { EventBus } from "../event-bus.js";
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { MemoryStore } from "../memory/store.js";
 import type { HolmsConfig } from "../config.js";
 import type { PluginManager } from "../plugins/manager.js";
@@ -10,6 +10,12 @@ import type { GoalStore } from "../goals/store.js";
 import type { McpServerPool } from "./mcp-pool.js";
 import { getStaticSystemPrompt, buildDynamicContext } from "./system-prompt.js";
 import { runWithQueryContext } from "./query-context.js";
+
+// ── Flow context ──
+
+export type FlowContext =
+  | { kind: "setup"; adapterType: string }
+  | { kind: "tweak"; instanceId: string };
 
 // ── SDK process options helper ──
 
@@ -42,16 +48,18 @@ export type ToolScope =
   | "reflection"     // reflection cycles
   | "goal_review"    // goal review cycles
   | "memory_only"    // approval results, feedback, daily summary
-  | "onboarding";    // first-time discovery
+  | "onboarding"     // first-time discovery
+  | "setup";         // setup/tweak flows — habitat + helpers
 
 const TOOL_SCOPES: Record<ToolScope, readonly string[]> = {
-  full:          ["device-query", "device-command", "memory", "reflex", "approval",
-                  "automation", "triage", "people", "goals", "history", "channel", "scheduler", "progress"],
-  device_action: ["device-query", "device-command", "memory", "approval", "automation", "history", "triage", "channel", "people", "progress"],
+  full:          ["habitat", "memory", "reflex", "approval",
+                  "automation", "triage", "people", "goals", "history", "channel", "scheduler", "progress", "ask_user"],
+  device_action: ["habitat", "memory", "approval", "automation", "history", "triage", "channel", "people", "progress", "ask_user"],
   reflection:    ["memory", "triage", "reflex", "history"],
   goal_review:   ["goals", "memory", "history"],
   memory_only:   ["memory"],
-  onboarding:    ["device-query", "memory", "people"],
+  onboarding:    ["habitat", "memory", "people", "ask_user"],
+  setup:         ["habitat", "memory", "people", "ask_user"],
 };
 
 // ── Prompt helper ──
@@ -116,7 +124,7 @@ export class ContextCache {
   private readonly maxAgeMs = 30_000;
 
   constructor(eventBus: EventBus) {
-    eventBus.on("device:event", () => this.invalidate());
+    eventBus.on("habitat:event", () => this.invalidate());
   }
 
   invalidate(): void { this.cached = null; }
@@ -134,33 +142,49 @@ export class ContextCache {
 // ── Context builder ──
 
 export async function buildAgentContext(
-  deviceManager: DeviceManager,
+  habitat: Habitat,
   memoryStore: MemoryStore,
   peopleStore?: PeopleStore,
   memoryScope?: string,
-  opts?: { onboarding?: boolean },
+  opts?: { onboarding?: boolean; flowContext?: FlowContext; pluginManager?: PluginManager },
   goalStore?: GoalStore,
 ): Promise<string> {
-  const devices = await deviceManager.getAllDevices();
+  // Build space-based summary from habitat observation
+  const observation = await habitat.engine.observe();
+  const capabilities = habitat.engine.capabilities();
   const pinnedByEntity = memoryStore.getPinnedByEntity();
-  const deviceSummary = devices
-    .map((d) => {
-      const areaStr = d.area.floor ? `${d.area.name}, ${d.area.floor}` : d.area.name;
-      const availStr = d.availability.online ? "online" : "OFFLINE";
-      const caps = d.capabilities.map((c) => c.name).join(", ");
-      const stateStr = Object.keys(d.state).length > 0
-        ? ` | ${JSON.stringify(d.state)}`
-        : "";
-      let line = `${d.name} (${d.id}) [${d.domain}, ${areaStr}, ${availStr}] | ${caps}${stateStr}`;
-      const pinned = pinnedByEntity.get(d.id);
-      if (pinned && pinned.length > 0) {
-        for (const m of pinned) {
-          line += `\n  note: "${m.content}"`;
-        }
-      }
-      return line;
+
+  const spaceSummary = capabilities.spaces
+    .map((space) => {
+      const floorStr = space.floor ? `, ${space.floor}` : "";
+      const obs = observation.spaces.find((s) => s.space === space.space);
+
+      const propLines = space.properties.map((prop) => {
+        const sourceLines = prop.sources.map((src) => {
+          const obsSource = obs?.properties
+            .find((p) => p.property === prop.property)
+            ?.sources.find((s) => s.source === src.source);
+          const stateStr = obsSource?.state && Object.keys(obsSource.state).length > 0
+            ? ` | ${JSON.stringify(obsSource.state)}`
+            : "";
+          const reachStr = src.reachable ? "" : " [UNREACHABLE]";
+          let line = `    ${src.source} (${src.role}${src.mounting ? `, ${src.mounting}` : ""}) [${src.features.join(", ")}]${reachStr}${stateStr}`;
+          const pinned = pinnedByEntity.get(src.source);
+          if (pinned && pinned.length > 0) {
+            for (const m of pinned) {
+              line += `\n      note: "${m.content}"`;
+            }
+          }
+          return line;
+        });
+        return `  ${prop.property}:\n${sourceLines.join("\n")}`;
+      });
+
+      return `${space.displayName} (${space.space}${floorStr}):\n${propLines.join("\n")}`;
     })
-    .join("\n");
+    .join("\n\n");
+
+  const spaceSummaryFinal = spaceSummary || "(no spaces configured)";
 
   let peopleSummary: string | undefined;
   if (peopleStore) {
@@ -197,14 +221,39 @@ export async function buildAgentContext(
 
   const memoryCount = memoryStore.getCount();
 
+  // Build tweak instance context when in a tweak flow
+  let tweakInstance: Parameters<typeof buildDynamicContext>[0]["tweakInstance"];
+  if (opts?.flowContext?.kind === "tweak") {
+    const instanceId = opts.flowContext.instanceId;
+    const config = habitat.configStore.getAdapter(instanceId);
+    const health = habitat.supervisor.getAdapterHealth(instanceId);
+    if (config) {
+      tweakInstance = {
+        instanceId,
+        type: config.type,
+        status: health?.status ?? "stopped",
+        entityCount: health?.entityCount ?? 0,
+        config: config.config,
+      };
+    }
+  }
+
+  // Load setup skill when in a setup flow
+  let setupSkill: string | undefined;
+  if (opts?.flowContext?.kind === "setup" && opts.pluginManager) {
+    setupSkill = opts.pluginManager.getSetupSkill(opts.flowContext.adapterType);
+  }
+
   return buildDynamicContext({
     currentTime: new Date().toLocaleString(),
-    deviceSummary,
+    spaceSummary: spaceSummaryFinal,
     peopleSummary,
     goalsSummary,
     memoryScope,
     memoryHealth: { count: memoryCount },
     onboarding: opts?.onboarding,
+    tweakInstance,
+    setupSkill,
   });
 }
 
@@ -231,6 +280,8 @@ export interface ToolQueryOptions {
   toolScope?: ToolScope;
   /** Override the model for this query (defaults to config.models.coordinator). */
   model?: string;
+  /** Flow context for setup/tweak flows. */
+  flowContext?: FlowContext;
 }
 
 export interface ToolQueryResult {
@@ -241,7 +292,7 @@ export interface ToolQueryResult {
 }
 
 export async function runToolQuery(opts: ToolQueryOptions): Promise<ToolQueryResult> {
-  return runWithQueryContext(opts.channel, opts.messageId, () => runToolQueryInner(opts));
+  return runWithQueryContext(opts.channel, opts.messageId, () => runToolQueryInner(opts), opts.flowContext);
 }
 
 function buildAnalyzeHistoryAgent(config: HolmsConfig): AgentDefinition {
@@ -336,6 +387,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
   let deepReasonStartTime = 0;
   let analyzeHistoryToolUseId: string | null = null;
   let analyzeHistoryStartTime = 0;
+  let sawAskUser = false;
   let newSessionId: string | null = opts.sessionId;
 
   const plugins = opts.pluginManager?.getEnabledSdkPlugins() ?? [];
@@ -381,6 +433,20 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
       const isParent = msg.parent_tool_use_id == null;
       const event = msg.event as Record<string, unknown> | undefined;
 
+      // When a new parent text block starts after prior text (e.g. text →
+      // tool_use → text), insert a paragraph break so blocks don't fuse.
+      if (isParent && event?.type === "content_block_start") {
+        const block = event.content_block as Record<string, unknown> | undefined;
+        if (block?.type === "text" && streamedText.length > 0) {
+          streamedText += "\n\n";
+          opts.eventBus.emit("chat:token", {
+            token: "\n\n",
+            messageId: opts.messageId,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
       if (event?.type === "content_block_delta") {
         const delta = event.delta as Record<string, unknown> | undefined;
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
@@ -424,6 +490,10 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
               turnId,
               timestamp: Date.now(),
             });
+
+            if (toolName === "mcp__ask_user__ask_user") {
+              sawAskUser = true;
+            }
 
             if (toolName === "deep_reason") {
               deepReasonToolUseId = b.id as string;
@@ -536,16 +606,19 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
     ? streamedText.trim()
     : undefined;
 
+  const isAskUserTurn = sawAskUser;
+  const effectiveResult = isAskUserTurn ? "" : result;
+
   opts.eventBus.emit("chat:stream_end", {
     messageId: opts.messageId,
-    content: result,
+    content: effectiveResult,
     reasoning,
     timestamp: Date.now(),
   });
 
-  if (result) {
+  if (effectiveResult) {
     opts.eventBus.emit("chat:response", {
-      message: result,
+      message: effectiveResult,
       timestamp: Date.now(),
     });
   }
@@ -556,7 +629,7 @@ async function runToolQueryInner(opts: ToolQueryOptions): Promise<ToolQueryResul
     durationMs: 0, durationApiMs: 0, numTurns: 0,
   };
 
-  return { result, reasoning, sessionId: newSessionId, metrics: finalMetrics };
+  return { result: effectiveResult, reasoning, sessionId: newSessionId, metrics: finalMetrics };
 }
 
 // ── Simple tracked query (no MCP tools, used for suggestions etc.) ──

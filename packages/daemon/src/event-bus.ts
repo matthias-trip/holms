@@ -10,9 +10,11 @@ import type {
   TriageLane,
   ChannelStatus,
 } from "@holms/shared";
+import type { HabitatEvent } from "./habitat/types.js";
 
 export interface EventBusEvents {
   "device:event": (event: DeviceEvent) => void;
+  "habitat:event": (event: HabitatEvent) => void;
   "agent:thinking": (data: {
     prompt: string;
     turnId?: string;
@@ -42,7 +44,7 @@ export interface EventBusEvents {
   }) => void;
   "reflex:triggered": (data: {
     rule: ReflexRule;
-    event: DeviceEvent;
+    event: DeviceEvent | HabitatEvent;
     action: DeviceCommand;
   }) => void;
   "chat:response": (data: { message: string; timestamp: number }) => void;
@@ -102,7 +104,7 @@ export interface EventBusEvents {
   "automation:time_fired": (data: { automation: Automation; timestamp: number }) => void;
   "automation:event_fired": (data: {
     automation: Automation;
-    event: DeviceEvent;
+    event: DeviceEvent | HabitatEvent;
     timestamp: number;
   }) => void;
   "chat:token": (data: {
@@ -197,6 +199,7 @@ export interface EventBusEvents {
     total: number;
     message?: string;
   }) => void;
+  "adapter:log": (data: { adapterId: string; level: string; message: string; timestamp: number }) => void;
   "activity:stored": (activity: AgentActivity) => void;
 }
 

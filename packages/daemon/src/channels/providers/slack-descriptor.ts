@@ -17,6 +17,7 @@ export class SlackChannelDescriptor extends ChannelDescriptorBase {
     threads: true,
     reactions: true,
     fileUpload: false,
+    interactiveQuestions: false,
   };
 
   readonly configSchema = z.object({

@@ -1,4 +1,5 @@
-import type { DeviceEvent, Automation } from "@holms/shared";
+import type { Automation } from "@holms/shared";
+import type { HabitatEvent } from "../habitat/types.js";
 import type { AutomationStore } from "./store.js";
 
 const DEBOUNCE_MS = 60_000; // 60 seconds
@@ -8,22 +9,22 @@ export class AutomationMatcher {
 
   constructor(private store: AutomationStore) {}
 
-  matchEvent(event: DeviceEvent): Automation[] {
+  matchEvent(event: HabitatEvent): Automation[] {
     const matched: Automation[] = [];
 
-    // Check device_event automations
+    // Check device_event automations — match on source ID
     const deviceEventAutomations = this.store.getDeviceEventAutomations();
     for (const automation of deviceEventAutomations) {
       if (automation.trigger.type !== "device_event") continue;
       const t = automation.trigger;
 
-      if (t.deviceId !== event.deviceId) continue;
-      if (t.eventType && t.eventType !== event.type) continue;
+      // Match deviceId against source ID
+      if (t.deviceId !== event.source) continue;
 
       if (t.condition) {
         let conditionMatch = true;
         for (const [key, value] of Object.entries(t.condition)) {
-          if (event.data[key] !== value) {
+          if (event.state[key] !== value) {
             conditionMatch = false;
             break;
           }
@@ -35,15 +36,15 @@ export class AutomationMatcher {
       matched.push(automation);
     }
 
-    // Check state_threshold automations
+    // Check state_threshold automations — match on source ID
     const thresholdAutomations = this.store.getStateThresholdAutomations();
     for (const automation of thresholdAutomations) {
       if (automation.trigger.type !== "state_threshold") continue;
       const t = automation.trigger;
 
-      if (t.deviceId !== event.deviceId) continue;
+      if (t.deviceId !== event.source) continue;
 
-      const value = event.data[t.stateKey];
+      const value = event.state[t.stateKey];
       if (typeof value !== "number") continue;
 
       let passes = false;
@@ -61,7 +62,7 @@ export class AutomationMatcher {
     }
 
     if (matched.length > 0) {
-      console.log(`[AutomationMatcher] Event ${event.deviceId}:${event.type} → ${matched.length} automation(s) matched`);
+      console.log(`[AutomationMatcher] Event ${event.source}:${event.property} → ${matched.length} automation(s) matched`);
     }
 
     // Mark matched automations as fired

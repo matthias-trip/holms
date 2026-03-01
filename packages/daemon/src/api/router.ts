@@ -1,6 +1,6 @@
 import { initTRPC } from "@trpc/server";
 import type { TRPCContext } from "./context.js";
-import { devicesRouter } from "./routers/devices.js";
+import { spacesRouter } from "./routers/spaces.js";
 import { eventsRouter } from "./routers/events.js";
 import { memoryRouter } from "./routers/memory.js";
 import { reflexRouter } from "./routers/reflex.js";
@@ -10,7 +10,6 @@ import { automationRouter } from "./routers/automation.js";
 import { agentsRouter } from "./routers/agents.js";
 import { pluginsRouter } from "./routers/plugins.js";
 import { channelsRouter } from "./routers/channels.js";
-import { deviceProvidersRouter } from "./routers/device-providers.js";
 import { peopleRouter } from "./routers/people.js";
 import { triageRouter } from "./routers/triage.js";
 import { goalsRouter } from "./routers/goals.js";
@@ -20,7 +19,7 @@ import { systemRouter } from "./routers/system.js";
 const t = initTRPC.context<TRPCContext>().create();
 
 export const appRouter = t.router({
-  devices: devicesRouter,
+  spaces: spacesRouter,
   events: eventsRouter,
   memory: memoryRouter,
   reflex: reflexRouter,
@@ -30,7 +29,6 @@ export const appRouter = t.router({
   agents: agentsRouter,
   plugins: pluginsRouter,
   channels: channelsRouter,
-  deviceProviders: deviceProvidersRouter,
   people: peopleRouter,
   triage: triageRouter,
   goals: goalsRouter,

@@ -2,14 +2,14 @@ import { v4 as uuid } from "uuid";
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { PendingApproval } from "@holms/shared";
-import type { DeviceManager } from "../devices/manager.js";
+import type { Habitat } from "../habitat/habitat.js";
 import type { EventBus } from "../event-bus.js";
 
 export class ApprovalQueue {
   private pending = new Map<string, PendingApproval>();
 
   constructor(
-    private deviceManager: DeviceManager,
+    private habitat: Habitat,
     private eventBus: EventBus,
   ) {}
 
@@ -40,9 +40,9 @@ export class ApprovalQueue {
     entry.status = "approved";
     this.pending.delete(id);
 
-    await this.deviceManager.executeCommand(
-      entry.deviceId,
-      entry.command,
+    await this.habitat.engine.influence(
+      "",
+      { source: entry.deviceId },
       entry.params,
     );
 

@@ -18,6 +18,7 @@ export class WhatsAppChannelDescriptor extends ChannelDescriptorBase {
     threads: false,
     reactions: false,
     fileUpload: false,
+    interactiveQuestions: false,
   };
 
   readonly configSchema = z.object({

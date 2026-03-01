@@ -1,0 +1,5 @@
+{
+  "name": "PirateWeather",
+  "version": "1.0.0",
+  "description": "Weather forecasts via the PirateWeather API (Dark Sky compatible)"
+}

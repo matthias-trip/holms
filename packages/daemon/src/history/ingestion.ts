@@ -1,6 +1,5 @@
-import type { DeviceEvent } from "@holms/shared";
+import type { HabitatEvent } from "../habitat/types.js";
 import type { EventBus } from "../event-bus.js";
-import type { DeviceManager } from "../devices/manager.js";
 import type { HistoryStore, HistoryRow, CatalogEntry } from "./store.js";
 
 interface IngestionConfig {
@@ -77,12 +76,11 @@ export class HistoryIngestion {
   private lastStoredAt = new Map<string, number>();
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private catalogTimer: ReturnType<typeof setInterval> | null = null;
-  private listener: ((event: DeviceEvent) => void) | null = null;
+  private listener: ((event: HabitatEvent) => void) | null = null;
 
   constructor(
     private store: HistoryStore,
     private eventBus: EventBus,
-    private deviceManager: DeviceManager,
     private config: IngestionConfig,
   ) {}
 
@@ -98,7 +96,7 @@ export class HistoryIngestion {
     }).catch((err) => console.error("[History] Failed to seed known entities:", err));
 
     this.listener = (event) => this.handleEvent(event);
-    this.eventBus.on("device:event", this.listener);
+    this.eventBus.on("habitat:event", this.listener);
 
     this.flushTimer = setInterval(() => {
       this.flush().catch((err) => console.error("[History] Flush error:", err));
@@ -115,7 +113,7 @@ export class HistoryIngestion {
 
   stop(): void {
     if (this.listener) {
-      this.eventBus.off("device:event", this.listener);
+      this.eventBus.off("habitat:event", this.listener);
       this.listener = null;
     }
     if (this.flushTimer) {
@@ -131,15 +129,15 @@ export class HistoryIngestion {
     this.flush().catch((err) => console.error("[History] Final flush error:", err));
   }
 
-  private handleEvent(event: DeviceEvent): void {
+  private handleEvent(event: HabitatEvent): void {
     const now = new Date(event.timestamp);
-    const domain = event.domain ?? "unknown";
-    const area = event.area ?? "unknown";
+    const domain = event.property ?? "unknown";
+    const area = event.space ?? "unknown";
 
-    for (const [key, value] of Object.entries(event.data)) {
+    for (const [key, value] of Object.entries(event.state)) {
       if (value === undefined || value === null) continue;
 
-      const entityId = `${event.deviceId}.${key}`;
+      const entityId = `${event.source}.${key}`;
       const valueNum = parseNumeric(value);
       const valueStr = String(value);
 
@@ -181,10 +179,7 @@ export class HistoryIngestion {
       // Catalog upsert on first-seen
       if (!this.knownEntities.has(entityId)) {
         this.knownEntities.add(entityId);
-        const device = this.deviceManager.getCachedDevice(event.deviceId);
-        const friendlyName = device
-          ? `${device.name} — ${key}`
-          : `${event.deviceId} — ${key}`;
+        const friendlyName = `${event.source} — ${key}`;
         const valueType = inferValueType(value);
 
         this.eventBus.emit("history:entity_discovered", {

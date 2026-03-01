@@ -1,0 +1,5 @@
+{
+  "name": "CalDAV Calendar",
+  "description": "Connect to CalDAV calendars (Nextcloud, iCloud, Google, Radicale, etc.)",
+  "version": "0.1.0"
+}
