@@ -57,12 +57,13 @@ WORKDIR /app
 # Copy workspace structure
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/adapter-sdk/package.json packages/adapter-sdk/
 COPY packages/daemon/package.json packages/daemon/
 COPY packages/frontend/package.json packages/frontend/
 
 # Copy built artifacts
 COPY --from=builder /app/packages/shared/src/ packages/shared/src/
-COPY --from=builder /app/packages/adapter-sdk/ packages/adapter-sdk/
+COPY --from=builder /app/packages/adapter-sdk/dist/ packages/adapter-sdk/dist/
 COPY --from=builder /app/packages/daemon/dist/ packages/daemon/dist/
 COPY --from=builder /app/packages/daemon/assets/ packages/daemon/assets/
 COPY --from=builder /app/packages/frontend/dist/ packages/frontend/dist/
