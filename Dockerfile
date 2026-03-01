@@ -8,6 +8,7 @@ WORKDIR /app
 # Copy package files first for layer caching
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/adapter-sdk/package.json packages/adapter-sdk/
 COPY packages/daemon/package.json packages/daemon/
 COPY packages/frontend/package.json packages/frontend/
 
@@ -16,11 +17,16 @@ RUN npm ci
 # Copy source
 COPY tsconfig.base.json ./
 COPY packages/shared/ packages/shared/
+COPY packages/adapter-sdk/ packages/adapter-sdk/
 COPY packages/daemon/ packages/daemon/
 COPY packages/frontend/ packages/frontend/
 
-# Build: shared → daemon → frontend
+# Copy adapter source (built in-container so node_modules are linux-native)
+COPY adapters/ adapters/
+
+# Build: shared → adapter-sdk → daemon → frontend
 RUN npm run build
+RUN for d in adapters/*/; do [ -f "$d/package.json" ] && (cd "$d" && npm install && npm run build) || true; done
 
 # Copy non-TS assets (prompt .md files) into daemon dist
 RUN find packages/daemon/src -name '*.md' | while read f; do \
@@ -51,14 +57,20 @@ WORKDIR /app
 # Copy workspace structure
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/adapter-sdk/package.json packages/adapter-sdk/
 COPY packages/daemon/package.json packages/daemon/
 COPY packages/frontend/package.json packages/frontend/
 
 # Copy built artifacts
 COPY --from=builder /app/packages/shared/src/ packages/shared/src/
+COPY --from=builder /app/packages/adapter-sdk/dist/ packages/adapter-sdk/dist/
+COPY --from=builder /app/packages/adapter-sdk/package.json packages/adapter-sdk/
 COPY --from=builder /app/packages/daemon/dist/ packages/daemon/dist/
 COPY --from=builder /app/packages/daemon/assets/ packages/daemon/assets/
 COPY --from=builder /app/packages/frontend/dist/ packages/frontend/dist/
+
+# Copy built adapters (source + dist + node_modules)
+COPY --from=builder /app/adapters/ adapters/
 
 # Copy node_modules (hoisted by npm workspaces to root)
 COPY --from=builder /app/node_modules/ node_modules/
@@ -78,10 +90,10 @@ ENV HOLMS_DB_PATH=/data/holms.db
 ENV HOLMS_HISTORY_DB_PATH=/data/holms-history.duckdb
 ENV HOLMS_HF_CACHE_DIR=/models
 ENV HOLMS_FRONTEND_DIST=/app/packages/frontend/dist
-ENV HOLMS_PLUGINS_DIR=/plugins
+ENV HOLMS_ADAPTERS_DIR=/adapters-user
 
 # Ensure writable directories exist and are owned by holms user
-RUN mkdir -p /data /models /plugins && chown -R holms:holms /app /data /models /plugins
+RUN mkdir -p /data /models /adapters-user && chown -R holms:holms /app /data /models /adapters-user
 
 EXPOSE 3100
 
