@@ -11,8 +11,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "composite": true
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src"]
 }
