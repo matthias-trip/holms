@@ -34,6 +34,9 @@ import { WebProvider } from "./channels/providers/web-provider.js";
 import { WebChannelDescriptor } from "./channels/providers/web-descriptor.js";
 import { SlackChannelDescriptor } from "./channels/providers/slack-descriptor.js";
 import { WhatsAppChannelDescriptor } from "./channels/providers/whatsapp-descriptor.js";
+import { NativeChannelDescriptor } from "./channels/providers/native-descriptor.js";
+import { NativeProvider } from "./channels/providers/native-provider.js";
+
 import { PeopleStore } from "./people/store.js";
 import { createPeopleToolsServer } from "./people/tools.js";
 import { GoalStore } from "./goals/store.js";
@@ -42,6 +45,7 @@ import { HistoryStore } from "./history/store.js";
 import { HistoryIngestion } from "./history/ingestion.js";
 import { createHistoryToolsServer } from "./history/tools.js";
 import { SecretStore } from "./habitat/secret-store.js";
+import { AuthStore } from "./auth/auth-store.js";
 import { startApiServer } from "./api/server.js";
 import { initActivityPersistence } from "./api/routers/chat.js";
 
@@ -76,6 +80,9 @@ async function main() {
   const secretKeyPath = resolve(dirname(config.dbPath), "secret.key");
   const secretStore = new SecretStore(db, secretKeyPath);
   console.log(`[Init] SecretStore initialized`);
+
+  // 3c. Init AuthStore (password + JWT + device token authentication)
+  const authStore = new AuthStore(db);
 
   // 4a. Init PluginManager (needed before Habitat for adapter discovery)
   const pluginManager = new PluginManager(config.builtinPluginsDir, config.pluginsDir, config.pluginsStatePath);
@@ -173,6 +180,21 @@ async function main() {
 
   // 11. Start Habitat (loads config, starts adapters)
   await habitat.start();
+
+  // 11b. Ensure person location spaces in habitat
+  for (const person of peopleStore.getAll()) {
+    habitat.ensurePersonLocation(person.id, person.name);
+    // Seed current location from history into habitat state cache
+    const loc = peopleStore.getCurrentLocation(person.id);
+    if (loc) {
+      habitat.updatePersonLocation(person.id, {
+        zone_id: loc.zoneId,
+        zone_name: loc.zoneName,
+        event: loc.event,
+        since: loc.timestamp,
+      });
+    }
+  }
 
   // 12. Wire event flow — habitat events drive everything
   eventBus.on("habitat:event", (event) => {
@@ -297,11 +319,16 @@ async function main() {
       goalStore,
       historyStore,
       secretStore,
+      authStore,
       config,
     },
     config.apiPort,
     config.frontendDistDir,
   );
+
+  // 13b. Register native app channel (needs gateway from apiServer)
+  channelManager.registerDescriptor(new NativeChannelDescriptor(apiServer.nativeGateway));
+  await channelManager.register(new NativeProvider(apiServer.nativeGateway));
 
   // 14. Start ProactiveScheduler
   scheduler.start();

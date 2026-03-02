@@ -195,6 +195,12 @@ export async function buildAgentContext(
         .map((p) => {
           const notify = p.primaryChannel ? `notify via: ${p.primaryChannel}` : "no notification channel";
           const parts = [`${p.name} [${p.id}]`, notify];
+          // Location
+          const loc = peopleStore.getCurrentLocation(p.id);
+          if (loc) {
+            const since = new Date(loc.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            parts.push(loc.event === "enter" ? `Location: ${loc.zoneName} (since ${since})` : `Left: ${loc.zoneName} (at ${since})`);
+          }
           const pinned = pinnedByPerson.get(p.id);
           if (pinned && pinned.length > 0) {
             const facts = pinned.map((m) => m.content).join("; ");

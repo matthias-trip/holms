@@ -11,7 +11,8 @@ export type PropertyName =
   | "safety"
   | "air_quality"
   | "schedule"
-  | "weather";
+  | "weather"
+  | "location";
 
 export interface Space {
   id: string;
@@ -448,6 +449,25 @@ export interface Person {
   channels: PersonChannel[];
   createdAt: number;
   updatedAt: number;
+}
+
+// ── Location Types ──
+
+export interface LocationZone {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface LocationUpdate {
+  zoneId: string | null;
+  zoneName: string;
+  event: "enter" | "exit";
+  timestamp: number;
 }
 
 // ── Agent Activity Types ──

@@ -9,6 +9,7 @@ import type {
   TurnTrigger,
   TriageLane,
   ChannelStatus,
+  LocationZone,
 } from "@holms/shared";
 import type { HabitatEvent } from "./habitat/types.js";
 
@@ -201,6 +202,7 @@ export interface EventBusEvents {
   }) => void;
   "adapter:log": (data: { adapterId: string; level: string; message: string; timestamp: number }) => void;
   "activity:stored": (activity: AgentActivity) => void;
+  "location:zones_changed": (data: { zones: LocationZone[] }) => void;
 }
 
 export class EventBus {

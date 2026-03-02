@@ -105,9 +105,9 @@ export class ActivityStore {
     const rows = this.db
       .prepare(
         `SELECT * FROM (
-          SELECT * FROM agent_activities WHERE turn_id IS NULL AND type != 'triage_classify' ORDER BY timestamp DESC LIMIT ?
+          SELECT * FROM (SELECT * FROM agent_activities WHERE turn_id IS NULL AND type != 'triage_classify' ORDER BY timestamp DESC LIMIT ?)
           UNION ALL
-          SELECT * FROM agent_activities WHERE turn_id IS NULL AND type = 'triage_classify' ORDER BY timestamp DESC LIMIT 20
+          SELECT * FROM (SELECT * FROM agent_activities WHERE turn_id IS NULL AND type = 'triage_classify' ORDER BY timestamp DESC LIMIT 20)
         ) ORDER BY timestamp DESC LIMIT ?`,
       )
       .all(limit, limit) as ActivityRow[];

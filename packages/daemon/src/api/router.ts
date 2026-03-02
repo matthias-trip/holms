@@ -14,7 +14,8 @@ import { peopleRouter } from "./routers/people.js";
 import { triageRouter } from "./routers/triage.js";
 import { goalsRouter } from "./routers/goals.js";
 import { historyRouter } from "./routers/history.js";
-import { systemRouter } from "./routers/system.js";
+import { systemRouter, authRouter } from "./routers/system.js";
+import { zonesRouter } from "./routers/zones.js";
 
 const t = initTRPC.context<TRPCContext>().create();
 
@@ -34,6 +35,8 @@ export const appRouter = t.router({
   goals: goalsRouter,
   history: historyRouter,
   system: systemRouter,
+  auth: authRouter,
+  zones: zonesRouter,
 });
 
 export type AppRouter = typeof appRouter;

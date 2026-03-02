@@ -16,3 +16,5 @@ Archive.zip
 *.png
 secret.key
 plugins.json
+*.p8
+packages/daemon/keys/

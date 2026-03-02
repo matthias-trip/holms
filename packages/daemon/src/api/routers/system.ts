@@ -1,4 +1,5 @@
 import { initTRPC } from "@trpc/server";
+import { z } from "zod";
 import type { TRPCContext } from "../context.js";
 
 const t = initTRPC.context<TRPCContext>().create();
@@ -130,5 +131,51 @@ export const systemRouter = t.router({
         message: `Could not reach Watchtower: ${err instanceof Error ? err.message : String(err)}`,
       };
     }
+  }),
+});
+
+// --- Auth router (authenticated device management) ---
+
+export const authRouter = t.router({
+  /** List paired devices. */
+  devices: t.procedure.query(({ ctx }) => {
+    return ctx.authStore.listDeviceTokens();
+  }),
+
+  /** Revoke a paired device by ID. */
+  revokeDevice: t.procedure
+    .input(z.object({ deviceId: z.string() }))
+    .mutation(({ ctx, input }) => {
+      const revoked = ctx.authStore.revokeDeviceToken(input.deviceId);
+      return { revoked };
+    }),
+
+  /** Generate a pairing code + QR SVG. Optionally link to a person. */
+  pairingCode: t.procedure
+    .input(z.object({ personId: z.string().optional() }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.authStore.createPairingCode(
+        input?.personId,
+        // Pass empty string — frontend knows its own URL
+        undefined,
+      );
+      return result;
+    }),
+
+  /** Change the admin password. Requires current password. */
+  changePassword: t.procedure
+    .input(z.object({ currentPassword: z.string(), newPassword: z.string().min(4) }))
+    .mutation(async ({ ctx, input }) => {
+      const changed = await ctx.authStore.changePassword(input.currentPassword, input.newPassword);
+      if (!changed) {
+        throw new Error("Current password is incorrect");
+      }
+      return { ok: true };
+    }),
+
+  /** Revoke all web sessions (invalidates all JWTs + refresh tokens). */
+  revokeAllSessions: t.procedure.mutation(({ ctx }) => {
+    ctx.authStore.revokeAllSessions();
+    return { ok: true };
   }),
 });

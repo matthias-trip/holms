@@ -16,6 +16,7 @@ import type { TriageStore } from "../triage/store.js";
 import type { GoalStore } from "../goals/store.js";
 import type { HistoryStore } from "../history/store.js";
 import type { SecretStore } from "../habitat/secret-store.js";
+import type { AuthStore } from "../auth/auth-store.js";
 import type { HolmsConfig } from "../config.js";
 
 export interface TRPCContext {
@@ -37,6 +38,7 @@ export interface TRPCContext {
   goalStore: GoalStore;
   historyStore: HistoryStore;
   secretStore: SecretStore;
+  authStore: AuthStore;
   config: HolmsConfig;
 }
 

@@ -73,40 +73,43 @@ export class Habitat {
     const data = this.configStore.loadAll();
     this.registry.load(data.spaces, data.sources, data.sourceProperties);
 
-    // Start all configured adapters in parallel
-    const results = await Promise.allSettled(
+    // Fire-and-forget: start adapters in the background
+    // They'll register entities and emit events via callbacks as they come online
+    Promise.allSettled(
       data.adapters.map((adapter) => this.supervisor.startAdapter(adapter)),
-    );
-    for (const r of results) {
-      if (r.status === "rejected") {
-        console.error(`[Habitat] Adapter failed to start:`, r.reason);
+    ).then((results) => {
+      for (const r of results) {
+        if (r.status === "rejected") {
+          console.error(`[Habitat] Adapter failed to start:`, r.reason);
+        }
       }
-    }
+    });
 
-    console.log(`[Habitat] Started — ${data.spaces.length} space(s), ${data.adapters.length} adapter(s)`);
+    console.log(`[Habitat] Started — ${data.spaces.length} space(s), ${data.adapters.length} adapter(s) (booting in background)`);
 
-    // Seed state cache: query all adapters once so the DB has current state
-    if (data.sources.length > 0) {
-      this.engine.observe().then(
-        (result) => {
-          // Persist each source's live state into the cache
-          for (const sp of result.spaces) {
-            for (const prop of sp.properties) {
-              for (const src of prop.sources) {
-                if (Object.keys(src.state).length > 0 && !("error" in src.state)) {
-                  this.configStore.upsertState(src.source, prop.property, src.state, undefined, Date.now());
+    // Seed state cache after a short delay to give fast adapters time to connect
+    setTimeout(() => {
+      if (data.sources.length > 0) {
+        this.engine.observe().then(
+          (result) => {
+            // Persist each source's live state into the cache
+            for (const sp of result.spaces) {
+              for (const prop of sp.properties) {
+                for (const src of prop.sources) {
+                  if (Object.keys(src.state).length > 0 && !("error" in src.state)) {
+                    this.configStore.upsertState(src.source, prop.property, src.state, undefined, Date.now());
+                  }
                 }
               }
             }
-          }
-          console.log(`[Habitat] State cache seeded`);
-        },
-        (err) => console.warn(`[Habitat] State cache seed failed:`, err),
-      );
-    }
+            console.log(`[Habitat] State cache seeded`);
+          },
+          (err) => console.warn(`[Habitat] State cache seed failed:`, err),
+        );
+      }
+      this.seedCollections();
+    }, 3000);
 
-    // Seed collections and schedule periodic refresh (every 5 min)
-    this.seedCollections();
     this.collectionTimer = setInterval(() => this.seedCollections(), 5 * 60 * 1000);
   }
 
@@ -202,5 +205,79 @@ export class Habitat {
   /** Get recent events from the ring buffer */
   getRecentEvents(limit = 50): HabitatEvent[] {
     return this.recentEvents.slice(-limit);
+  }
+
+  /**
+   * Ensure a virtual people adapter and person space exist for location tracking.
+   * Creates the adapter, space, source, and source property if missing.
+   */
+  ensurePersonLocation(personId: string, personName: string): void {
+    // 1. Ensure virtual "people" adapter
+    if (!this.configStore.getAdapter("people")) {
+      this.configStore.createAdapter({
+        id: "people",
+        type: "people",
+        config: {},
+      });
+    }
+
+    // 2. Ensure space `person:<slug>`
+    const slug = personName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const spaceId = `person:${slug}`;
+    if (!this.configStore.getSpace(spaceId)) {
+      this.configStore.createSpace({
+        id: spaceId,
+        displayName: personName,
+      });
+    }
+
+    // 3. Ensure source linking adapter entity to the space
+    const entityId = `location:${personId}`;
+    const sourceId = `people:${entityId}`;
+    if (!this.configStore.getSource(sourceId)) {
+      this.configStore.createSource({
+        id: sourceId,
+        spaceId,
+        adapterId: "people",
+        entityId,
+      });
+    }
+
+    // 4. Ensure source property
+    const existingProps = this.configStore.listSourceProperties(sourceId);
+    if (!existingProps.some((p) => p.property === "location")) {
+      this.configStore.setSourceProperty({
+        sourceId,
+        property: "location",
+        role: "primary",
+        features: ["geofence"],
+      });
+    }
+
+    // 5. Reload registry and mark reachable
+    this.reload();
+    this.registry.setAdapterReachability("people", true);
+  }
+
+  /**
+   * Update a person's location in the habitat (fires a habitat event).
+   */
+  updatePersonLocation(personId: string, state: Record<string, unknown>): void {
+    const entityId = `location:${personId}`;
+
+    // Find the source for this person
+    const spaces = this.registry.getAllSpaces();
+    for (const space of spaces) {
+      for (const source of space.sources) {
+        if (source.adapterId === "people" && source.entityId === entityId) {
+          // Get previous state from cache
+          const cached = this.configStore.getState(source.id, "location");
+          const previousState = cached?.state ?? undefined;
+          this.engine.handleStateChange("people", entityId, "location", state, previousState);
+          return;
+        }
+      }
+    }
+    console.warn(`[Habitat] No source found for person location ${personId}`);
   }
 }

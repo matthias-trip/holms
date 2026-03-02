@@ -19,7 +19,9 @@ import {
   ChevronDown,
   ChevronRight,
   Radio,
+  Smartphone,
   Sparkles,
+  MapPin,
 } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import ChatPanel from "./components/ChatPanel";
@@ -35,6 +37,8 @@ import AdaptersPanel from "./components/AdaptersPanel";
 import ChannelsPanel from "./components/ChannelsPanel";
 import UsagePanel from "./components/UsagePanel";
 import CycleOverview from "./components/CycleOverview";
+import DeviceManagement from "./components/DeviceManagement";
+import ZonesPanel from "./components/ZonesPanel";
 import SystemStatus from "./components/SystemStatus";
 
 type Panel =
@@ -50,19 +54,21 @@ type Panel =
   | "automations"
   | "goals"
   | "adapters"
-  | "channels";
+  | "channels"
+  | "zones"
+  | "devices";
 
 const VALID_PANELS = new Set<string>([
   "dashboard", "chat", "activity", "usage", "spaces", "people",
   "memory", "reflexes", "triage", "automations", "goals", "adapters",
-  "channels",
+  "channels", "zones", "devices",
 ]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
   // Backward compat
   if (hash === "settings" || hash === "integrations" || hash === "plugins") return "adapters";
-  if (hash === "devices") return "spaces";
+
   return VALID_PANELS.has(hash) ? (hash as Panel) : "dashboard";
 }
 
@@ -101,6 +107,8 @@ const NAV: NavEntry[] = [
       { id: "adapters", label: "Adapters" },
       { id: "channels", label: "Channels" },
       { id: "people", label: "People" },
+      { id: "zones", label: "Zones" },
+      { id: "devices", label: "Devices & Auth" },
     ],
   },
 ];
@@ -119,6 +127,8 @@ const NAV_ICONS: Record<Panel, React.ComponentType<{ size: number; strokeWidth: 
   triage: ListFilter,
   adapters: Plug,
   channels: Radio,
+  zones: MapPin,
+  devices: Smartphone,
 };
 
 function NavButton({
@@ -251,6 +261,10 @@ function groupForPanel(panel: Panel): string | null {
 }
 
 export default function App() {
+  return <AppShell />;
+}
+
+function AppShell() {
   const [activePanel, setActivePanelRaw] = useState<Panel>(getPanelFromHash);
   // Which group is manually expanded (null = only auto-expand from active panel)
   const [manualExpanded, setManualExpanded] = useState<string | null>(null);
@@ -370,6 +384,8 @@ export default function App() {
           {activePanel === "triage" && <TriagePanel />}
           {activePanel === "adapters" && <AdaptersPanel />}
           {activePanel === "channels" && <ChannelsPanel />}
+          {activePanel === "zones" && <ZonesPanel />}
+          {activePanel === "devices" && <DeviceManagement />}
         </div>
       </main>
     </div>
