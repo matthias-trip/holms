@@ -6,6 +6,9 @@ import remarkGfm from "remark-gfm";
 import { trpc } from "../trpc";
 import { humanizeToolUse, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
+import PanelShell from "./shared/PanelShell";
+import EmptyState from "./shared/EmptyState";
+import FlowNode from "./shared/FlowNode";
 import type { Automation, AutomationDisplay, AutomationTrigger } from "@holms/shared";
 
 type View = "definitions" | "history";
@@ -142,74 +145,6 @@ function TriggerBadge({ trigger }: { trigger: AutomationTrigger }) {
   }
 }
 
-// ── Pipeline flow components ──
-
-const CIRCLE_SIZE = 18;
-const CIRCLE_CENTER = CIRCLE_SIZE / 2; // 9px
-
-function FlowNode({
-  icon,
-  label,
-  accentColor,
-  bgColor,
-  borderColor,
-  children,
-  isLast,
-  delay = 0,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  accentColor: string;
-  bgColor: string;
-  borderColor: string;
-  children: React.ReactNode;
-  isLast: boolean;
-  delay?: number;
-}) {
-  return (
-    <div
-      className="relative flex items-start gap-2.5 animate-flow-node-in"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      {/* Vertical connector line — runs from bottom of this circle to top of next */}
-      {!isLast && (
-        <div
-          style={{
-            position: "absolute",
-            left: CIRCLE_CENTER,
-            top: CIRCLE_SIZE + 1, // start just below the circle
-            bottom: 0,
-            width: 1,
-            background: "var(--gray-a5)",
-          }}
-        />
-      )}
-      <div
-        className="relative flex-shrink-0 flex items-center justify-center rounded-full"
-        style={{
-          width: CIRCLE_SIZE,
-          height: CIRCLE_SIZE,
-          marginTop: 1,
-          background: bgColor,
-          border: `1px solid ${borderColor}`,
-          color: accentColor,
-          zIndex: 1,
-        }}
-      >
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0" style={{ paddingBottom: isLast ? 0 : 8 }}>
-        <span
-          className="text-[10px] font-semibold uppercase tracking-wider"
-          style={{ color: accentColor, letterSpacing: "0.06em" }}
-        >
-          {label}
-        </span>
-        <div className="mt-0.5">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 function AutomationFlow({
   trigger,
@@ -763,76 +698,55 @@ function RunHistoryView() {
   );
 }
 
-export default function AutomationsPanel() {
+export default function AutomationsPanel({ embedded }: { embedded?: boolean }) {
   const [view, setView] = useState<View>("definitions");
   const { data: automations } = trpc.automation.list.useQuery(undefined, {
     refetchInterval: 5000,
   });
 
+  const content = (
+    <>
+      {view === "definitions" && (
+        <div className="space-y-2">
+          {!automations || automations.length === 0 ? (
+            <EmptyState
+              icon={<Clock size={18} />}
+              description="No automations yet. Ask the assistant to create automations like &quot;turn off lights at 22:30 every day&quot; or &quot;when motion is detected in the hallway, check if lights should be on.&quot;"
+            />
+          ) : (
+            automations.map((automation, i) => (
+              <AutomationCard key={automation.id} automation={automation} index={i} />
+            ))
+          )}
+        </div>
+      )}
+
+      {view === "history" && <RunHistoryView />}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Automations</h3>
-      </div>
-
-      {/* View tabs */}
-      <div
-        className="flex gap-1 flex-shrink-0 px-6 py-2"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
-      >
-        {([
-          { key: "definitions" as View, label: "Automations" },
-          { key: "history" as View, label: "Run History", icon: <History size={12} /> },
-        ]).map(({ key, label, icon }) => {
-          const active = view === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setView(key)}
-              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 flex items-center gap-1.5 cursor-pointer"
-              style={{
-                background: active ? "var(--gray-3)" : "transparent",
-                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
-                color: active ? "var(--gray-12)" : "var(--gray-8)",
-              }}
-            >
-              {icon}
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="flex-1 overflow-auto p-6">
-        {view === "definitions" && (
-          <>
-
-            <div className="space-y-2">
-              {!automations || automations.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-state-icon">
-                    <Clock size={18} />
-                  </div>
-                  <div className="empty-state-text">
-                    No automations yet. Ask the assistant to create automations like "turn off lights at
-                    22:30 every day" or "when motion is detected in the hallway, check if lights should be on."
-                  </div>
-                </div>
-              ) : (
-                automations.map((automation, i) => (
-                  <AutomationCard key={automation.id} automation={automation} index={i} />
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {view === "history" && <RunHistoryView />}
-      </div>
-    </div>
+    <PanelShell
+      title="Automations"
+      tabs={{
+        items: [
+          { key: "definitions", label: "Automations" },
+          { key: "history", label: "Run History", icon: <History size={12} /> },
+        ],
+        activeKey: view,
+        onChange: (key) => setView(key as View),
+      }}
+      contentClassName="p-6"
+    >
+      {content}
+    </PanelShell>
   );
 }

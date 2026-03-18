@@ -3,6 +3,8 @@ import { CheckSquare } from "lucide-react";
 import { Card, CardBody, Chip, Button, Input } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { PendingApproval } from "@holms/shared";
+import PanelShell from "./shared/PanelShell";
+import EmptyState from "./shared/EmptyState";
 
 function formatApprovalAction(command: string, params: unknown, deviceId: string): string {
   const p = params as Record<string, unknown>;
@@ -39,29 +41,22 @@ export default function ApprovalPanel() {
   });
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Approvals</h3>
-        {pending && pending.length > 0 && (
+    <PanelShell
+      title="Approvals"
+      headerRight={
+        pending && pending.length > 0 ? (
           <Chip variant="flat" color="danger" size="sm">
             {pending.length} pending
           </Chip>
-        )}
-      </div>
-
-      <div className="flex-1 overflow-auto space-y-2 p-6">
-        {(!pending || pending.length === 0) ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <CheckSquare size={18} />
-            </div>
-            <div className="empty-state-text">
-              All clear! The assistant will ask for your OK before doing anything unusual or important.
-            </div>
-          </div>
+        ) : undefined
+      }
+      contentClassName="space-y-2 p-6"
+    >
+      {(!pending || pending.length === 0) ? (
+        <EmptyState
+          icon={<CheckSquare size={18} />}
+          description="All clear! The assistant will ask for your OK before doing anything unusual or important."
+        />
         ) : (
           pending.map((item, i) => (
             <ApprovalCard
@@ -88,8 +83,7 @@ export default function ApprovalPanel() {
             />
           ))
         )}
-      </div>
-    </div>
+    </PanelShell>
   );
 }
 

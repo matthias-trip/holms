@@ -1,83 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import { Smartphone, Trash2, Plus, ChevronDown, User, Clock, QrCode } from "lucide-react";
+import { useState } from "react";
+import { Smartphone, Trash2, Plus, User, Clock, QrCode } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { trpc } from "../trpc";
-
-/* ── dropdown (matches PeoplePanel) ────────────────────────────────── */
-
-function Dropdown({ label, value, onChange, options, placeholder }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const selected = options.find((o) => o.value === value);
-
-  return (
-    <div>
-      <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--gray-11)" }}>
-        {label}
-      </label>
-      <div ref={ref} className="relative">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          className="w-full flex items-center justify-between gap-2 text-xs px-3 py-2 rounded-lg transition-colors duration-150"
-          style={{
-            background: "var(--gray-2)",
-            border: "1px solid var(--gray-a5)",
-            color: selected ? "var(--gray-12)" : "var(--gray-8)",
-          }}
-        >
-          <span className="truncate">{selected?.label ?? placeholder}</span>
-          <ChevronDown size={12} style={{ color: "var(--gray-8)", flexShrink: 0 }} />
-        </button>
-        {open && (
-          <div
-            className="absolute z-50 w-full mt-1 rounded-lg overflow-hidden max-h-48 overflow-auto"
-            style={{
-              background: "var(--gray-3)",
-              border: "1px solid var(--gray-a5)",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.08), 0 0 0 0.5px var(--gray-a3)",
-            }}
-          >
-            {options.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => { onChange(opt.value); setOpen(false); }}
-                className="w-full text-left text-xs px-3 py-2 transition-colors duration-100"
-                style={{
-                  color: "var(--gray-12)",
-                  background: opt.value === value ? "var(--accent-a3)" : "transparent",
-                }}
-                onMouseEnter={(e) => { if (opt.value !== value) e.currentTarget.style.background = "var(--gray-a3)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = opt.value === value ? "var(--accent-a3)" : "transparent"; }}
-              >
-                {opt.label}
-              </button>
-            ))}
-            {options.length === 0 && (
-              <div className="text-xs px-3 py-2" style={{ color: "var(--gray-8)" }}>No options</div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+import PanelShell from "./shared/PanelShell";
+import EmptyState from "./shared/EmptyState";
+import Dropdown from "./shared/Dropdown";
 
 /* ── revoke button with hover effect ───────────────────────────────── */
 
@@ -113,7 +40,7 @@ function relativeTime(ts: number): string {
 
 /* ── main component ────────────────────────────────────────────────── */
 
-export default function DeviceManagement() {
+export default function DeviceManagement({ embedded }: { embedded?: boolean }) {
   const devices = trpc.auth.devices.useQuery();
   const people = trpc.people.list.useQuery();
   const revokeMutation = trpc.auth.revokeDevice.useMutation({
@@ -140,30 +67,8 @@ export default function DeviceManagement() {
 
   const hasPeople = people.data && people.data.length > 0;
 
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Mobile App</h3>
-        {!showPairing && (
-          <button
-            onClick={handlePair}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
-            style={{ color: "var(--gray-12)", background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-a3)"; e.currentTarget.style.borderColor = "var(--accent-a5)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; e.currentTarget.style.borderColor = "var(--gray-a5)"; }}
-          >
-            <Plus size={14} />
-            Pair device
-          </button>
-        )}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-auto px-6 py-6 space-y-6">
+  const content = (
+    <>
 
         {/* --- Pairing flow --- */}
         {showPairing && (
@@ -300,14 +205,10 @@ export default function DeviceManagement() {
           </h2>
 
           {devices.data?.length === 0 && (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <Smartphone size={18} />
-              </div>
-              <div className="empty-state-text">
-                No devices paired yet. Use the button above to pair a native app.
-              </div>
-            </div>
+            <EmptyState
+              icon={<Smartphone size={18} />}
+              description="No devices paired yet. Use the button above to pair a native app."
+            />
           )}
 
           <div className="flex flex-col gap-2">
@@ -368,7 +269,37 @@ export default function DeviceManagement() {
           </div>
         </section>
 
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <PanelShell
+      title="Mobile App"
+      headerRight={
+        !showPairing ? (
+          <button
+            onClick={handlePair}
+            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
+            style={{ color: "var(--gray-12)", background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-a3)"; e.currentTarget.style.borderColor = "var(--accent-a5)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; e.currentTarget.style.borderColor = "var(--gray-a5)"; }}
+          >
+            <Plus size={14} />
+            Pair device
+          </button>
+        ) : undefined
+      }
+      contentClassName="px-6 py-6 space-y-6"
+    >
+      {content}
+    </PanelShell>
   );
 }

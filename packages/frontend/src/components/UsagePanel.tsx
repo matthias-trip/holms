@@ -6,6 +6,7 @@ import {
 import { Card, CardBody, Tabs, Tab } from "@heroui/react";
 import { trpc } from "../trpc";
 import type { AgentActivity, TurnTrigger } from "@holms/shared";
+import PanelShell from "./shared/PanelShell";
 
 // ── Types ──
 
@@ -497,7 +498,7 @@ function DurationChart({ metrics }: { metrics: TurnMetrics[] }) {
 
 // ── Main Panel ──
 
-export default function UsagePanel() {
+export default function UsagePanel({ embedded }: { embedded?: boolean }) {
   const [range, setRange] = useState<TimeRange>("24h");
   const { data: turns } = trpc.agents.turns.useQuery({ limit: 200 });
 
@@ -512,29 +513,22 @@ export default function UsagePanel() {
   const totals = useMemo(() => computeTotals(filteredMetrics), [filteredMetrics]);
   const modelStats = useMemo(() => computeModelStats(filteredMetrics), [filteredMetrics]);
 
-  return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Usage</h3>
-        <Tabs
-          variant="light"
-          size="sm"
-          selectedKey={range}
-          onSelectionChange={(key) => setRange(key as TimeRange)}
-        >
-          {TIME_RANGES.map((tr) => (
-            <Tab key={tr.id} title={tr.label} />
-          ))}
-        </Tabs>
-      </div>
+  const rangeSelector = (
+    <Tabs
+      variant="light"
+      size="sm"
+      selectedKey={range}
+      onSelectionChange={(key) => setRange(key as TimeRange)}
+    >
+      {TIME_RANGES.map((tr) => (
+        <Tab key={tr.id} title={tr.label} />
+      ))}
+    </Tabs>
+  );
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-        {totals.turnCount === 0 ? (
+  const content = (
+    <>
+      {totals.turnCount === 0 ? (
           <div className="flex items-center justify-center h-40">
             <span className="text-sm" style={{ color: "var(--gray-9)" }}>No usage data in this time range.</span>
           </div>
@@ -616,7 +610,19 @@ export default function UsagePanel() {
             </p>
           </>
         )}
-      </div>
+    </>
+  );
+
+  if (embedded) return (
+    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
+      <div className="flex justify-end px-6 py-2 flex-shrink-0">{rangeSelector}</div>
+      <div className="flex-1 overflow-auto px-6 py-5 space-y-6">{content}</div>
     </div>
+  );
+
+  return (
+    <PanelShell title="Usage" contentClassName="px-6 py-5 space-y-6" headerRight={rangeSelector}>
+      {content}
+    </PanelShell>
   );
 }

@@ -9,6 +9,7 @@ import type { AgentActivity, TurnTrigger, TriageLane } from "@holms/shared";
 import { humanizeToolUse, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
 import CycleMenu from "./CycleMenu";
+import PanelShell from "./shared/PanelShell";
 
 // ── Types ──
 
@@ -148,7 +149,7 @@ function getTurnTrigger(turn: Turn): TurnTrigger {
 
 // ── Main component ──
 
-export default function ActivityPanel() {
+export default function ActivityPanel({ embedded }: { embedded?: boolean }) {
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(new Set());
   const [rawView, setRawView] = useState<Set<string>>(new Set());
   const [liveTurns, setLiveTurns] = useState<Map<string, Turn>>(new Map);
@@ -308,22 +309,8 @@ export default function ActivityPanel() {
 
   const triggerCycle = trpc.agents.triggerCycle.useMutation();
 
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Activity</h3>
-        <div className="flex items-center gap-2">
-          <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
-          <span className="text-xs tabular-nums" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
-            {timeline.filter((e) => e.kind === "turn").length} turns
-          </span>
-        </div>
-      </div>
-
+  const content = (
+    <>
       {/* Filters */}
       <div
         className="flex items-center gap-1 px-6 py-2 flex-shrink-0 overflow-x-auto"
@@ -416,7 +403,26 @@ export default function ActivityPanel() {
           </div>
         )}
       </div>
-    </div>
+    </>
+  );
+
+  if (embedded) return <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>{content}</div>;
+
+  return (
+    <PanelShell
+      title="Activity"
+      headerRight={
+        <div className="flex items-center gap-2">
+          <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
+          <span className="text-xs tabular-nums" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
+            {timeline.filter((e) => e.kind === "turn").length} turns
+          </span>
+        </div>
+      }
+      contentClassName=""
+    >
+      {content}
+    </PanelShell>
   );
 }
 

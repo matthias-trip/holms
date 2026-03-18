@@ -7,6 +7,9 @@ import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
 import { relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
+import PanelShell from "./shared/PanelShell";
+import EmptyState from "./shared/EmptyState";
+import FlowNode from "./shared/FlowNode";
 import type { Goal, GoalEvent, GoalEventType } from "@holms/shared";
 
 type FilterKey = "all" | "active" | "completed" | "attention";
@@ -27,73 +30,6 @@ const EVENT_ICONS: Record<GoalEventType, { icon: typeof Eye; color: string; bg: 
   user_note: { icon: MessageSquare, color: "var(--gray-11)", bg: "var(--gray-a3)" },
 };
 
-// ── Pipeline flow components ──
-
-const CIRCLE_SIZE = 18;
-const CIRCLE_CENTER = CIRCLE_SIZE / 2;
-
-function GoalFlowNode({
-  icon,
-  label,
-  accentColor,
-  bgColor,
-  borderColor,
-  children,
-  isLast,
-  delay = 0,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  accentColor: string;
-  bgColor: string;
-  borderColor: string;
-  children: React.ReactNode;
-  isLast: boolean;
-  delay?: number;
-}) {
-  return (
-    <div
-      className="relative flex items-start gap-2.5 animate-flow-node-in"
-      style={{ animationDelay: `${delay}ms` }}
-    >
-      {!isLast && (
-        <div
-          style={{
-            position: "absolute",
-            left: CIRCLE_CENTER,
-            top: CIRCLE_SIZE + 1,
-            bottom: 0,
-            width: 1,
-            background: "var(--gray-a5)",
-          }}
-        />
-      )}
-      <div
-        className="relative flex-shrink-0 flex items-center justify-center rounded-full"
-        style={{
-          width: CIRCLE_SIZE,
-          height: CIRCLE_SIZE,
-          marginTop: 1,
-          background: bgColor,
-          border: `1px solid ${borderColor}`,
-          color: accentColor,
-          zIndex: 1,
-        }}
-      >
-        {icon}
-      </div>
-      <div className="flex-1 min-w-0" style={{ paddingBottom: isLast ? 0 : 8 }}>
-        <span
-          className="text-[10px] font-semibold uppercase tracking-wider"
-          style={{ color: accentColor, letterSpacing: "0.06em" }}
-        >
-          {label}
-        </span>
-        <div className="mt-0.5">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 function GoalTimeline({ events }: { events: GoalEvent[] }) {
   return (
@@ -301,7 +237,7 @@ function GoalCard({
             {/* Flow pipeline */}
             <div className="rounded-lg p-3" style={{ background: "var(--gray-a3)" }}>
               {/* Objective */}
-              <GoalFlowNode
+              <FlowNode
                 icon={<Target size={10} />}
                 label="Objective"
                 accentColor="var(--accent-9)"
@@ -313,11 +249,11 @@ function GoalCard({
                 <p className="text-[13px]" style={{ color: "var(--gray-11)" }}>
                   {goal.description}
                 </p>
-              </GoalFlowNode>
+              </FlowNode>
 
               {/* Next steps */}
               {goal.nextSteps && (
-                <GoalFlowNode
+                <FlowNode
                   icon={<ArrowRight size={10} />}
                   label="Next Steps"
                   accentColor="var(--warm)"
@@ -332,12 +268,12 @@ function GoalCard({
                   >
                     <MarkdownMessage content={goal.nextSteps} />
                   </div>
-                </GoalFlowNode>
+                </FlowNode>
               )}
 
               {/* Timeline */}
               {detail?.events && detail.events.length > 0 && (
-                <GoalFlowNode
+                <FlowNode
                   icon={<Clock size={10} />}
                   label="Timeline"
                   accentColor="var(--gray-9)"
@@ -347,7 +283,7 @@ function GoalCard({
                   delay={goal.nextSteps ? 120 : 60}
                 >
                   <GoalTimeline events={detail.events} />
-                </GoalFlowNode>
+                </FlowNode>
               )}
             </div>
 
@@ -468,7 +404,7 @@ function GoalCard({
   );
 }
 
-export default function GoalsPanel() {
+export default function GoalsPanel({ embedded }: { embedded?: boolean }) {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -489,17 +425,49 @@ export default function GoalsPanel() {
     ? (filtered?.length ?? 0)
     : (goals?.filter((g) => g.needsAttention).length ?? 0);
 
+  const content = (
+    <>
+      {(!filtered || filtered.length === 0) ? (
+        <EmptyState
+          icon={<Flag size={18} />}
+          title={filter === "attention" ? "No goals need attention" : filter === "completed" ? "No completed goals" : "No goals yet"}
+          description={
+            filter === "all" || filter === "active"
+              ? "Goals emerge as the assistant observes patterns in your home. You can also ask it to track specific objectives."
+              : filter === "attention"
+                ? "All goals are on track."
+                : "Completed goals will appear here."
+          }
+        />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {filtered.map((goal, index) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              isExpanded={expandedId === goal.id}
+              onToggle={() => setExpandedId(expandedId === goal.id ? null : goal.id)}
+              index={index}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
+    <PanelShell
+      title="Goals"
+      headerRight={
         <div className="flex items-center gap-2">
-          <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>
-            Goals
-          </h3>
           {attentionCount > 0 && (
             <span
               className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
@@ -512,72 +480,24 @@ export default function GoalsPanel() {
               {attentionCount} need{attentionCount === 1 ? "s" : ""} attention
             </span>
           )}
+          <span className="text-xs flex-shrink-0" style={{ color: "var(--gray-9)" }}>
+            {activeCount} active
+          </span>
         </div>
-        <span className="text-xs flex-shrink-0" style={{ color: "var(--gray-9)" }}>
-          {activeCount} active
-        </span>
-      </div>
-
-      {/* Filter tabs */}
-      <div
-        className="flex gap-1 flex-shrink-0 px-6 py-2"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
-      >
-        {([
-          { key: "all" as FilterKey, label: "All" },
-          { key: "active" as FilterKey, label: "Active" },
-          { key: "completed" as FilterKey, label: "Completed" },
-          { key: "attention" as FilterKey, label: "Needs Attention" },
-        ]).map(({ key, label }) => {
-          const active = filter === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setFilter(key)}
-              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 cursor-pointer"
-              style={{
-                background: active ? "var(--gray-3)" : "transparent",
-                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
-                color: active ? "var(--gray-12)" : "var(--gray-8)",
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Goal list */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        {(!filtered || filtered.length === 0) ? (
-          <div className="empty-state" style={{ paddingTop: 100 }}>
-            <div className="empty-state-icon"><Flag size={18} /></div>
-            <p className="text-sm font-medium mb-1" style={{ color: "var(--gray-12)" }}>
-              {filter === "attention" ? "No goals need attention" : filter === "completed" ? "No completed goals" : "No goals yet"}
-            </p>
-            <div className="empty-state-text">
-              {filter === "all" || filter === "active"
-                ? "Goals emerge as the assistant observes patterns in your home. You can also ask it to track specific objectives."
-                : filter === "attention"
-                  ? "All goals are on track."
-                  : "Completed goals will appear here."
-              }
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {filtered.map((goal, index) => (
-              <GoalCard
-                key={goal.id}
-                goal={goal}
-                isExpanded={expandedId === goal.id}
-                onToggle={() => setExpandedId(expandedId === goal.id ? null : goal.id)}
-                index={index}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+      }
+      tabs={{
+        items: [
+          { key: "all", label: "All" },
+          { key: "active", label: "Active" },
+          { key: "completed", label: "Completed" },
+          { key: "attention", label: "Needs Attention" },
+        ],
+        activeKey: filter,
+        onChange: (key) => setFilter(key as FilterKey),
+      }}
+      contentClassName="px-6 py-4"
+    >
+      {content}
+    </PanelShell>
   );
 }

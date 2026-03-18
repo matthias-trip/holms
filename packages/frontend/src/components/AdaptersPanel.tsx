@@ -1,8 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Plug, RefreshCw, Wrench, Plus, Trash2, ScrollText, X, MoreHorizontal } from "lucide-react";
+import { Plug, RefreshCw, Wrench, Plus, ScrollText, X } from "lucide-react";
 import { trpc } from "../trpc";
 import SetupChatModal from "./SetupChatModal";
+import PanelShell from "./shared/PanelShell";
+import EmptyState from "./shared/EmptyState";
+import ConfirmDeleteButton from "./shared/ConfirmDeleteButton";
 
 const STATUS_COLORS: Record<string, string> = {
   running: "#22c55e",
@@ -18,42 +21,6 @@ const LOG_LEVEL_COLORS: Record<string, string> = {
   error: "#ef4444",
 };
 
-/* ── Delete with auto-reset confirm ──────────────────────────────── */
-
-function DeleteButton({ onConfirm }: { onConfirm: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-
-  useEffect(() => {
-    if (!confirming) return;
-    const t = setTimeout(() => setConfirming(false), 3000);
-    return () => clearTimeout(t);
-  }, [confirming]);
-
-  if (confirming) {
-    return (
-      <button
-        onClick={onConfirm}
-        className="text-[11px] font-medium px-2 py-1 rounded-md cursor-pointer transition-colors duration-150"
-        style={{ color: "var(--err)", background: "var(--err-dim)", border: "none" }}
-      >
-        Confirm?
-      </button>
-    );
-  }
-
-  return (
-    <button
-      onClick={() => setConfirming(true)}
-      className="p-1.5 rounded-md cursor-pointer transition-colors duration-150"
-      style={{ color: "var(--gray-8)", background: "transparent", border: "none" }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--err)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--gray-8)"; }}
-      title="Remove instance"
-    >
-      <Trash2 size={15} />
-    </button>
-  );
-}
 
 /* ── Adapter Logs Modal ───────────────────────────────────────────── */
 
@@ -377,7 +344,7 @@ function InstanceRow({
           <Wrench size={13} />
           Edit
         </button>
-        <DeleteButton onConfirm={onRemove} />
+        <ConfirmDeleteButton onConfirm={onRemove} size={15} />
       </div>
     </div>
   );
@@ -385,7 +352,7 @@ function InstanceRow({
 
 /* ── Main panel ────────────────────────────────────────────────────── */
 
-export default function AdaptersPanel() {
+export default function AdaptersPanel({ embedded }: { embedded?: boolean }) {
   const [setupAdapter, setSetupAdapter] = useState<{ name: string; adapterType: string } | null>(null);
   const [tweakTarget, setTweakTarget] = useState<{ adapterName: string; instanceId: string } | null>(null);
   const [logsTarget, setLogsTarget] = useState<{ instanceId: string } | null>(null);
@@ -410,46 +377,13 @@ export default function AdaptersPanel() {
     onSuccess: () => utils.plugins.list.invalidate(),
   });
 
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Adapters</h3>
-        <button
-          onClick={() => refreshMutation.mutate()}
-          disabled={refreshMutation.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer"
-          style={{
-            background: "transparent",
-            border: "none",
-            color: "var(--gray-9)",
-            opacity: refreshMutation.isPending ? 0.5 : 1,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--gray-12)"; e.currentTarget.style.background = "var(--gray-a3)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--gray-9)"; e.currentTarget.style.background = "transparent"; }}
-        >
-          <RefreshCw
-            size={12}
-            className={refreshMutation.isPending ? "animate-spin-slow" : ""}
-          />
-          {refreshMutation.isPending ? "Scanning..." : "Rescan"}
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-auto px-6 py-5 space-y-3">
+  const content = (
+    <>
         {!plugins || plugins.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <Plug size={18} />
-            </div>
-            <div className="empty-state-text">
-              No adapters installed. Add adapter plugins to adapters/ or ~/.holms/adapters/ to connect
-              external platforms.
-            </div>
-          </div>
+          <EmptyState
+            icon={<Plug size={18} />}
+            description="No adapters installed. Add adapter plugins to adapters/ or ~/.holms/adapters/ to connect external platforms."
+          />
         ) : (
           plugins.map((plugin, i) => {
             const hasInstances = plugin.adapterInstances && plugin.adapterInstances.length > 0;
@@ -604,7 +538,6 @@ export default function AdaptersPanel() {
             );
           })
         )}
-      </div>
 
       {/* Setup modal (new instance) */}
       <SetupChatModal
@@ -628,6 +561,44 @@ export default function AdaptersPanel() {
         onClose={() => setLogsTarget(null)}
         instanceId={logsTarget?.instanceId ?? ""}
       />
-    </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <PanelShell
+      title="Adapters"
+      headerRight={
+        <button
+          onClick={() => refreshMutation.mutate()}
+          disabled={refreshMutation.isPending}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors duration-150 cursor-pointer"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "var(--gray-9)",
+            opacity: refreshMutation.isPending ? 0.5 : 1,
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--gray-12)"; e.currentTarget.style.background = "var(--gray-a3)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--gray-9)"; e.currentTarget.style.background = "transparent"; }}
+        >
+          <RefreshCw
+            size={12}
+            className={refreshMutation.isPending ? "animate-spin-slow" : ""}
+          />
+          {refreshMutation.isPending ? "Scanning..." : "Rescan"}
+        </button>
+      }
+      contentClassName="px-6 py-5 space-y-3"
+    >
+      {content}
+    </PanelShell>
   );
 }

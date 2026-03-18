@@ -5,6 +5,7 @@ import { trpc } from "../trpc";
 import { humanizeToolUse, isWriteAction, relativeTime } from "../utils/humanize";
 import MarkdownMessage from "./MarkdownMessage";
 import CycleMenu from "./CycleMenu";
+import PanelShell from "./shared/PanelShell";
 import FeedbackModal from "./FeedbackModal";
 import type { AgentActivity } from "@holms/shared";
 
@@ -202,75 +203,48 @@ export default function CycleOverview() {
   const triggerCycle = trpc.agents.triggerCycle.useMutation();
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Overview</h3>
-        <CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />
-      </div>
-
-      {/* Filter tabs */}
-      <div
-        className="flex gap-1 flex-shrink-0 px-6 py-2"
-        style={{ borderBottom: "1px solid var(--gray-a3)" }}
-      >
-        {([
+    <PanelShell
+      title="Overview"
+      headerRight={<CycleMenu onTrigger={(type) => triggerCycle.mutate({ type })} disabled={triggerCycle.isPending} />}
+      tabs={{
+        items: [
           { key: "all", label: "All" },
           { key: "reflection", label: "Reflections" },
           { key: "situational", label: "Situational" },
           { key: "goal_review", label: "Goals" },
           { key: "daily_summary", label: "Daily" },
-        ]).map(({ key, label }) => {
-          const active = filter === key;
-          return (
-            <button
-              key={key}
-              onClick={() => setFilter(key)}
-              className="px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 flex-shrink-0 cursor-pointer"
-              style={{
-                background: active ? "var(--gray-3)" : "transparent",
-                border: active ? "1px solid var(--gray-a5)" : "1px solid transparent",
-                color: active ? "var(--gray-12)" : "var(--gray-8)",
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Cycle list */}
-      <div className="flex-1 overflow-auto">
-        {filteredCycles.length === 0 ? (
-          <div className="empty-state" style={{ paddingTop: "100px" }}>
-            <div className="empty-state-icon">
-              <Target size={20} />
-            </div>
-            <p className="text-sm font-medium mb-1" style={{ color: "var(--gray-12)" }}>
-              No proactive cycles yet
-            </p>
-            <div className="empty-state-text">
-              Trigger one manually or wait for the scheduler.
-              The AI's autonomous reflections, checks, and summaries will appear here.
-            </div>
+        ],
+        activeKey: filter,
+        onChange: setFilter,
+      }}
+      contentClassName=""
+    >
+      {filteredCycles.length === 0 ? (
+        <div className="empty-state" style={{ paddingTop: "100px" }}>
+          <div className="empty-state-icon">
+            <Target size={20} />
           </div>
-        ) : (
-          <div className="px-5 py-4 space-y-3">
-            {filteredCycles.map((turn) => (
-              <CycleCard
-                key={turn.turnId}
-                turn={turn}
-                expanded={expandedCards.has(turn.turnId)}
-                onToggle={() => toggleCard(turn.turnId)}
-              />
-            ))}
+          <p className="text-sm font-medium mb-1" style={{ color: "var(--gray-12)" }}>
+            No proactive cycles yet
+          </p>
+          <div className="empty-state-text">
+            Trigger one manually or wait for the scheduler.
+            The AI's autonomous reflections, checks, and summaries will appear here.
           </div>
-        )}
-      </div>
-    </div>
+        </div>
+      ) : (
+        <div className="px-5 py-4 space-y-3">
+          {filteredCycles.map((turn) => (
+            <CycleCard
+              key={turn.turnId}
+              turn={turn}
+              expanded={expandedCards.has(turn.turnId)}
+              onToggle={() => toggleCard(turn.turnId)}
+            />
+          ))}
+        </div>
+      )}
+    </PanelShell>
   );
 }
 

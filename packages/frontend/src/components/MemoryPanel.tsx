@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { trpc } from "../trpc";
 import type { Memory, ScoredMemory, MemoryQueryMeta } from "@holms/shared";
+import PanelShell from "./shared/PanelShell";
 
 const mdComponents = {
   p: ({ children }: { children?: React.ReactNode }) => <p className="mb-1.5 last:mb-0">{children}</p>,
@@ -87,7 +88,7 @@ function similarityColor(score: number): { color: string; bg: string } {
   return { color: "var(--err)", bg: "var(--err-dim)" };
 }
 
-export default function MemoryPanel() {
+export default function MemoryPanel({ embedded }: { embedded?: boolean }) {
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
@@ -141,20 +142,8 @@ export default function MemoryPanel() {
     });
   };
 
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Memories</h3>
-        {displayMemories && (
-          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{displayMemories.length} entries</span>
-        )}
-      </div>
-
-      <div className="flex-1 flex flex-col overflow-hidden p-6">
+  const content = (
+    <>
         {/* Search */}
         <div className="mb-4">
           <Input
@@ -342,7 +331,28 @@ export default function MemoryPanel() {
             </div>
           )}
         </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <PanelShell
+      title="Memories"
+      headerRight={
+        displayMemories ? (
+          <span className="text-xs" style={{ color: "var(--gray-9)" }}>{displayMemories.length} entries</span>
+        ) : undefined
+      }
+      contentClassName="flex-1 flex flex-col overflow-hidden p-6"
+    >
+      {content}
+    </PanelShell>
   );
 }

@@ -3,6 +3,7 @@ import { MapPin, Plus, Trash2, Pencil, User, Check, X } from "lucide-react";
 import { trpc } from "../trpc";
 import type { LocationZone } from "@holms/shared";
 import ZoneMapPicker from "./ZoneMapPicker";
+import PanelShell from "./shared/PanelShell";
 
 interface MapState {
   lat: number;
@@ -99,7 +100,7 @@ function ZoneCard({
   );
 }
 
-export default function ZonesPanel() {
+export default function ZonesPanel({ embedded }: { embedded?: boolean }) {
   const { data: zones } = trpc.zones.list.useQuery(undefined, { refetchInterval: 5000 });
   const { data: personLocations } = trpc.zones.personLocations.useQuery(undefined, { refetchInterval: 5000 });
 
@@ -203,39 +204,8 @@ export default function ZonesPanel() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const mapCenter = mapState ? [mapState.lat, mapState.lng] as [number, number] : undefined;
 
-  return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Zones</h3>
-        {mode === "idle" && (
-          <button
-            onClick={startCreate}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
-            style={{ color: "var(--gray-12)", background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-a3)"; e.currentTarget.style.borderColor = "var(--accent-a5)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; e.currentTarget.style.borderColor = "var(--gray-a5)"; }}
-          >
-            <Plus size={14} />
-            Add zone
-          </button>
-        )}
-        {mode !== "idle" && (
-          <button
-            onClick={resetMode}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
-            style={{ color: "var(--gray-11)", background: "transparent", border: "1px solid var(--gray-a5)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-          >
-            Cancel
-          </button>
-        )}
-      </div>
-
+  const content = (
+    <>
       {/* Two-column layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left column — zone list */}
@@ -365,7 +335,7 @@ export default function ZonesPanel() {
                     onMouseLeave={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; e.currentTarget.style.borderColor = "var(--gray-a5)"; }}
                   >
                     <Check size={14} />
-                    {isSaving ? "Saving…" : mode === "create" ? "Create" : "Save"}
+                    {isSaving ? "Saving..." : mode === "create" ? "Create" : "Save"}
                   </button>
                 </div>
                 <div className="text-[10px]" style={{ color: "var(--gray-8)" }}>
@@ -376,6 +346,50 @@ export default function ZonesPanel() {
           </div>
         </div>
       </div>
-    </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="h-full flex flex-col overflow-hidden" style={{ background: "var(--gray-2)" }}>
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <PanelShell
+      title="Zones"
+      contentClassName="flex overflow-hidden"
+      headerRight={
+        <>
+          {mode === "idle" && (
+            <button
+              onClick={startCreate}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
+              style={{ color: "var(--gray-12)", background: "var(--gray-a3)", border: "1px solid var(--gray-a5)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--accent-a3)"; e.currentTarget.style.borderColor = "var(--accent-a5)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; e.currentTarget.style.borderColor = "var(--gray-a5)"; }}
+            >
+              <Plus size={14} />
+              Add zone
+            </button>
+          )}
+          {mode !== "idle" && (
+            <button
+              onClick={resetMode}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg cursor-pointer transition-colors duration-150"
+              style={{ color: "var(--gray-11)", background: "transparent", border: "1px solid var(--gray-a5)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "var(--gray-a3)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+            >
+              Cancel
+            </button>
+          )}
+        </>
+      }
+    >
+      {content}
+    </PanelShell>
   );
 }

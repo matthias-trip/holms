@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { Plug, ChevronRight, ChevronDown } from "lucide-react";
 import { Card, CardBody, Chip } from "@heroui/react";
 import { trpc } from "../trpc";
+import PanelShell from "./shared/PanelShell";
 
 // ── Property color map ──
 
@@ -567,20 +568,17 @@ export default function SpacesPanel({ compact }: { compact?: boolean }) {
   let globalAnimIndex = 0;
 
   return (
-    <div className="h-full flex flex-col" style={{ background: "var(--gray-2)" }}>
-      {/* Header */}
-      <div
-        className="flex justify-between items-center flex-shrink-0 px-6 h-14"
-        style={{ borderBottom: "1px solid var(--gray-a3)", background: "var(--gray-1)" }}
-      >
-        <h3 className="text-base font-bold" style={{ color: "var(--gray-12)" }}>Spaces</h3>
-        {homeStatus.length > 0 && (
+    <PanelShell
+      title="Spaces"
+      headerRight={
+        homeStatus.length > 0 ? (
           <span className="text-xs tabular-nums" style={{ fontFamily: "var(--font-mono)", color: "var(--gray-9)" }}>
             {homeStatus.join(" \u00b7 ")}
           </span>
-        )}
-      </div>
-
+        ) : undefined
+      }
+      contentClassName=""
+    >
       {isLoading ? (
         <div className="flex-1 flex items-center justify-center px-6">
           <div className="shimmer w-full h-12 rounded-lg" />
@@ -595,7 +593,7 @@ export default function SpacesPanel({ compact }: { compact?: boolean }) {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-auto p-6">
+        <div className="p-6">
           {hasFloors ? (
             <>
               {floors.map((floor) => {
@@ -672,7 +670,7 @@ export default function SpacesPanel({ compact }: { compact?: boolean }) {
           )}
         </div>
       )}
-    </div>
+    </PanelShell>
   );
 }
 

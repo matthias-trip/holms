@@ -4,145 +4,97 @@ import {
   LayoutGrid,
   MessageCircle,
   Activity,
-  BarChart3,
   Lightbulb,
-  Target,
   Users,
-  Zap,
-  Clock,
   Settings,
   Sun,
   Moon,
-  Plug,
-  Search,
-  ListFilter,
-  ChevronDown,
-  ChevronRight,
-  Radio,
-  Smartphone,
   Sparkles,
-  MapPin,
   LogOut,
+  Clock,
 } from "lucide-react";
 import { useTheme } from "./context/ThemeContext";
 import { useAuth } from "./context/AuthContext";
 import ChatPanel from "./components/ChatPanel";
 import SpacesPanel from "./components/SpacesPanel";
-import MemoryPanel from "./components/MemoryPanel";
-import ReflexPanel from "./components/ReflexPanel";
-import ActivityPanel from "./components/ActivityPanel";
-import AutomationsPanel from "./components/AutomationsPanel";
-import GoalsPanel from "./components/GoalsPanel";
 import PeoplePanel from "./components/PeoplePanel";
-import TriagePanel from "./components/TriagePanel";
-import AdaptersPanel from "./components/AdaptersPanel";
-import ChannelsPanel from "./components/ChannelsPanel";
-import UsagePanel from "./components/UsagePanel";
-import CycleOverview from "./components/CycleOverview";
-import DeviceManagement from "./components/DeviceManagement";
-import ZonesPanel from "./components/ZonesPanel";
+import HomeView from "./components/home/HomeView";
 import SystemStatus from "./components/SystemStatus";
+import AgentPulse from "./components/shared/AgentPulse";
+import ActivityView from "./components/views/ActivityView";
+import GoalsView from "./components/views/GoalsView";
+import AutomationsView from "./components/views/AutomationsView";
+import SettingsView from "./components/views/SettingsView";
 
 type Panel =
-  | "dashboard"
+  | "home"
   | "chat"
   | "activity"
-  | "usage"
+  | "goals"
+  | "automations"
   | "spaces"
   | "people"
-  | "memory"
-  | "reflexes"
-  | "triage"
-  | "automations"
-  | "goals"
-  | "adapters"
-  | "channels"
-  | "zones"
-  | "devices";
+  | "settings";
+
+// Backward compat: map old hash names to new panels
+const HASH_ALIASES: Record<string, Panel> = {
+  dashboard: "home",
+  usage: "activity",
+  memory: "goals",
+  reflexes: "automations",
+  triage: "automations",
+  adapters: "settings",
+  channels: "settings",
+  zones: "settings",
+  devices: "settings",
+  integrations: "settings",
+  plugins: "settings",
+};
 
 const VALID_PANELS = new Set<string>([
-  "dashboard", "chat", "activity", "usage", "spaces", "people",
-  "memory", "reflexes", "triage", "automations", "goals", "adapters",
-  "channels", "zones", "devices",
+  "home", "chat", "activity", "goals", "automations", "spaces", "people", "settings",
 ]);
 
 function getPanelFromHash(): Panel {
   const hash = window.location.hash.slice(1);
-  // Backward compat
-  if (hash === "settings" || hash === "integrations" || hash === "plugins") return "adapters";
-
-  return VALID_PANELS.has(hash) ? (hash as Panel) : "dashboard";
+  if (HASH_ALIASES[hash]) return HASH_ALIASES[hash];
+  return VALID_PANELS.has(hash) ? (hash as Panel) : "home";
 }
 
-// --- Navigation structure ---
+// --- Navigation ---
 
-type IconComponent = React.ComponentType<{ size: number; strokeWidth: number; style?: React.CSSProperties }>;
 type NavItem = { id: Panel; label: string };
-type NavGroup = { label: string; icon: IconComponent; items: NavItem[] };
-type NavEntry = NavItem | NavGroup;
 
-function isGroup(entry: NavEntry): entry is NavGroup {
-  return "items" in entry;
-}
-
-const NAV: NavEntry[] = [
-  { id: "dashboard", label: "Overview" },
-  { id: "activity", label: "Activity" },
+const NAV: NavItem[] = [
+  { id: "home", label: "Home" },
   { id: "chat", label: "Chat" },
+  { id: "activity", label: "Activity" },
   { id: "goals", label: "Goals" },
   { id: "automations", label: "Automations" },
-  {
-    label: "Insights",
-    icon: Search,
-    items: [
-      { id: "spaces", label: "Spaces" },
-      { id: "usage", label: "Usage" },
-      { id: "memory", label: "Memory" },
-      { id: "reflexes", label: "Reflexes" },
-      { id: "triage", label: "Triage" },
-    ],
-  },
-  {
-    label: "Settings",
-    icon: Settings,
-    items: [
-      { id: "adapters", label: "Adapters" },
-      { id: "channels", label: "Channels" },
-      { id: "people", label: "People" },
-      { id: "zones", label: "Zones" },
-      { id: "devices", label: "Mobile App" },
-    ],
-  },
+  { id: "spaces", label: "Spaces" },
+  { id: "people", label: "People" },
+  { id: "settings", label: "Settings" },
 ];
 
 const NAV_ICONS: Record<Panel, React.ComponentType<{ size: number; strokeWidth: number; style?: React.CSSProperties }>> = {
-  dashboard: LayoutGrid,
+  home: LayoutGrid,
   chat: MessageCircle,
   activity: Activity,
-  usage: BarChart3,
+  goals: Sparkles,
+  automations: Clock,
   spaces: Lightbulb,
   people: Users,
-  memory: Target,
-  automations: Clock,
-  goals: Sparkles,
-  reflexes: Zap,
-  triage: ListFilter,
-  adapters: Plug,
-  channels: Radio,
-  zones: MapPin,
-  devices: Smartphone,
+  settings: Settings,
 };
 
 function NavButton({
   item,
   isActive,
   onPress,
-  indent,
 }: {
   item: NavItem;
   isActive: boolean;
   onPress: () => void;
-  indent?: boolean;
 }) {
   const Icon = NAV_ICONS[item.id];
   return (
@@ -158,7 +110,6 @@ function NavButton({
         borderLeft: isActive ? "3px solid var(--accent-9)" : "3px solid transparent",
         borderRadius: "8px",
         color: isActive ? "var(--gray-12)" : "var(--gray-9)",
-        paddingLeft: indent ? "24px" : undefined,
       }}
       startContent={
         <Icon
@@ -173,128 +124,23 @@ function NavButton({
   );
 }
 
-function CollapsibleGroup({
-  group,
-  activePanel,
-  expanded,
-  onToggle,
-  onNavigate,
-}: {
-  group: NavGroup;
-  activePanel: Panel;
-  expanded: boolean;
-  onToggle: () => void;
-  onNavigate: (panel: Panel) => void;
-}) {
-  const hasActiveChild = group.items.some((item) => item.id === activePanel);
-
-  const Icon = group.icon;
-  return (
-    <div className="mt-2">
-      <Button
-        variant="light"
-        color="default"
-        onPress={onToggle}
-        className="justify-start w-full"
-        style={{
-          gap: "12px",
-          fontWeight: hasActiveChild ? 500 : 400,
-          background: hasActiveChild ? "var(--accent-a2)" : undefined,
-          borderLeft: "3px solid transparent",
-          borderRadius: "8px",
-          color: hasActiveChild ? "var(--gray-11)" : "var(--gray-9)",
-        }}
-        startContent={
-          <Icon
-            size={16}
-            strokeWidth={1.5}
-            style={{ color: hasActiveChild ? "var(--accent-9)" : "var(--gray-8)" }}
-          />
-        }
-        endContent={
-          <ChevronDown
-            size={14}
-            strokeWidth={1.5}
-            style={{
-              color: "var(--gray-7)",
-              marginLeft: "auto",
-              transition: "transform 200ms ease",
-              transform: expanded ? "rotate(0deg)" : "rotate(-90deg)",
-            }}
-          />
-        }
-      >
-        {group.label}
-      </Button>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateRows: expanded ? "1fr" : "0fr",
-          transition: "grid-template-rows 200ms ease",
-        }}
-      >
-        <div style={{ overflow: "hidden" }}>
-          <div className="flex flex-col">
-            {group.items.map((item) => (
-              <NavButton
-                key={item.id}
-                item={item}
-                isActive={activePanel === item.id}
-                onPress={() => onNavigate(item.id)}
-                indent
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-/** Returns the group label that contains the given panel, or null for top-level items. */
-function groupForPanel(panel: Panel): string | null {
-  for (const entry of NAV) {
-    if (isGroup(entry) && entry.items.some((i) => i.id === panel)) {
-      return entry.label;
-    }
-  }
-  return null;
-}
-
 export default function App() {
   return <AppShell />;
 }
 
 function AppShell() {
   const [activePanel, setActivePanelRaw] = useState<Panel>(getPanelFromHash);
-  // Which group is manually expanded (null = only auto-expand from active panel)
-  const [manualExpanded, setManualExpanded] = useState<string | null>(null);
   const { resolved, toggleAppearance } = useTheme();
   const { logout } = useAuth();
 
-  const activeGroup = groupForPanel(activePanel);
-
   const setActivePanel = useCallback((panel: Panel) => {
-    window.location.hash = panel === "dashboard" ? "" : panel;
+    window.location.hash = panel === "home" ? "" : panel;
     setActivePanelRaw(panel);
-    // Clear manual expansion — active panel's group auto-expands
-    setManualExpanded(null);
   }, []);
-
-  const toggleGroup = useCallback((label: string) => {
-    setManualExpanded((prev) => (prev === label ? null : label));
-  }, []);
-
-  const isGroupExpanded = useCallback(
-    (label: string) => label === activeGroup || label === manualExpanded,
-    [activeGroup, manualExpanded],
-  );
 
   useEffect(() => {
     const onHashChange = () => {
       setActivePanelRaw(getPanelFromHash());
-      setManualExpanded(null);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
@@ -310,45 +156,24 @@ function AppShell() {
           borderRight: "1px solid var(--gray-a3)",
         }}
       >
-        {/* Logo */}
-        <div className="flex items-center gap-2 px-4 pt-5 pb-4">
-          <img
-            src="/logo.png"
-            alt="Holms"
-            className="w-7 h-7 rounded-lg"
-          />
-          <span
-            className="text-base font-medium"
-            style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.04em", color: "var(--gray-12)" }}
-          >
-            holms
-          </span>
-        </div>
+        {/* Logo + Agent Status */}
+        <AgentPulse />
 
         {/* Nav */}
-        <div className="flex flex-col flex-1 px-3 overflow-y-auto">
-          {NAV.map((entry) => {
-            if (isGroup(entry)) {
-              return (
-                <CollapsibleGroup
-                  key={entry.label}
-                  group={entry}
-                  activePanel={activePanel}
-                  expanded={isGroupExpanded(entry.label)}
-                  onToggle={() => toggleGroup(entry.label)}
-                  onNavigate={setActivePanel}
-                />
-              );
-            }
-            return (
+        <div className="flex flex-col flex-1 px-3 overflow-y-auto gap-0.5">
+          {NAV.map((item, i) => (
+            <div key={item.id}>
+              {/* Divider before Settings */}
+              {i === NAV.length - 1 && (
+                <div className="my-2 mx-1" style={{ height: 1, background: "var(--gray-a3)" }} />
+              )}
               <NavButton
-                key={entry.id}
-                item={entry}
-                isActive={activePanel === entry.id}
-                onPress={() => setActivePanel(entry.id)}
+                item={item}
+                isActive={activePanel === item.id}
+                onPress={() => setActivePanel(item.id)}
               />
-            );
-          })}
+            </div>
+          ))}
         </div>
 
         {/* Bottom section */}
@@ -385,21 +210,14 @@ function AppShell() {
       {/* Main content */}
       <main className="flex-1 overflow-hidden flex flex-col">
         <div className="flex-1 overflow-hidden">
-          {activePanel === "dashboard" && <CycleOverview />}
+          {activePanel === "home" && <HomeView />}
           {activePanel === "chat" && <ChatPanel />}
-          {activePanel === "activity" && <ActivityPanel />}
-          {activePanel === "usage" && <UsagePanel />}
+          {activePanel === "activity" && <ActivityView />}
+          {activePanel === "goals" && <GoalsView />}
+          {activePanel === "automations" && <AutomationsView />}
           {activePanel === "spaces" && <SpacesPanel />}
           {activePanel === "people" && <PeoplePanel />}
-          {activePanel === "memory" && <MemoryPanel />}
-          {activePanel === "automations" && <AutomationsPanel />}
-          {activePanel === "goals" && <GoalsPanel />}
-          {activePanel === "reflexes" && <ReflexPanel />}
-          {activePanel === "triage" && <TriagePanel />}
-          {activePanel === "adapters" && <AdaptersPanel />}
-          {activePanel === "channels" && <ChannelsPanel />}
-          {activePanel === "zones" && <ZonesPanel />}
-          {activePanel === "devices" && <DeviceManagement />}
+          {activePanel === "settings" && <SettingsView />}
         </div>
       </main>
     </div>
